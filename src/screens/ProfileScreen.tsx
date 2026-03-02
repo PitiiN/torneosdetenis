@@ -2,12 +2,15 @@ import React, { useEffect, useState } from "react";
 import { Alert, Button, StyleSheet, Text, TextInput, View } from "react-native";
 import { supabase } from "../lib/supabase";
 
+type ProfileRole = "player" | "admin" | "organizer" | "referee" | null;
+
 type Profile = {
   id: string;
   full_name: string | null;
   phone: string | null;
   club_name: string | null;
   level: "Cuarta" | "Tercera" | "Honor" | null;
+  role: ProfileRole;
 };
 
 export function ProfileScreen() {
@@ -33,7 +36,7 @@ export function ProfileScreen() {
 
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, full_name, phone, club_name, level")
+      .select("id, full_name, phone, club_name, level, role")
       .eq("id", user.id)
       .single();
 
@@ -46,7 +49,7 @@ export function ProfileScreen() {
     setFullName(data?.full_name ?? "");
     setPhone(data?.phone ?? "");
     setClubName(data?.club_name ?? "");
-    setLevel((data?.level as any) ?? null);
+    setLevel((data?.level as Profile["level"]) ?? null);
 
     setLoading(false);
   }
@@ -87,11 +90,12 @@ export function ProfileScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Perfil</Text>
+      <Text style={styles.roleText}>Rol: {profile?.role ?? "player"}</Text>
 
       <Text style={styles.label}>Nombre</Text>
       <TextInput style={styles.input} value={fullName} onChangeText={setFullName} />
 
-      <Text style={styles.label}>Teléfono</Text>
+      <Text style={styles.label}>Telefono</Text>
       <TextInput style={styles.input} value={phone} onChangeText={setPhone} />
 
       <Text style={styles.label}>Club</Text>
@@ -101,7 +105,7 @@ export function ProfileScreen() {
       <TextInput
         style={styles.input}
         value={level ?? ""}
-        onChangeText={(v) => setLevel((v as any) || null)}
+        onChangeText={(v) => setLevel((v as Profile["level"]) || null)}
         placeholder="Cuarta"
       />
 
@@ -113,7 +117,8 @@ export function ProfileScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20, justifyContent: "center" },
-  title: { fontSize: 22, fontWeight: "600", marginBottom: 12, textAlign: "center" },
+  title: { fontSize: 22, fontWeight: "600", marginBottom: 8, textAlign: "center" },
+  roleText: { fontSize: 14, color: "#555", marginBottom: 12, textAlign: "center" },
   label: { marginTop: 10, marginBottom: 6, color: "#444" },
   input: { borderWidth: 1, borderColor: "#ccc", padding: 12, borderRadius: 8 },
 });
