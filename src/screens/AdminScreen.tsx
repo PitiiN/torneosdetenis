@@ -600,10 +600,18 @@ export function AdminScreen() {
     if (!qaCategoryId.trim()) return Alert.alert("Error", "category_id es obligatorio");
     if (!qaTag.trim()) return Alert.alert("Error", "tag es obligatorio");
 
-    const { data: s } = await supabase.auth.getSession();
-    const accessToken = s.session?.access_token;
+    const refreshRes = await supabase.auth.refreshSession();
+    if (refreshRes.error) {
+      console.log("seed-users refreshSession error:", refreshRes.error.message);
+      return Alert.alert("Error", `No se pudo refrescar sesion: ${refreshRes.error.message}`);
+    }
+    const accessToken = refreshRes.data.session?.access_token;
     if (!accessToken) {
       return Alert.alert("Error", "No hay sesión activa (access token vacío).");
+    }
+    if (accessToken.split(".").length !== 3) {
+      console.log("seed-users invalid token format");
+      return Alert.alert("Error", "Token de sesión inválido. Cierra sesión y vuelve a ingresar.");
     }
 
     const baseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -611,6 +619,7 @@ export function AdminScreen() {
     if (!baseUrl || !anonKey) {
       return Alert.alert("Error", "Faltan EXPO_PUBLIC_SUPABASE_URL o EXPO_PUBLIC_SUPABASE_ANON_KEY");
     }
+    console.log("seed-users baseUrl:", baseUrl);
 
     const res = await fetch(`${baseUrl}/functions/v1/seed-users`, {
       method: "POST",
@@ -651,10 +660,18 @@ export function AdminScreen() {
   async function runQaCleanupUsers() {
     if (!qaTag.trim()) return Alert.alert("Error", "tag es obligatorio");
 
-    const { data: s } = await supabase.auth.getSession();
-    const accessToken = s.session?.access_token;
+    const refreshRes = await supabase.auth.refreshSession();
+    if (refreshRes.error) {
+      console.log("cleanup-seed-users refreshSession error:", refreshRes.error.message);
+      return Alert.alert("Error", `No se pudo refrescar sesion: ${refreshRes.error.message}`);
+    }
+    const accessToken = refreshRes.data.session?.access_token;
     if (!accessToken) {
       return Alert.alert("Error", "No hay sesión activa (access token vacío).");
+    }
+    if (accessToken.split(".").length !== 3) {
+      console.log("cleanup-seed-users invalid token format");
+      return Alert.alert("Error", "Token de sesión inválido. Cierra sesión y vuelve a ingresar.");
     }
 
     const baseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -662,6 +679,7 @@ export function AdminScreen() {
     if (!baseUrl || !anonKey) {
       return Alert.alert("Error", "Faltan EXPO_PUBLIC_SUPABASE_URL o EXPO_PUBLIC_SUPABASE_ANON_KEY");
     }
+    console.log("cleanup-seed-users baseUrl:", baseUrl);
 
     const res = await fetch(`${baseUrl}/functions/v1/cleanup-seed-users`, {
       method: "POST",
