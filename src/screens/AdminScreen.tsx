@@ -123,12 +123,6 @@ export function AdminScreen() {
   const [notifyCategoryId, setNotifyCategoryId] = useState("");
   const [notifyType, setNotifyType] = useState("MASS_NOTICE");
   const [notifyMessage, setNotifyMessage] = useState("");
-  const [qaCategoryId, setQaCategoryId] = useState("");
-  const [qaCount, setQaCount] = useState("8");
-  const [qaTag, setQaTag] = useState("rrtest");
-  const [qaSeedCountOk, setQaSeedCountOk] = useState<number | null>(null);
-  const [qaSeedEmails, setQaSeedEmails] = useState<string[]>([]);
-  const [qaCleanupCountDeleted, setQaCleanupCountDeleted] = useState<number | null>(null);
 
   async function loadData() {
     setLoading(true);
@@ -192,7 +186,6 @@ export function AdminScreen() {
     if (!categoryTournamentId && tRes.data?.[0]) setCategoryTournamentId(tRes.data[0].id);
     if (!selectedCategoryForRr && cRes.data?.[0]) setSelectedCategoryForRr(cRes.data[0].id);
     if (!notifyCategoryId && cRes.data?.[0]) setNotifyCategoryId(cRes.data[0].id);
-    if (!qaCategoryId && cRes.data?.[0]) setQaCategoryId(cRes.data[0].id);
     if (!selectedCourtForBlock && courtsRes.data?.[0]) setSelectedCourtForBlock(courtsRes.data[0].id);
     if (!selectedCourtForSchedule && courtsRes.data?.[0]) setSelectedCourtForSchedule(courtsRes.data[0].id);
     if (!selectedMatchForSchedule && mRes.data?.[0]) setSelectedMatchForSchedule(mRes.data[0].id);
@@ -592,126 +585,6 @@ export function AdminScreen() {
     setNotifyMessage("");
   }
 
-  async function runQaSeedUsers() {
-    const count = Number(qaCount);
-    if (!Number.isInteger(count) || count < 1) {
-      return Alert.alert("Error", "count debe ser un entero >= 1");
-    }
-    if (!qaCategoryId.trim()) return Alert.alert("Error", "category_id es obligatorio");
-    if (!qaTag.trim()) return Alert.alert("Error", "tag es obligatorio");
-
-    const refreshRes = await supabase.auth.refreshSession();
-    if (refreshRes.error) {
-      console.log("seed-users refreshSession error:", refreshRes.error.message);
-      return Alert.alert("Error", `No se pudo refrescar sesion: ${refreshRes.error.message}`);
-    }
-    const accessToken = refreshRes.data.session?.access_token;
-    if (!accessToken) {
-      return Alert.alert("Error", "No hay sesión activa (access token vacío).");
-    }
-    if (accessToken.split(".").length !== 3) {
-      console.log("seed-users invalid token format");
-      return Alert.alert("Error", "Token de sesión inválido. Cierra sesión y vuelve a ingresar.");
-    }
-
-    const baseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-    const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-    if (!baseUrl || !anonKey) {
-      return Alert.alert("Error", "Faltan EXPO_PUBLIC_SUPABASE_URL o EXPO_PUBLIC_SUPABASE_ANON_KEY");
-    }
-    console.log("seed-users baseUrl:", baseUrl);
-
-    const res = await fetch(`${baseUrl}/functions/v1/seed-users`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-        apikey: anonKey,
-      },
-      body: JSON.stringify({
-        count,
-        category_id: qaCategoryId.trim(),
-        password: "Test123456!",
-        tag: qaTag.trim(),
-      }),
-    });
-    const text = await res.text();
-
-    if (!res.ok) {
-      console.log("seed-users failed status:", res.status);
-      console.log("seed-users failed body:", text);
-      return Alert.alert("Seed error", `status=${res.status}\n${text}`);
-    }
-
-    let data: any = {};
-    try {
-      data = text ? JSON.parse(text) : {};
-    } catch {
-      data = {};
-    }
-
-    setQaSeedCountOk(Number(data.count_ok ?? 0));
-    setQaSeedEmails(Array.isArray(data.users) ? data.users.map((u: { email: string }) => String(u.email)) : []);
-    setQaCleanupCountDeleted(null);
-    Alert.alert("Listo", `Seed completado. count_ok=${data.count_ok ?? 0}`);
-    loadData();
-  }
-
-  async function runQaCleanupUsers() {
-    if (!qaTag.trim()) return Alert.alert("Error", "tag es obligatorio");
-
-    const refreshRes = await supabase.auth.refreshSession();
-    if (refreshRes.error) {
-      console.log("cleanup-seed-users refreshSession error:", refreshRes.error.message);
-      return Alert.alert("Error", `No se pudo refrescar sesion: ${refreshRes.error.message}`);
-    }
-    const accessToken = refreshRes.data.session?.access_token;
-    if (!accessToken) {
-      return Alert.alert("Error", "No hay sesión activa (access token vacío).");
-    }
-    if (accessToken.split(".").length !== 3) {
-      console.log("cleanup-seed-users invalid token format");
-      return Alert.alert("Error", "Token de sesión inválido. Cierra sesión y vuelve a ingresar.");
-    }
-
-    const baseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-    const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-    if (!baseUrl || !anonKey) {
-      return Alert.alert("Error", "Faltan EXPO_PUBLIC_SUPABASE_URL o EXPO_PUBLIC_SUPABASE_ANON_KEY");
-    }
-    console.log("cleanup-seed-users baseUrl:", baseUrl);
-
-    const res = await fetch(`${baseUrl}/functions/v1/cleanup-seed-users`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-        apikey: anonKey,
-      },
-      body: JSON.stringify({ tag: qaTag.trim() }),
-    });
-    const text = await res.text();
-
-    if (!res.ok) {
-      console.log("cleanup-seed-users failed status:", res.status);
-      console.log("cleanup-seed-users failed body:", text);
-      return Alert.alert("Cleanup error", `status=${res.status}\n${text}`);
-    }
-
-    let data: any = {};
-    try {
-      data = text ? JSON.parse(text) : {};
-    } catch {
-      data = {};
-    }
-
-    setQaCleanupCountDeleted(Number(data.count_deleted ?? 0));
-    setQaSeedCountOk(null);
-    setQaSeedEmails([]);
-    Alert.alert("Listo", `Cleanup completado. count_deleted=${data.count_deleted ?? 0}`);
-    loadData();
-  }
-
   if (loading) return <View style={styles.center}><Text>Cargando...</Text></View>;
   if (role !== "admin" && role !== "organizer") return <View style={styles.center}><Text>Sin permisos</Text></View>;
 
@@ -824,36 +697,6 @@ export function AdminScreen() {
           <Button title="Enviar aviso masivo" onPress={sendMassNotice} />
         </View>
 
-        <View style={styles.block}>
-          <Text style={styles.blockTitle}>QA Tools</Text>
-          <Text style={styles.text}>Solo para QA, borra con Cleanup.</Text>
-          <TextInput
-            style={styles.input}
-            value={qaCategoryId}
-            onChangeText={setQaCategoryId}
-            placeholder="category_id"
-          />
-          <TextInput
-            style={styles.input}
-            value={qaCount}
-            onChangeText={setQaCount}
-            placeholder="count"
-            keyboardType="numeric"
-          />
-          <TextInput style={styles.input} value={qaTag} onChangeText={setQaTag} placeholder="tag" />
-          <Button title="Seed users" onPress={runQaSeedUsers} />
-          <View style={{ height: 8 }} />
-          <Button title="Cleanup users" onPress={runQaCleanupUsers} />
-          {qaSeedCountOk !== null ? (
-            <Text style={styles.text}>count_ok: {qaSeedCountOk}</Text>
-          ) : null}
-          {qaSeedEmails.map((email) => (
-            <Text key={email} style={styles.text}>{email}</Text>
-          ))}
-          {qaCleanupCountDeleted !== null ? (
-            <Text style={styles.text}>count_deleted: {qaCleanupCountDeleted}</Text>
-          ) : null}
-        </View>
       </ScrollView>
 
       <Modal visible={!!editingMatch} transparent animationType="slide" onRequestClose={() => setEditingMatch(null)}>
