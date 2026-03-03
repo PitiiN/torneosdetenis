@@ -35,11 +35,17 @@ Archivo MVP de torneos/categorias/inscripciones:
 - `supabase/migrations/20260302113000_tournaments_mvp.sql`
 - `supabase/migrations/20260302123000_categories_price_fields.sql`
 - `supabase/migrations/20260302143000_manual_payment_proofs.sql`
+- `supabase/migrations/20260302163000_draws_matches_mvp.sql`
+- `supabase/migrations/20260302170000_round_robin_mvp.sql`
+- `supabase/migrations/20260302171000_scoring_audit_mvp.sql`
+- `supabase/migrations/20260302172000_scheduling_mvp.sql`
+- `supabase/migrations/20260302173000_notifications_outbox_mvp.sql`
+- `supabase/migrations/20260302180000_profiles_qa_tag.sql`
 
 Aplicacion sugerida:
 1. Abrir Supabase Dashboard -> SQL Editor.
 2. Copiar y ejecutar el contenido del archivo SQL.
-3. Verificar que existen tablas `tournaments`, `categories`, `registrations`, `payment_proofs` con RLS activo.
+3. Verificar que existen tablas `tournaments`, `categories`, `registrations`, `payment_proofs`, `draws`, `matches`, `rr_groups`, `rr_group_members`, `match_events`, `courts`, `court_blocks`, `schedules`, `notifications_outbox` con RLS activo.
 
 ## Precio por categoria (MVP manual)
 
@@ -57,6 +63,158 @@ Aplicacion sugerida:
   - admin/organizer ve todos los comprobantes.
 - Al aprobar desde Admin (`review_payment_proof`), la inscripcion asociada cambia a `registrations.status = ACTIVE`.
 
+## Draws MVP (single elimination)
+
+- Tablas:
+  - `draws` (1 draw por categoria)
+  - `matches` (round, match_number, slots, winner, score_json)
+- Generacion de cuadro en Admin:
+  - Ir a categoria y usar `Generar cuadro` (requiere inscritos `ACTIVE`).
+  - Seeding: ranking si existe en profile (`ranking`/`ranking_points`/`points`), si no por orden de inscripcion.
+  - Se crean matches de Round 1 y rondas siguientes con slots vacios.
+- Operacion de resultados:
+  - En Admin, `Editar match` -> seleccionar ganador + `score_json`.
+  - Al guardar, el ganador avanza automaticamente al slot correspondiente del siguiente match.
+- Player:
+  - En Torneos, vista lectura de cuadro por rondas y seccion de proximos matches.
+
+## Round Robin -> Eliminacion
+
+- En Admin:
+  - Seleccionar categoria, definir `Cantidad grupos` y `Top K`.
+  - `Generar RR` crea grupos (`rr_groups`), miembros (`rr_group_members`) y matches RR (`phase='RR'`).
+  - Cargar resultados de RR en `Editar match` hasta dejar todos en `FINAL`.
+  - `Cerrar fase de grupos` calcula standings con desempates:
+    - wins
+    - set_diff
+    - game_diff
+    - head_to_head (solo empate de 2)
+    - fallback deterministico por user_id para empates de 3+
+  - Luego genera fase ELIM (`phase='ELIM'`) en el mismo draw.
+
+## Scoring + Auditoria
+
+- `Editar match` usa UI guiada por sets (3 sets).
+- Validacion fuerte:
+  - Sets normales a 6 con tie-break.
+  - Opcion super tie-break en 3er set por categoria (`third_set_super_tiebreak`).
+  - ganador debe coincidir con el score.
+- Cada guardado inserta auditoria en `match_events`:
+  - `RESULT_EDITED`
+  - `WINNER_ADVANCED` cuando aplica en ELIM.
+
+## Scheduling + Estados de Cancha
+
+- Admin:
+  - Crear canchas (`courts`).
+  - Crear bloqueos (`court_blocks`).
+  - Asignar partido a cancha/hora y estado (`schedules`).
+- Player:
+  - En Torneos, `Mis proximos matches` muestra cancha/hora/estado.
+
+## Notificaciones Lite (Outbox)
+
+- Tabla `notifications_outbox` como cola de notificaciones.
+- Se encola automaticamente:
+  - cuando se crea/actualiza `schedules`
+  - cuando un comprobante cambia a `APPROVED`
+- Admin:
+  - `Enviar aviso masivo` inserta outbox por categoria.
+- Player:
+  - Tab `Notificaciones` muestra su outbox.
+
+## QA Seeding (Edge Functions)
+
+Funciones:
+- `seed-users`
+- `cleanup-seed-users`
+
+### Seguridad
+
+- Requieren `Authorization: Bearer <JWT>` valido.
+- Solo ejecutan si `profiles.role` es `admin` u `organizer`.
+- `SUPABASE_SERVICE_ROLE_KEY` se usa solo en Edge Function (server-side).
+- No usar service role en cliente mobile.
+
+### Secrets en Supabase
+
+En `Project Settings -> Edge Functions -> Secrets`:
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+### Deploy funciones (CLI)
+
+```bash
+supabase functions deploy seed-users
+supabase functions deploy cleanup-seed-users
+```
+
+### Curl: seed-users
+
+```bash
+curl -X POST "$SUPABASE_PROJECT_URL/functions/v1/seed-users" \
+  -H "Authorization: Bearer $ADMIN_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "count": 8,
+    "category_id": "<uuid>",
+    "password": "Test123456!",
+    "tag": "qa-seed"
+  }'
+```
+
+### Curl: cleanup-seed-users
+
+```bash
+curl -X POST "$SUPABASE_PROJECT_URL/functions/v1/cleanup-seed-users" \
+  -H "Authorization: Bearer $ADMIN_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{ "tag": "qa-seed" }'
+```
+
+### Scripts npm opcionales
+
+Variables de entorno:
+- `SUPABASE_PROJECT_URL`
+- `SUPABASE_ADMIN_JWT` (JWT de usuario admin/organizer)
+
+Crear users fake:
+```bash
+npm run seed:users -- --count 8 --category <id> --tag rrtest
+```
+
+Limpiar users fake:
+```bash
+npm run seed:cleanup -- --tag rrtest
+```
+
+### QA Tools en la app (Admin)
+
+- Ubicacion: tab `Admin` -> seccion `QA Tools`.
+- Visible solo para `profiles.role in ('admin','organizer')`.
+- Inputs:
+  - `category_id`
+  - `count` (default 8)
+  - `tag` (default rrtest)
+- Botones:
+  - `Seed users` -> invoca `seed-users` y muestra `count_ok` + emails creados.
+  - `Cleanup users` -> invoca `cleanup-seed-users` y muestra `count_deleted`.
+- Nota tecnica: QA Tools usa `fetch` directo a Edge Functions con headers `Authorization: Bearer <access_token>` y `apikey` (anon key).
+- Recordatorio visual en UI: `Solo para QA, borra con Cleanup`.
+
+## Smoke tests (10 pasos)
+
+1. Crear 1 torneo y 1 categoria desde Admin.
+2. Inscribir al menos 4 players y dejar sus `registrations` en `ACTIVE`.
+3. En Admin, generar RR con 2 grupos y `Top K = 2`.
+4. Verificar en Torneos que players ven grupos, standings y matches RR.
+5. Editar todos los matches RR a `FINAL` con score valido.
+6. Ejecutar `Cerrar fase de grupos` y verificar que aparece llave ELIM.
+7. Editar un match ELIM y confirmar avance automatico del winner al siguiente match.
+8. Crear una cancha, un bloqueo y un schedule para un match.
+9. Verificar en player `Mis proximos matches` la cancha/hora/estado.
+10. En Admin enviar aviso masivo y validar que player lo ve en tab `Notificaciones`.
+
 ## Ejecutar
 
 ```bash
@@ -67,6 +225,7 @@ npx expo start -c
 
 - Sin sesion: `LoginScreen`
 - Con sesion: tabs `Home`, `Torneos`, `Perfil`
+- Tab adicional: `Notificaciones`
 - Tab `Admin` visible solo si `profiles.role` es `admin` u `organizer`
 - `Torneos`: lista torneos/categorias y permite inscribirse en `PENDING_PAYMENT`
-- `Admin`: crear torneos, crear categorias y ver inscritos por categoria
+- `Admin`: RR->ELIM, scoring, scheduling, avisos masivos
