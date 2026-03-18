@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { colors, spacing, borderRadius } from '@/theme';
+import { useTheme, spacing, borderRadius } from '@/theme';
 
 interface Standing {
     name: string;
@@ -18,6 +18,9 @@ interface RoundRobinTableProps {
 }
 
 export const RoundRobinTable = ({ groupName, standings }: RoundRobinTableProps) => {
+    const { colors } = useTheme();
+    const styles = getStyles(colors);
+
     return (
         <View style={styles.container}>
             <View style={styles.header}>
@@ -39,7 +42,7 @@ export const RoundRobinTable = ({ groupName, standings }: RoundRobinTableProps) 
 
                 {standings.map((s, idx) => (
                     <View key={s.name} style={[styles.row, idx === standings.length - 1 && styles.lastRow]}>
-                        <View style={[styles.cell, styles.nameCell]}>
+                        <View style={[styles.cell, styles.nameCellComponent]}>
                             <View style={[styles.statusDot, s.isActive && styles.activeDot]} />
                             <Text style={styles.playerName}>{s.name}</Text>
                         </View>
@@ -55,7 +58,7 @@ export const RoundRobinTable = ({ groupName, standings }: RoundRobinTableProps) 
     );
 };
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         gap: spacing.md,
     },
@@ -67,10 +70,10 @@ const styles = StyleSheet.create({
     groupTitle: {
         fontSize: 18,
         fontWeight: '800',
-        color: '#fff',
+        color: colors.text,
     },
     liveBadge: {
-        backgroundColor: 'rgba(236, 91, 19, 0.15)',
+        backgroundColor: colors.primary[500] + '26', // 26 is ~15% opacity
         paddingHorizontal: 8,
         paddingVertical: 4,
         borderRadius: 4,
@@ -89,7 +92,7 @@ const styles = StyleSheet.create({
     },
     tableHeader: {
         flexDirection: 'row',
-        backgroundColor: 'rgba(255,255,255,0.03)',
+        backgroundColor: colors.text + '08', // very low opacity
         paddingVertical: spacing.md,
         borderBottomWidth: 1,
         borderBottomColor: colors.border,
@@ -106,6 +109,11 @@ const styles = StyleSheet.create({
         flex: 3,
         textAlign: 'left',
         paddingLeft: spacing.lg,
+    },
+    nameCellComponent: {
+        flex: 3,
+        textAlign: 'left',
+        paddingLeft: spacing.lg,
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
@@ -117,7 +125,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         paddingVertical: spacing.lg,
         borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255,255,255,0.05)',
+        borderBottomColor: colors.border,
         alignItems: 'center',
     },
     lastRow: {
@@ -140,7 +148,7 @@ const styles = StyleSheet.create({
         backgroundColor: colors.success,
     },
     playerName: {
-        color: '#fff',
+        color: colors.text,
         fontWeight: '700',
         fontSize: 14,
     },

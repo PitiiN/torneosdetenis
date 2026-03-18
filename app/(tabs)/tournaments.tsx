@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Dimensions, Image, ActivityIndicator, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius } from '@/theme';
+import { useTheme, spacing, borderRadius } from '@/theme';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/services/supabase';
@@ -11,6 +11,12 @@ import * as SecureStore from 'expo-secure-store';
 import { adminModeService } from '@/services/adminMode';
 
 const { width } = Dimensions.get('window');
+
+const YEARS = [2026, 2027, 2028, 2029, 2030];
+const MONTHS = [
+    'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 
+    'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'
+];
 
 interface Tournament {
     id: string;
@@ -50,6 +56,8 @@ const STATUS_DISPLAY: { [key: string]: string } = {
 export default function TorneosScreen() {
     const insets = useSafeAreaInsets();
     const router = useRouter();
+    const { colors } = useTheme();
+    const styles = getStyles(colors);
     const { orgId } = useLocalSearchParams<{ orgId: string }>();
     
     const [activeFilter, setActiveFilter] = useState('Próximos');
@@ -60,6 +68,8 @@ export default function TorneosScreen() {
 
     const [userEmail, setUserEmail] = useState<string | null>(null);
     const [userId, setUserId] = useState<string | null>(null);
+    const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+    const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
     const [userOrgId, setUserOrgId] = useState<string | null>(null);
     const [notifications, setNotifications] = useState<Array<{ id: string; title: string; body: string }>>([]);
     const [viewMode, setViewMode] = useState(adminModeService.getMode());
@@ -199,14 +209,22 @@ export default function TorneosScreen() {
 
     const filteredTournaments = tournaments.filter(t => {
         // Determine if tournament should be visible based on role and filter
-        const isVisibleToPlayer = ['open', 'ongoing', 'in_progress', 'completed', 'finalized'].includes(t.status);
+        const isVisibleToPlayer = ['open', 'ongoing', 'in_progress', 'completed', 'finalized', 'finished'].includes(t.status);
         
         // If not admin and not a visible status, hide
         if (!canManage && !isVisibleToPlayer) return false;
 
         if (activeFilter === 'Próximos') return t.status === 'open' || t.status === 'pending';
         if (activeFilter === 'En Curso') return t.status === 'ongoing' || t.status === 'in_progress';
-        if (activeFilter === 'Finalizados') return t.status === 'completed' || t.status === 'finalized';
+        if (activeFilter === 'Finalizados') {
+            const isFinalized = t.status === 'completed' || t.status === 'finalized' || t.status === 'finished';
+            if (!isFinalized) return false;
+
+            const tDate = new Date(t.start_date || '');
+            const yearMatch = tDate.getFullYear() === selectedYear;
+            const monthMatch = selectedMonth === null || tDate.getMonth() === selectedMonth;
+            return yearMatch && monthMatch;
+        }
         return true;
     });
 
@@ -216,11 +234,11 @@ export default function TorneosScreen() {
             <View style={[styles.header, { paddingTop: Math.max(insets.top, spacing.md) }]}>
                 <View style={styles.headerContent}>
                     <TouchableOpacity style={styles.iconButton} onPress={() => router.back()}>
-                        <Ionicons name="chevron-back" size={24} color="#fff" />
+                        <Ionicons name="chevron-back" size={24} color={colors.text} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle} numberOfLines={1}>{orgName}</Text>
                     <TouchableOpacity style={styles.iconButton} onPress={() => setIsNotificationsVisible(true)}>
-                        <Ionicons name="notifications-outline" size={24} color="#fff" />
+                        <Ionicons name="notifications-outline" size={24} color={colors.text} />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -267,13 +285,56 @@ export default function TorneosScreen() {
                     </View>
                 </View>
 
+                {activeFilter === 'Finalizados' && (
+                    <View style={styles.carouselContainer}>
+                        <ScrollView 
+                            horizontal 
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={styles.carouselScroll}
+                        >
+                            {YEARS.map(year => (
+                                <TouchableOpacity 
+                                    key={year} 
+                                    style={[styles.carouselItem, selectedYear === year && styles.carouselItemActive]}
+                                    onPress={() => setSelectedYear(year)}
+                                >
+                                    <Text style={[styles.carouselText, selectedYear === year && styles.carouselTextActive]}>{year}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                        
+                        <ScrollView 
+                            horizontal 
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={styles.carouselScroll}
+                            style={{ marginTop: spacing.xs }}
+                        >
+                            <TouchableOpacity 
+                                style={[styles.carouselItem, selectedMonth === null && styles.carouselItemActive]}
+                                onPress={() => setSelectedMonth(null)}
+                            >
+                                <Text style={[styles.carouselText, selectedMonth === null && styles.carouselTextActive]}>Todos</Text>
+                            </TouchableOpacity>
+                            {MONTHS.map((month, idx) => (
+                                <TouchableOpacity 
+                                    key={month} 
+                                    style={[styles.carouselItem, selectedMonth === idx && styles.carouselItemActive]}
+                                    onPress={() => setSelectedMonth(idx)}
+                                >
+                                    <Text style={[styles.carouselText, selectedMonth === idx && styles.carouselTextActive]}>{month}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                )}
+
                 {!orgId ? (
                     <View style={styles.emptyState}>
                         <Ionicons name="business-outline" size={64} color={colors.textTertiary} />
                         <Text style={styles.emptyText}>Por favor, selecciona una organización en la pestaña de Inicio para ver sus torneos.</Text>
                         <TouchableOpacity 
                             style={styles.backToHomeButton}
-                            onPress={() => router.replace('/(tabs)/index' as any)}
+                            onPress={() => router.replace('/(tabs)' as any)}
                         >
                             <Text style={styles.backToHomeText}>Ir a Inicio</Text>
                         </TouchableOpacity>
@@ -306,7 +367,7 @@ export default function TorneosScreen() {
                                         <Text style={styles.typeText}>{SURFACE_MAP[tournament.surface]?.toUpperCase() || tournament.surface.toUpperCase()}</Text>
                                     </View>
                                     <View style={[styles.statusBadge, { 
-                                        backgroundColor: tournament.status === 'open' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255,255,255,0.05)' 
+                                        backgroundColor: tournament.status === 'open' ? colors.success + '1A' : colors.surfaceSecondary 
                                     }]}>
                                         <Text style={[styles.statusText, { 
                                             color: tournament.status === 'open' ? colors.success : colors.textSecondary 
@@ -397,7 +458,7 @@ export default function TorneosScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
@@ -418,7 +479,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 18,
         fontWeight: '800',
-        color: '#fff',
+        color: colors.text,
         maxWidth: '70%',
     },
     iconButton: {
@@ -486,6 +547,36 @@ const styles = StyleSheet.create({
     filterButtonTextActive: {
         color: '#fff',
     },
+    carouselContainer: {
+        marginBottom: spacing.lg,
+        gap: spacing.sm,
+    },
+    carouselScroll: {
+        paddingRight: spacing.xl,
+        gap: spacing.xs,
+    },
+    carouselItem: {
+        paddingHorizontal: spacing.md,
+        paddingVertical: 8,
+        borderRadius: borderRadius.lg,
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.border,
+        minWidth: 70,
+        alignItems: 'center',
+    },
+    carouselItemActive: {
+        backgroundColor: colors.primary[500] + '20',
+        borderColor: colors.primary[500],
+    },
+    carouselText: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: colors.textSecondary,
+    },
+    carouselTextActive: {
+        color: colors.primary[500],
+    },
     sectionHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -495,7 +586,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 22,
         fontWeight: '900',
-        color: '#fff',
+        color: colors.text,
     },
     resultsCount: {
         fontSize: 12,
@@ -509,8 +600,8 @@ const styles = StyleSheet.create({
         backgroundColor: colors.surface,
         borderRadius: borderRadius['2xl'],
         padding: spacing.xl,
-        borderWidth: 2,
-        borderColor: '#fff',
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     cardHeader: {
         flexDirection: 'row',
@@ -518,7 +609,7 @@ const styles = StyleSheet.create({
         marginBottom: spacing.md,
     },
     typeBadge: {
-        backgroundColor: 'rgba(255,255,255,0.05)',
+        backgroundColor: colors.surfaceSecondary,
         paddingHorizontal: 8,
         paddingVertical: 4,
         borderRadius: 4,
@@ -558,7 +649,7 @@ const styles = StyleSheet.create({
     tournamentName: {
         fontSize: 18,
         fontWeight: '800',
-        color: '#fff',
+        color: colors.text,
         marginBottom: 4,
     },
     metaRow: {

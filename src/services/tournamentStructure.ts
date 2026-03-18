@@ -96,15 +96,18 @@ export const createInitialMatches = ({
   description,
   maxPlayers,
   participants = [],
+  modality,
 }: {
   tournamentId: string;
   format?: string | null;
   description?: string | null;
   maxPlayers: number;
   participants?: Array<{ id: string }>;
+  modality?: string | null;
 }) => {
   const normalizedFormat = normalizeTournamentFormat(format);
   const totalSlots = Math.max(2, maxPlayers || 2);
+  const isDobles = modality === 'dobles';
 
   if (normalizedFormat === 'round_robin') {
     const matches: any[] = [];
@@ -118,8 +121,10 @@ export const createInitialMatches = ({
         for (let j = i + 1; j < size; j++) {
           matches.push({
             tournament_id: tournamentId,
-            player_a_id: participants[startIndex + i]?.id || null,
-            player_b_id: participants[startIndex + j]?.id || null,
+            player_a_id: isDobles ? participants[(startIndex + i) * 2]?.id || null : participants[startIndex + i]?.id || null,
+            player_a2_id: isDobles ? participants[(startIndex + i) * 2 + 1]?.id || null : null,
+            player_b_id: isDobles ? participants[(startIndex + j) * 2]?.id || null : participants[startIndex + j]?.id || null,
+            player_b2_id: isDobles ? participants[(startIndex + j) * 2 + 1]?.id || null : null,
             round,
             round_number: 1,
             match_order: matchOrder++,
@@ -171,8 +176,14 @@ export const createInitialMatches = ({
       const firstRoundOffset = matchIndex * 2;
       matches.push({
         tournament_id: tournamentId,
-        player_a_id: roundIndex === 1 ? participants[firstRoundOffset]?.id || null : null,
-        player_b_id: roundIndex === 1 ? participants[firstRoundOffset + 1]?.id || null : null,
+        player_a_id: roundIndex === 1
+          ? (isDobles ? participants[firstRoundOffset * 2]?.id || null : participants[firstRoundOffset]?.id || null)
+          : null,
+        player_a2_id: (roundIndex === 1 && isDobles) ? participants[firstRoundOffset * 2 + 1]?.id || null : null,
+        player_b_id: roundIndex === 1
+          ? (isDobles ? participants[(firstRoundOffset + 1) * 2]?.id || null : participants[firstRoundOffset + 1]?.id || null)
+          : null,
+        player_b2_id: (roundIndex === 1 && isDobles) ? participants[(firstRoundOffset + 1) * 2 + 1]?.id || null : null,
         round: roundName,
         round_number: roundIndex,
         match_order: matchOrder++,

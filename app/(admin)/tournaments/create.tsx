@@ -2,13 +2,13 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Dimensions, KeyboardAvoidingView, Platform, Modal, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius } from '@/theme';
+import { useTheme, spacing, borderRadius } from '@/theme';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/services/supabase';
 import { DateField } from '@/components/DateField';
 import { buildTournamentDescription, buildTournamentFormatLabel, createInitialMatches, normalizeTournamentFormat } from '@/services/tournamentStructure';
-import { TOURNAMENT_CATEGORIES } from '@/constants/tournamentOptions';
+import { TOURNAMENT_CATEGORIES, CHILEAN_COMUNAS } from '@/constants/tournamentOptions';
 import { buildDescriptionWithRankingPoints, DEFAULT_RANKING_POINTS } from '@/services/ranking';
 import { adminModeService } from '@/services/adminMode';
 import { useEffect } from 'react';
@@ -25,10 +25,14 @@ const STATUS_MAP: { [key: string]: string } = {
     'No Publicado': 'draft'
 };
 
+// CHILEAN_COMUNAS is now imported from constants/tournamentOptions
+
 export default function CreateTournamentScreen() {
     const insets = useSafeAreaInsets();
     const router = useRouter();
     const { orgId } = useLocalSearchParams<{ orgId: string }>();
+    const { colors } = useTheme();
+    const styles = getStyles(colors);
 
     useEffect(() => {
         const checkAccess = async () => {
@@ -56,7 +60,7 @@ export default function CreateTournamentScreen() {
     }, [orgId]);
 
     const [tournamentName, setTournamentName] = useState('');
-    const [numPlayers, setNumPlayers] = useState('8');
+    const [numPlayers, setNumPlayers] = useState('');
     const [modality, setModality] = useState('singles');
     const [category, setCategory] = useState(CATEGORIES[0]);
     const [format, setFormat] = useState(FORMATS[0]);
@@ -65,7 +69,7 @@ export default function CreateTournamentScreen() {
     const [status, setStatus] = useState(STATUS_OPTIONS[0]);
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
-    const [registrationFee, setRegistrationFee] = useState('20000');
+    const [registrationFee, setRegistrationFee] = useState('');
     const [groupCount, setGroupCount] = useState('2');
     const [address, setAddress] = useState('');
     const [comuna, setComuna] = useState('');
@@ -87,6 +91,7 @@ export default function CreateTournamentScreen() {
     const [showSetTypeModal, setShowSetTypeModal] = useState(false);
     const [showSurfaceModal, setShowSurfaceModal] = useState(false);
     const [showStatusModal, setShowStatusModal] = useState(false);
+    const [showComunaModal, setShowComunaModal] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
 
     const searchPlayers = async (query: string) => {
@@ -316,7 +321,8 @@ export default function CreateTournamentScreen() {
                     surface: surface,
                     registration_fee: parseInt(registrationFee) || 0,
                     address: address,
-                    comuna: comuna
+                    comuna: comuna,
+                    modality: modality
                 })
                 .select()
                 .single();
@@ -346,7 +352,8 @@ export default function CreateTournamentScreen() {
                 format: tournamentFormat,
                 description: tournamentDescription,
                 maxPlayers: parseInt(numPlayers) || 2,
-                participants: players
+                participants: players,
+                modality: modality
             });
             if (initialMatches.length > 0) {
                 const { error: mError } = await supabase.from('matches').insert(initialMatches);
@@ -370,7 +377,7 @@ export default function CreateTournamentScreen() {
             <View style={[styles.header, { paddingTop: Math.max(insets.top, spacing.md) }]}>
                 <View style={styles.headerContent}>
                     <TouchableOpacity onPress={() => router.push({ pathname: '/(tabs)/tournaments', params: { orgId } })} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={24} color="#fff" />
+                        <Ionicons name="arrow-back" size={24} color={colors.text} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Nuevo Torneo</Text>
                     <View style={{ width: 40 }} />
@@ -448,13 +455,10 @@ export default function CreateTournamentScreen() {
                                 <Ionicons name="map-outline" size={18} color={colors.primary[500]} />
                                 <Text style={styles.label}>Comuna</Text>
                             </View>
-                            <TextInput
-                                style={styles.input}
-                                value={comuna}
-                                onChangeText={setComuna}
-                                placeholder="Ej. Las Condes"
-                                placeholderTextColor={colors.textTertiary}
-                            />
+                            <TouchableOpacity style={styles.dropdown} onPress={() => setShowComunaModal(true)}>
+                                <Text style={styles.dropdownText}>{comuna || 'Seleccionar comuna...'}</Text>
+                                <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+                            </TouchableOpacity>
                         </View>
 
                         {/* Num Players */}
@@ -702,6 +706,13 @@ export default function CreateTournamentScreen() {
                 onSelect={(val: string) => { setStatus(val); setShowStatusModal(false); }}
                 onClose={() => setShowStatusModal(false)}
             />
+            <SelectionModal
+                visible={showComunaModal}
+                title="Seleccionar Comuna"
+                options={CHILEAN_COMUNAS}
+                onSelect={(val: string) => { setComuna(val); setShowComunaModal(false); }}
+                onClose={() => setShowComunaModal(false)}
+            />
 
             {/* Modal de Búsqueda de Jugadores */}
             <Modal visible={showPlayerModal} animationType="slide" transparent={true}>
@@ -775,6 +786,8 @@ export default function CreateTournamentScreen() {
 
 // Helper Component
 function SelectionModal({ visible, title, options, onSelect, onClose }: any) {
+    const { colors } = useTheme();
+    const styles = getStyles(colors);
     return (
         <Modal visible={visible} transparent={true} animationType="fade">
             <View style={styles.modalOverlay}>
@@ -797,7 +810,8 @@ function SelectionModal({ visible, title, options, onSelect, onClose }: any) {
 }
 
 
-const styles = StyleSheet.create({
+function getStyles(colors: any) {
+    return StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
@@ -826,7 +840,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#fff',
+        color: colors.text,
     },
     scrollContent: {
         paddingBottom: 120,
@@ -876,7 +890,7 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: colors.border,
         paddingHorizontal: spacing.lg,
-        color: '#fff',
+        color: colors.text,
         fontSize: 16,
         fontWeight: '600',
     },
@@ -895,7 +909,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     selectOptionActive: {
-        backgroundColor: colors.primary[500],
+        backgroundColor: colors.primary[500] + '20',
         borderColor: colors.primary[500],
     },
     selectOptionText: {
@@ -904,7 +918,7 @@ const styles = StyleSheet.create({
         fontWeight: '700',
     },
     selectOptionTextActive: {
-        color: '#fff',
+        color: colors.primary[500],
     },
     dropdown: {
         height: 56,
@@ -918,12 +932,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     dropdownText: {
-        color: '#fff',
+        color: colors.text,
         fontSize: 16,
         fontWeight: '600',
     },
     playersSection: {
-        marginTop: spacing.md,
+        marginTop: spacing.xl,
     },
     sectionHeader: {
         flexDirection: 'row',
@@ -934,7 +948,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#fff',
+        color: colors.text,
     },
     countBadge: {
         backgroundColor: 'rgba(236, 91, 19, 0.1)',
@@ -979,7 +993,7 @@ const styles = StyleSheet.create({
         fontWeight: '800',
     },
     playerName: {
-        color: '#fff',
+        color: colors.text,
         fontSize: 14,
         fontWeight: '600',
     },
@@ -1026,7 +1040,7 @@ const styles = StyleSheet.create({
     modalTitle: {
         fontSize: 18,
         fontWeight: '800',
-        color: '#fff',
+        color: colors.text,
         marginBottom: spacing.lg,
     },
     modalOption: {
@@ -1035,7 +1049,7 @@ const styles = StyleSheet.create({
         borderBottomColor: colors.border,
     },
     modalOptionText: {
-        color: '#fff',
+        color: colors.text,
         fontSize: 16,
         fontWeight: '600',
     },
@@ -1044,7 +1058,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     modalCloseText: {
-        color: colors.textTertiary,
+        color: colors.primary[500],
         fontWeight: '700',
     },
     searchContainer: {
@@ -1058,7 +1072,7 @@ const styles = StyleSheet.create({
     searchBar: {
         flex: 1,
         height: 48,
-        color: '#fff',
+        color: colors.text,
         marginLeft: spacing.sm,
         fontSize: 14,
     },
@@ -1077,7 +1091,7 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     resultName: {
-        color: '#fff',
+        color: colors.text,
         fontSize: 14,
         fontWeight: '700',
     },
@@ -1119,7 +1133,8 @@ const styles = StyleSheet.create({
         fontWeight: '900',
         letterSpacing: 1,
     }
-});
+    });
+}
 
 
 

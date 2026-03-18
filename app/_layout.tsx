@@ -3,7 +3,7 @@ import { Slot, useRouter, useSegments } from 'expo-router';
 import { supabase } from '@/services/supabase';
 import { Session } from '@supabase/supabase-js';
 import { View, ActivityIndicator } from 'react-native';
-import { colors } from '@/theme';
+import { ThemeProvider, darkTheme } from '@/theme';
 
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null);
@@ -44,11 +44,15 @@ export default function RootLayout() {
 
   if (!initialized) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
-        <ActivityIndicator size="large" color={colors.primary[500]} />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: darkTheme.background }}>
+        <ActivityIndicator size="large" color={darkTheme.primary[500]} />
       </View>
     );
   }
 
-  return <Slot />;
+  return (
+    <ThemeProvider>
+      <Slot />
+    </ThemeProvider>
+  );
 }

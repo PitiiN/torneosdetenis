@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, spacing, borderRadius } from '@/theme';
+import { useTheme, spacing, borderRadius } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/services/supabase';
 import * as SecureStore from 'expo-secure-store';
@@ -19,6 +19,8 @@ const YEARS = [2026, 2027, 2028, 2029, 2030];
 export default function FinanceScreen() {
     const insets = useSafeAreaInsets();
     const router = useRouter();
+    const { colors } = useTheme();
+    const styles = getStyles(colors);
     const [loading, setLoading] = useState(true);
     const [organizationId, setOrganizationId] = useState<string | null>(null);
     const [organizationName, setOrganizationName] = useState('');
@@ -108,8 +110,8 @@ export default function FinanceScreen() {
     };
 
     return (
-        <View style={[styles.container, { paddingTop: insets.top }]}>
-            <View style={styles.header}>
+        <View style={styles.container}>
+            <View style={[styles.header, { paddingTop: Math.max(insets.top, spacing.md) }]}>
                 <Text style={styles.title}>Finanzas</Text>
                 <Text style={styles.subtitle}>{organizationName || 'Selecciona una organización en Inicio'}</Text>
             </View>
@@ -186,7 +188,7 @@ export default function FinanceScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
@@ -196,11 +198,12 @@ const styles = StyleSheet.create({
         paddingBottom: spacing.lg,
         borderBottomWidth: 1,
         borderBottomColor: colors.border,
+        backgroundColor: colors.background,
     },
     title: {
         fontSize: 28,
         fontWeight: '900',
-        color: '#fff',
+        color: colors.text,
     },
     subtitle: {
         color: colors.textSecondary,
@@ -260,7 +263,7 @@ const styles = StyleSheet.create({
         gap: spacing.md,
     },
     sectionTitle: {
-        color: '#fff',
+        color: colors.text,
         fontSize: 16,
         fontWeight: '800',
         marginBottom: spacing.xs,
@@ -289,7 +292,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     tournamentName: {
-        color: '#fff',
+        color: colors.text,
         fontSize: 15,
         fontWeight: '800',
     },

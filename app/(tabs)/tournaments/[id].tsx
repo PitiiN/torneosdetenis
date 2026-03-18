@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius } from '@/theme';
+import { useTheme, spacing, borderRadius } from '@/theme';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SingleEliminationBracket } from '@/components/brackets/SingleEliminationBracket';
 import { RoundRobinTable } from '@/components/brackets/RoundRobinTable';
@@ -15,6 +15,8 @@ const { width } = Dimensions.get('window');
 export default function TournamentDetailScreen() {
     const { id } = useLocalSearchParams();
     const insets = useSafeAreaInsets();
+    const { colors } = useTheme();
+    const styles = getStyles(colors);
     const router = useRouter();
     const [activeTab, setActiveTab] = useState('principal');
     const [tournament, setTournament] = useState<any>(null);
@@ -126,19 +128,24 @@ export default function TournamentDetailScreen() {
                 };
             }
 
+            const scoreStr = m.score || '';
+            const setScores = scoreStr.split(/\s*,\s*/).map((s: string) => s.split('-'));
+            
             roundsMap[roundNum].matches.push({
                 id: m.id,
                 player1: { 
                     name: m.player_a?.name || 'TBD', 
-                    score: m.score ? m.score.split(/\s*,\s*/)[0]?.split('-')[0] : undefined,
+                    scores: setScores.map((s: string[]) => s[0]).filter((s: string | undefined) => s !== undefined),
                     isWinner: m.winner_id === m.player_a_id && !!m.player_a_id 
                 },
                 player2: { 
                     name: m.player_b?.name || 'TBD', 
-                    score: m.score ? m.score.split(/\s*,\s*/)[0]?.split('-')[1] : undefined,
+                    scores: setScores.map((s: string[]) => s[1]).filter((s: string | undefined) => s !== undefined),
                     isWinner: m.winner_id === m.player_b_id && !!m.player_b_id 
                 },
-                status: m.status === 'finished' ? 'Finalizado' : (m.status === 'live' ? 'En Vivo' : 'Pendiente')
+                status: m.status === 'finished' ? 'Finalizado' : (m.status === 'live' ? 'En Vivo' : 'Pendiente'),
+                scheduledAt: m.scheduled_at,
+                court: m.court
             });
         });
 
@@ -197,7 +204,7 @@ export default function TournamentDetailScreen() {
             }, {} as Record<string, any[]>),
         [matches, roundRobinGroupNames]
     );
-    const finalsMatches = matches.filter(match => String(match.round || '').includes('RR'));
+    const finalsMatches = matches.filter(match => !String(match.round || '').includes('Grupo'));
 
     const createStandings = (groupName: string, groupMatches: any[]) => {
         const fallbackSlots = getRoundRobinSlots(tournamentMaxPlayers, groupName, tournamentFormat, tournament?.description);
@@ -253,11 +260,11 @@ export default function TournamentDetailScreen() {
             <View style={[styles.header, { paddingTop: Math.max(insets.top, spacing.md) }]}>
                 <View style={styles.headerContent}>
                     <TouchableOpacity onPress={() => router.back()} style={styles.iconButton}>
-                        <Ionicons name="arrow-back" size={24} color="#fff" />
+                        <Ionicons name="arrow-back" size={24} color={colors.text} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle} numberOfLines={1}>{tournament.name}</Text>
                     <TouchableOpacity style={styles.iconButton} onPress={loadTournamentData}>
-                        <Ionicons name="refresh-outline" size={24} color="#fff" />
+                        <Ionicons name="refresh-outline" size={24} color={colors.text} />
                     </TouchableOpacity>
                 </View>
 
@@ -375,10 +382,30 @@ export default function TournamentDetailScreen() {
                                     {`Proximos Partidos - Grupo ${currentGroupName}`}
                                 </Text>
                                 {(groupMatchesByName[currentGroupName] || []).map(match => (
-                                    <View key={match.id} style={styles.groupMatchRow}>
-                                        <Text style={styles.groupMatchName}>{match.player_a?.name || 'Por definir'}</Text>
-                                        <Text style={styles.groupMatchScore}>{match.score || 'VS'}</Text>
-                                        <Text style={styles.groupMatchName}>{match.player_b?.name || 'Por definir'}</Text>
+                                    <View key={match.id} style={{ gap: 4 }}>
+                                        <View style={styles.groupMatchRow}>
+                                            <Text style={styles.groupMatchName}>{match.player_a?.name || 'Por definir'}</Text>
+                                            <Text style={styles.groupMatchScore}>{match.score || 'VS'}</Text>
+                                            <Text style={styles.groupMatchName}>{match.player_b?.name || 'Por definir'}</Text>
+                                        </View>
+                                        {(match.scheduled_at || match.court) && (
+                                            <View style={{ flexDirection: 'row', justifyContent: 'center', gap: spacing.lg, marginBottom: spacing.sm }}>
+                                                {match.scheduled_at && (
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                        <Ionicons name="time-outline" size={12} color={colors.textTertiary} />
+                                                        <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '600' }}>
+                                                            {new Date(match.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        </Text>
+                                                    </View>
+                                                )}
+                                                {match.court && (
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                        <Ionicons name="location-outline" size={12} color={colors.textTertiary} />
+                                                        <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '600' }}>{match.court}</Text>
+                                                    </View>
+                                                )}
+                                            </View>
+                                        )}
                                     </View>
                                 ))}
                             </View>
@@ -403,7 +430,7 @@ export default function TournamentDetailScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
@@ -424,7 +451,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#fff',
+        color: colors.text,
         flex: 1,
         textAlign: 'center',
     },
@@ -488,7 +515,7 @@ const styles = StyleSheet.create({
     infoTitle: {
         fontSize: 16,
         fontWeight: '800',
-        color: '#fff',
+        color: colors.text,
     },
     infoSubtitle: {
         fontSize: 13,
@@ -513,7 +540,7 @@ const styles = StyleSheet.create({
     groupMatchesTitle: {
         fontSize: 16,
         fontWeight: '800',
-        color: '#fff',
+        color: colors.text,
     },
     groupMatchRow: {
         flexDirection: 'row',

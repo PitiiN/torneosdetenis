@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Image } from 'react-native';
-import { colors, spacing, borderRadius } from '@/theme';
+import { useTheme, spacing, borderRadius } from '@/theme';
 
 interface FinalMatch {
     title: string;
@@ -19,6 +19,9 @@ interface TournamentFinalsProps {
 }
 
 export const TournamentFinals = ({ summary, matches }: TournamentFinalsProps) => {
+    const { colors } = useTheme();
+    const styles = getStyles(colors);
+
     return (
         <View style={styles.container}>
             {/* Summary */}
@@ -88,7 +91,7 @@ export const TournamentFinals = ({ summary, matches }: TournamentFinalsProps) =>
     );
 };
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         gap: spacing.xl,
         paddingHorizontal: spacing.xl,
@@ -126,12 +129,12 @@ const styles = StyleSheet.create({
     summaryName: {
         fontSize: 14,
         fontWeight: '700',
-        color: '#fff',
+        color: colors.text,
     },
     sectionTitle: {
         fontSize: 20,
         fontWeight: '900',
-        color: '#fff',
+        color: colors.text,
     },
     matchesList: {
         gap: spacing.lg,
@@ -159,7 +162,7 @@ const styles = StyleSheet.create({
         letterSpacing: 1,
     },
     regularFinalBadge: {
-        backgroundColor: 'rgba(255,255,255,0.05)',
+        backgroundColor: colors.text + '0D', // 0D is ~5% opacity
         paddingVertical: 4,
     },
     regularFinalText: {
@@ -188,7 +191,7 @@ const styles = StyleSheet.create({
         marginBottom: 4,
     },
     matchPlayerName: {
-        color: '#fff',
+        color: colors.text,
         fontSize: 14,
         fontWeight: '700',
         textAlign: 'center',

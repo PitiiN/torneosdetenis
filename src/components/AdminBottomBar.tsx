@@ -2,27 +2,28 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-nati
 import { useRouter, usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, spacing, borderRadius } from '@/theme';
+import { useTheme, spacing, borderRadius } from '@/theme';
 
 const QUICK_ACTIONS = [
-    { icon: 'home-outline', label: 'Inicio', color: colors.primary[500], route: '/(tabs)/index' },
-    { icon: 'trophy-outline', label: 'Torneos', color: colors.primary[500], route: '/(tabs)/tournaments' },
-    { icon: 'people-outline', label: 'Ranking', color: colors.primary[500], route: '/(tabs)/players' },
-    { icon: 'card-outline', label: 'Finanzas', color: colors.primary[500], route: '/(tabs)/finance' },
-    { icon: 'settings-outline', label: 'Config', color: colors.primary[500], route: '/(tabs)/settings' },
-    { icon: 'person-outline', label: 'Perfil', color: colors.primary[500], route: '/(tabs)/profile' },
+    { icon: 'home-outline', label: 'Inicio', route: '/(tabs)/index' },
+    { icon: 'trophy-outline', label: 'Torneos', route: '/(tabs)/tournaments' },
+    { icon: 'people-outline', label: 'Ranking', route: '/(tabs)/players' },
+    { icon: 'card-outline', label: 'Finanzas', route: '/(tabs)/finance' },
+    { icon: 'settings-outline', label: 'Config', route: '/(tabs)/settings' },
+    { icon: 'person-outline', label: 'Perfil', route: '/(tabs)/profile' },
 ];
 
 export default function AdminBottomBar() {
     const router = useRouter();
     const pathname = usePathname();
     const insets = useSafeAreaInsets();
+    const { colors } = useTheme();
+    const styles = getStyles(colors);
 
     const tabs = QUICK_ACTIONS.map(action => ({
         icon: action.icon,
         label: action.label,
         href: action.route,
-        color: action.color,
     }));
 
     return (
@@ -69,7 +70,7 @@ export default function AdminBottomBar() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         backgroundColor: colors.surface,
         borderTopWidth: 1,

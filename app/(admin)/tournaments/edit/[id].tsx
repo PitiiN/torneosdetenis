@@ -1,33 +1,60 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, ActivityIndicator, Alert, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { colors, spacing, borderRadius } from '@/theme';
+import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { DateField } from '@/components/DateField';
 import { buildTournamentDescription, buildTournamentFormatLabel, createInitialMatches, getRoundRobinGroupCount, normalizeTournamentFormat } from '@/services/tournamentStructure';
+import { TOURNAMENT_CATEGORIES, CHILEAN_COMUNAS, TOURNAMENT_SURFACES, TOURNAMENT_SET_TYPES } from '@/constants/tournamentOptions';
 
 export default function EditTournamentScreen() {
     const { id } = useLocalSearchParams();
     const insets = useSafeAreaInsets();
     const router = useRouter();
+    const { colors } = useTheme();
+    const styles = getStyles(colors);
 
     const [tournamentName, setTournamentName] = useState('');
     const [status, setStatus] = useState('draft');
-    const [level, setLevel] = useState('beginner');
-    const [surface, setSurface] = useState('clay');
+    const [level, setLevel] = useState(TOURNAMENT_CATEGORIES[0]);
+    const [surface, setSurface] = useState(TOURNAMENT_SURFACES[0]);
     const [maxPlayers, setMaxPlayers] = useState('8');
     const [format, setFormat] = useState('Eliminación Directa');
-    const [setType, setSetType] = useState('Al mejor de 3 Sets');
+    const [setType, setSetType] = useState(TOURNAMENT_SET_TYPES[0]);
     const [groupCount, setGroupCount] = useState('2');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [registrationFee, setRegistrationFee] = useState('0');
+    const [address, setAddress] = useState('');
+    const [comuna, setComuna] = useState('');
     const [tournamentData, setTournamentData] = useState<any>(null);
 
     const [isLoading, setIsLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // Modal states
+    const [showComunaModal, setShowComunaModal] = useState(false);
+    const [showCategoryModal, setShowCategoryModal] = useState(false);
+    const [showSurfaceModal, setShowSurfaceModal] = useState(false);
+    const [showSetTypeModal, setShowSetTypeModal] = useState(false);
+    const [showStatusModal, setShowStatusModal] = useState(false);
+    const [showFormatModal, setShowFormatModal] = useState(false);
+
+    const STATUS_OPTIONS = ['No Publicado', 'Publicado', 'En Progreso', 'Finalizado'];
+    const STATUS_MAP_TO_UI: { [key: string]: string } = {
+        'draft': 'No Publicado',
+        'open': 'Publicado',
+        'in_progress': 'En Progreso',
+        'finished': 'Finalizado'
+    };
+    const STATUS_MAP_TO_DB: { [key: string]: string } = {
+        'No Publicado': 'draft',
+        'Publicado': 'open',
+        'En Progreso': 'in_progress',
+        'Finalizado': 'finished'
+    };
 
     useEffect(() => {
         if (!id || id === 'undefined') return;
@@ -45,16 +72,18 @@ export default function EditTournamentScreen() {
 
             setTournamentData(data);
             setTournamentName(data.name || '');
-            setStatus(data.status || 'draft');
-            setLevel(data.level || 'beginner');
-            setSurface(data.surface || 'clay');
+            setStatus(STATUS_MAP_TO_UI[data.status] || 'No Publicado');
+            setLevel(data.level || TOURNAMENT_CATEGORIES[0]);
+            setSurface(data.surface || TOURNAMENT_SURFACES[0]);
             setMaxPlayers(String(data.max_players || '8'));
             setFormat(normalizeTournamentFormat(data.format) === 'round_robin' ? 'Round Robin' : (data.format || 'Eliminación Directa'));
-            setSetType(data.set_type || 'Al mejor de 3 Sets');
+            setSetType(data.set_type || TOURNAMENT_SET_TYPES[0]);
             setGroupCount(String(getRoundRobinGroupCount(data.format, data.description)));
             setStartDate(data.start_date || '');
             setEndDate(data.end_date || '');
             setRegistrationFee(String(data.registration_fee || '0'));
+            setAddress(data.address || '');
+            setComuna(data.comuna || '');
         } catch (error) {
             console.error('Error loading tournament:', error);
             Alert.alert('Error', 'No se pudo cargar el torneo');
@@ -84,7 +113,7 @@ export default function EditTournamentScreen() {
                 .from('tournaments')
                 .update({
                     name: tournamentName,
-                    status,
+                    status: STATUS_MAP_TO_DB[status] || 'draft',
                     level,
                     surface,
                     format: tournamentFormat,
@@ -93,7 +122,9 @@ export default function EditTournamentScreen() {
                     max_players: maxPlayersValue,
                     start_date: startDate,
                     end_date: endDate,
-                    registration_fee: parseInt(registrationFee) || 0
+                    registration_fee: parseInt(registrationFee) || 0,
+                    address: address,
+                    comuna: comuna
                 })
                 .eq('id', id);
 
@@ -142,34 +173,6 @@ export default function EditTournamentScreen() {
         }
     };
 
-    const renderPicker = (label: string, icon: any, value: string, setValue: (val: string) => void, options: { label: string, value: string }[]) => (
-        <View style={styles.inputGroup}>
-            <Text style={styles.label}>
-                <Ionicons name={icon} size={18} color={colors.primary[500]} />
-                {' '}{label}
-            </Text>
-            <View style={styles.pickerContainer}>
-                {options.map((opt) => (
-                    <TouchableOpacity
-                        key={opt.value}
-                        style={[
-                            styles.pickerOption,
-                            value === opt.value && styles.pickerOptionActive
-                        ]}
-                        onPress={() => setValue(opt.value)}
-                    >
-                        <Text style={[
-                            styles.pickerOptionText,
-                            value === opt.value && styles.pickerOptionTextActive
-                        ]}>
-                            {opt.label}
-                        </Text>
-                    </TouchableOpacity>
-                ))}
-            </View>
-        </View>
-    );
-
     if (isLoading) {
         return (
             <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -190,6 +193,7 @@ export default function EditTournamentScreen() {
 
             <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
                 <View style={styles.formSection}>
+                    {/* Name */}
                     <View style={styles.inputGroup}>
                         <Text style={styles.label}>
                             <Ionicons name="text" size={18} color={colors.primary[500]} />
@@ -204,6 +208,23 @@ export default function EditTournamentScreen() {
                         />
                     </View>
 
+                    {/* Registration Fee */}
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>
+                            <Ionicons name="cash-outline" size={18} color={colors.primary[500]} />
+                            {' '}Valor de Inscripción ($)
+                        </Text>
+                        <TextInput
+                            style={styles.textInput}
+                            value={registrationFee}
+                            onChangeText={setRegistrationFee}
+                            keyboardType="numeric"
+                            placeholder="Ej. 20000"
+                            placeholderTextColor={colors.textTertiary}
+                        />
+                    </View>
+
+                    {/* Max Players */}
                     <View style={styles.inputGroup}>
                         <Text style={styles.label}>
                             <Ionicons name="people" size={18} color={colors.primary[500]} />
@@ -219,15 +240,48 @@ export default function EditTournamentScreen() {
                         />
                     </View>
 
+                    {/* Address */}
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>
+                            <Ionicons name="location-outline" size={18} color={colors.primary[500]} />
+                            {' '}Dirección
+                        </Text>
+                        <TextInput
+                            style={styles.textInput}
+                            value={address}
+                            onChangeText={setAddress}
+                            placeholder="Ej. Avenida Principal 123"
+                            placeholderTextColor={colors.textTertiary}
+                        />
+                    </View>
+
+                    {/* Comuna */}
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>
+                            <Ionicons name="map-outline" size={18} color={colors.primary[500]} />
+                            {' '}Comuna
+                        </Text>
+                        <TouchableOpacity style={styles.dropdown} onPress={() => setShowComunaModal(true)}>
+                            <Text style={styles.dropdownText}>{comuna || 'Seleccionar comuna...'}</Text>
+                            <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+                        </TouchableOpacity>
+                    </View>
+
                     <DateField label="Fecha de Inicio" value={startDate} onChange={setStartDate} />
 
                     <DateField label="Fecha de Fin" value={endDate} onChange={setEndDate} />
 
-                    {renderPicker('Formato del Torneo', 'grid-outline', format, setFormat, [
-                        { label: 'Eliminación Directa', value: 'Eliminación Directa' },
-                        { label: 'Round Robin', value: 'Round Robin' },
-                        { label: 'Eliminación Directa con Repechaje', value: 'Eliminación Directa con Repechaje' }
-                    ])}
+                    {/* Format */}
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>
+                            <Ionicons name="grid-outline" size={18} color={colors.primary[500]} />
+                            {' '}Formato del Torneo
+                        </Text>
+                        <TouchableOpacity style={styles.dropdown} onPress={() => setShowFormatModal(true)}>
+                            <Text style={styles.dropdownText}>{format}</Text>
+                            <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+                        </TouchableOpacity>
+                    </View>
 
                     {normalizeTournamentFormat(format) === 'round_robin' && (
                         <View style={styles.inputGroup}>
@@ -246,36 +300,53 @@ export default function EditTournamentScreen() {
                         </View>
                     )}
 
-                    {renderPicker('Tipo de Sets', 'albums-outline', setType, setSetType, [
-                        { label: 'Al mejor de 3 Sets', value: 'Al mejor de 3 Sets' },
-                        { label: 'Set Corto', value: 'Set Corto' },
-                        { label: 'Al mejor de 5 Sets', value: 'Al mejor de 5 Sets' }
-                    ])}
+                    {/* Set Type */}
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>
+                            <Ionicons name="time-outline" size={18} color={colors.primary[500]} />
+                            {' '}Tipo de Sets
+                        </Text>
+                        <TouchableOpacity style={styles.dropdown} onPress={() => setShowSetTypeModal(true)}>
+                            <Text style={styles.dropdownText}>{setType}</Text>
+                            <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+                        </TouchableOpacity>
+                    </View>
 
-                    {renderPicker('Estado de PublicaciÃ³n', 'eye', status, setStatus, [
-                        { label: 'No Publicado', value: 'draft' },
-                        { label: 'Publicado', value: 'open' },
-                        { label: 'En Progreso', value: 'in_progress' },
-                        { label: 'Finalizado', value: 'finished' }
-                    ])}
+                    {/* Category */}
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>
+                            <Ionicons name="podium" size={18} color={colors.primary[500]} />
+                            {' '}Categoría
+                        </Text>
+                        <TouchableOpacity style={styles.dropdown} onPress={() => setShowCategoryModal(true)}>
+                            <Text style={styles.dropdownText}>{level}</Text>
+                            <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+                        </TouchableOpacity>
+                    </View>
 
-                    {renderPicker('Categoría', 'podium', level, setLevel, [
-                        { label: 'Escalafón', value: 'Escalafón' },
-                        { label: 'Honor', value: 'Honor' },
-                        { label: '1ra', value: '1ra' },
-                        { label: '2da', value: '2da' },
-                        { label: '3ra', value: '3ra' },
-                        { label: '4ta', value: '4ta' },
-                        { label: '5ta', value: '5ta' },
-                        { label: 'Inicial', value: 'Inicial' }
-                    ])}
+                    {/* Surface */}
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>
+                            <Ionicons name="tennisball" size={18} color={colors.primary[500]} />
+                            {' '}Superficie
+                        </Text>
+                        <TouchableOpacity style={styles.dropdown} onPress={() => setShowSurfaceModal(true)}>
+                            <Text style={styles.dropdownText}>{surface}</Text>
+                            <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+                        </TouchableOpacity>
+                    </View>
 
-                    {renderPicker('Superficie', 'tennisball', surface, setSurface, [
-                        { label: 'Arcilla', value: 'Arcilla' },
-                        { label: 'Dura', value: 'Dura' },
-                        { label: 'Césped', value: 'Césped' },
-                        { label: 'Carpeta', value: 'Carpeta' }
-                    ])}
+                    {/* Status */}
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>
+                            <Ionicons name="eye" size={18} color={colors.primary[500]} />
+                            {' '}Estado de Publicación
+                        </Text>
+                        <TouchableOpacity style={styles.dropdown} onPress={() => setShowStatusModal(true)}>
+                            <Text style={styles.dropdownText}>{status}</Text>
+                            <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </ScrollView>
 
@@ -295,11 +366,81 @@ export default function EditTournamentScreen() {
                     )}
                 </TouchableOpacity>
             </View>
+
+            {/* Modals */}
+            <SelectionModal
+                visible={showComunaModal}
+                title="Seleccionar Comuna"
+                options={CHILEAN_COMUNAS}
+                onSelect={(val: string) => { setComuna(val); setShowComunaModal(false); }}
+                onClose={() => setShowComunaModal(false)}
+            />
+            <SelectionModal
+                visible={showCategoryModal}
+                title="Seleccionar Categoría"
+                options={TOURNAMENT_CATEGORIES}
+                onSelect={(val: string) => { setLevel(val); setShowCategoryModal(false); }}
+                onClose={() => setShowCategoryModal(false)}
+            />
+            <SelectionModal
+                visible={showFormatModal}
+                title="Formato de Torneo"
+                options={['Eliminación Directa', 'Round Robin', 'Eliminación Directa con Repechaje']}
+                onSelect={(val: string) => { setFormat(val); setShowFormatModal(false); }}
+                onClose={() => setShowFormatModal(false)}
+            />
+            <SelectionModal
+                visible={showSetTypeModal}
+                title="Tipo de Sets"
+                options={TOURNAMENT_SET_TYPES}
+                onSelect={(val: string) => { setSetType(val); setShowSetTypeModal(false); }}
+                onClose={() => setShowSetTypeModal(false)}
+            />
+            <SelectionModal
+                visible={showSurfaceModal}
+                title="Seleccionar Superficie"
+                options={TOURNAMENT_SURFACES}
+                onSelect={(val: string) => { setSurface(val); setShowSurfaceModal(false); }}
+                onClose={() => setShowSurfaceModal(false)}
+            />
+            <SelectionModal
+                visible={showStatusModal}
+                title="Estado del Torneo"
+                options={STATUS_OPTIONS}
+                onSelect={(val: string) => { setStatus(val); setShowStatusModal(false); }}
+                onClose={() => setShowStatusModal(false)}
+            />
         </View>
     );
 }
 
-const styles = StyleSheet.create({
+// Helper Component
+function SelectionModal({ visible, title, options, onSelect, onClose }: any) {
+    const { colors } = useTheme();
+    const styles = getStyles(colors);
+    return (
+        <Modal visible={visible} transparent={true} animationType="fade">
+            <View style={styles.modalOverlay}>
+                <View style={styles.modalContent}>
+                    <Text style={styles.modalTitle}>{title}</Text>
+                    <ScrollView>
+                        {options.map((opt: string) => (
+                            <TouchableOpacity key={opt} style={styles.modalOption} onPress={() => onSelect(opt)}>
+                                <Text style={styles.modalOptionText}>{opt}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                    <TouchableOpacity style={styles.modalClose} onPress={onClose}>
+                        <Text style={styles.modalCloseText}>Cancelar</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </Modal>
+    );
+}
+
+function getStyles(colors: any) {
+    return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
     header: {
         flexDirection: 'row',
@@ -316,7 +457,7 @@ const styles = StyleSheet.create({
     scrollContent: { padding: spacing.xl },
     formSection: { gap: spacing.xl },
     inputGroup: { gap: spacing.sm },
-    label: { fontSize: 16, fontWeight: '600', color: colors.text, marginBottom: spacing.xs },
+    label: { fontSize: 16, fontWeight: '600', color: colors.text, marginBottom: spacing.xs, alignItems: 'center' },
     textInput: {
         backgroundColor: colors.surface,
         borderWidth: 1,
@@ -326,21 +467,22 @@ const styles = StyleSheet.create({
         color: colors.text,
         fontSize: 16,
     },
-    pickerContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-    pickerOption: {
-        paddingHorizontal: spacing.sm,
-        paddingVertical: spacing.sm,
-        borderRadius: borderRadius.md,
+    dropdown: {
+        height: 56,
+        backgroundColor: colors.surface,
+        borderRadius: borderRadius.lg,
         borderWidth: 1,
         borderColor: colors.border,
-        backgroundColor: colors.surface,
+        paddingHorizontal: spacing.md,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
     },
-    pickerOptionActive: {
-        backgroundColor: colors.primary[500] + '20',
-        borderColor: colors.primary[500],
+    dropdownText: {
+        color: colors.text,
+        fontSize: 16,
+        fontWeight: '500',
     },
-    pickerOptionText: { color: colors.textSecondary, fontSize: 14, fontWeight: '500' },
-    pickerOptionTextActive: { color: colors.primary[500], fontWeight: '700' },
     bottomBar: {
         padding: spacing.xl,
         backgroundColor: colors.surface,
@@ -358,8 +500,43 @@ const styles = StyleSheet.create({
     },
     submitBtnDisabled: { opacity: 0.5 },
     submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-});
-
-
-
-
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: spacing.xl,
+    },
+    modalContent: {
+        width: '100%',
+        backgroundColor: colors.surface,
+        borderRadius: borderRadius['2xl'],
+        padding: spacing.xl,
+        maxHeight: '60%',
+    },
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: colors.text,
+        marginBottom: spacing.lg,
+    },
+    modalOption: {
+        paddingVertical: spacing.lg,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+    },
+    modalOptionText: {
+        color: colors.text,
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    modalClose: {
+        marginTop: spacing.xl,
+        alignItems: 'center',
+    },
+    modalCloseText: {
+        color: colors.primary[500],
+        fontWeight: '700',
+    },
+    });
+}

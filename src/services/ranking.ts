@@ -28,11 +28,15 @@ export const buildDescriptionWithRankingPoints = (
   return [baseDescription, `[RANKING_POINTS:${encodedPoints}]`].filter(Boolean).join(' ').trim();
 };
 
-export const getMatchLoserId = (match: any) => {
-  if (!match?.winner_id) return null;
-  if (match.winner_id === match.player_a_id) return match.player_b_id || null;
-  if (match.winner_id === match.player_b_id) return match.player_a_id || null;
-  return null;
+export const getMatchLoserIds = (match: any) => {
+  if (!match?.winner_id) return { l1: null, l2: null };
+  if (match.winner_id === match.player_a_id) {
+    return { l1: match.player_b_id || null, l2: match.player_b2_id || null };
+  }
+  if (match.winner_id === match.player_b_id) {
+    return { l1: match.player_a_id || null, l2: match.player_a2_id || null };
+  }
+  return { l1: null, l2: null };
 };
 
 export const getTournamentPlacements = (tournament: any, matches: any[]) => {
@@ -44,19 +48,21 @@ export const getTournamentPlacements = (tournament: any, matches: any[]) => {
     matches.find(match => String(match.round || '').includes('3er y 4to Puesto RR')) ||
     matches.find(match => String(match.round || '').includes('3er y 4to'));
 
-  const placements: Array<{ playerId: string; place: string; points: number }> = [];
+  const placements: Array<{ playerId: string; playerId2?: string; place: string; points: number }> = [];
 
   if (finalMatch?.winner_id) {
     placements.push({
       playerId: finalMatch.winner_id,
+      playerId2: finalMatch.winner_2_id || undefined,
       place: '1',
       points: pointsMap['1'] || 0,
     });
 
-    const finalLoserId = getMatchLoserId(finalMatch);
-    if (finalLoserId) {
+    const { l1, l2 } = getMatchLoserIds(finalMatch);
+    if (l1) {
       placements.push({
-        playerId: finalLoserId,
+        playerId: l1,
+        playerId2: l2 || undefined,
         place: '2',
         points: pointsMap['2'] || 0,
       });
@@ -66,14 +72,16 @@ export const getTournamentPlacements = (tournament: any, matches: any[]) => {
   if (thirdPlaceMatch?.winner_id) {
     placements.push({
       playerId: thirdPlaceMatch.winner_id,
+      playerId2: thirdPlaceMatch.winner_2_id || undefined,
       place: '3',
       points: pointsMap['3'] || 0,
     });
 
-    const thirdLoserId = getMatchLoserId(thirdPlaceMatch);
-    if (thirdLoserId) {
+    const { l1, l2 } = getMatchLoserIds(thirdPlaceMatch);
+    if (l1) {
       placements.push({
-        playerId: thirdLoserId,
+        playerId: l1,
+        playerId2: l2 || undefined,
         place: '4',
         points: pointsMap['4'] || 0,
       });

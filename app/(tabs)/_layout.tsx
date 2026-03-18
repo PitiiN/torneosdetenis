@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '@/theme';
+import { useTheme } from '@/theme';
 import { BlurView } from 'expo-blur';
 import { Platform, View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,6 +12,7 @@ const GLOBAL_ADMIN_EMAIL = 'javier.aravena25@gmail.com';
 
 export default function TabsLayout() {
     const insets = useSafeAreaInsets();
+    const { colors } = useTheme();
     const [role, setRole] = useState<string | null>(null);
     const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
     const [viewMode, setViewMode] = useState(adminModeService.getMode());
@@ -41,6 +42,7 @@ export default function TabsLayout() {
     }, []);
 
     const isAdmin = (role === 'admin' || isGlobalAdmin) && viewMode === 'admin';
+    const styles = getStyles(colors);
     
     return (
     <Tabs
@@ -52,7 +54,7 @@ export default function TabsLayout() {
             { 
                 height: 65 + insets.bottom, 
                 paddingBottom: insets.bottom > 0 ? insets.bottom : 10,
-                backgroundColor: colors.surface // Solid background
+                backgroundColor: colors.surface // Dynamic background
             }
         ],
         tabBarActiveTintColor: colors.primary[500],
@@ -136,7 +138,7 @@ export default function TabsLayout() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
   tabBar: {
     borderTopWidth: 1,
     borderTopColor: colors.border,
@@ -148,5 +150,6 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
     marginTop: -4,
+    color: colors.textTertiary,
   },
 });

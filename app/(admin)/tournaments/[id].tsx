@@ -4,14 +4,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/services/supabase';
-import { colors, spacing, borderRadius } from '@/theme';
+import { useTheme, spacing, borderRadius } from '@/theme';
 import { FlatList, KeyboardAvoidingView, Platform } from 'react-native';
 import { createInitialMatches, getRoundRobinGroupNames, getRoundRobinSlots, getSetsToShow, hasConsolationBracket, isRoundRobinFormat } from '@/services/tournamentStructure';
+import { DateField } from '@/components/DateField';
 
 export default function AdminTournamentDetailScreen() {
     const { id } = useLocalSearchParams();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { colors } = useTheme();
+    const styles = getStyles(colors); // Assuming getStyles is defined elsewhere or needs to be added.
 
     const [tournament, setTournament] = useState<any>(null);
     const [players, setPlayers] = useState<any[]>([]);
@@ -31,18 +34,29 @@ export default function AdminTournamentDetailScreen() {
     const scoreInputRefs = useRef<Array<TextInput | null>>([]);
     const [savingMatch, setSavingMatch] = useState(false);
 
-    const MATCH_HEIGHT = 130;
+    const IS_DOUBLES = tournament?.modality === 'dobles';
+    const MATCH_HEIGHT = IS_DOUBLES ? 180 : 130;
     const ROUND_GAP = 24;
 
     // Player Selection Modal
     const [isPlayerModalVisible, setIsPlayerModalVisible] = useState(false);
-    const [selectedSlot, setSelectedSlot] = useState<{ matchId: string, slot: 1 | 2 } | null>(null);
+    const [selectedSlot, setSelectedSlot] = useState<{ matchId: string, slot: 1 | 2 | 3 | 4 } | null>(null);
     const [selectedGroupSlot, setSelectedGroupSlot] = useState<{ groupName: string, slotIndex: number } | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<any[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [manualPlayerName, setManualPlayerName] = useState('');
     const [isManualPlayerModalVisible, setIsManualPlayerModalVisible] = useState(false);
+    const [savingPlayer, setSavingPlayer] = useState(false);
+
+    // Scheduling Modal
+    const [isScheduleModalVisible, setIsScheduleModalVisible] = useState(false);
+    const [scheduleData, setScheduleData] = useState({
+        date: '',
+        time: '',
+        court: ''
+    });
+    const [savingSchedule, setSavingSchedule] = useState(false);
 
     const parseManualAssignments = (description?: string | null) => {
         const match = (description || '').match(/\[MANUAL_ASSIGNMENTS:([^\]]+)\]/);
@@ -145,19 +159,21 @@ export default function AdminTournamentDetailScreen() {
             // Load Matches
             const { data: matchData, error: matchErr } = await supabase
                 .from('matches')
-                .select('*')
+                .select('*, player_a:profiles!player_a_id(*), player_b:profiles!player_b_id(*), player_a2:profiles!player_a2_id(*), player_b2:profiles!player_b2_id(*)')
                 .eq('tournament_id', id)
                 .order('match_order', { ascending: true });
+
             if (matchErr) throw matchErr;
 
-            const loadedMatches = matchData || [];
+            const loadedMatches = (matchData || []) as any[];
             if (loadedMatches.length === 0) {
                 const scaffoldMatches = createInitialMatches({
                     tournamentId: String(id),
                     format: tourData.format,
                     description: tourData.description,
                     maxPlayers: tourData.max_players || 2,
-                    participants: (playersData || []).map((registration: any) => ({ id: registration.player_id }))
+                    participants: (playersData || []).map((registration: any) => ({ id: registration.player_id })),
+                    modality: tourData.modality
                 });
 
                 if (scaffoldMatches.length > 0) {
@@ -166,7 +182,7 @@ export default function AdminTournamentDetailScreen() {
 
                     const { data: regeneratedMatches, error: regeneratedError } = await supabase
                         .from('matches')
-                        .select('*')
+                        .select('*, player_a:profiles!player_a_id(*), player_b:profiles!player_b_id(*), player_a2:profiles!player_a2_id(*), player_b2:profiles!player_b2_id(*)')
                         .eq('tournament_id', id)
                         .order('match_order', { ascending: true });
 
@@ -178,6 +194,9 @@ export default function AdminTournamentDetailScreen() {
             } else {
                 setMatches(loadedMatches);
             }
+
+            // check and move byes
+            await checkAndProcessByes(loadedMatches);
 
         } catch (error) {
             console.error('Error loading tournament details:', error);
@@ -208,7 +227,55 @@ export default function AdminTournamentDetailScreen() {
         setIsEditModalVisible(true);
     };
 
-    const resolveWinnerId = (match: any, score: string) => {
+    const handleSchedulePress = (match: any) => {
+        setSelectedMatch(match);
+        let initialDate = '';
+        let initialTime = '';
+        if (match.scheduled_at) {
+            const d = new Date(match.scheduled_at);
+            initialDate = d.toISOString().split('T')[0];
+            initialTime = d.toTimeString().split(' ')[0].substring(0, 5);
+        }
+        setScheduleData({
+            date: initialDate,
+            time: initialTime,
+            court: match.court || ''
+        });
+        setIsScheduleModalVisible(true);
+    };
+
+    const saveMatchSchedule = async () => {
+        if (!selectedMatch) return;
+        setSavingSchedule(true);
+
+        try {
+            let scheduledAt = null;
+            if (scheduleData.date && scheduleData.time) {
+                scheduledAt = `${scheduleData.date}T${scheduleData.time}:00Z`;
+            }
+
+            const { error } = await supabase
+                .from('matches')
+                .update({
+                    scheduled_at: scheduledAt,
+                    court: scheduleData.court
+                })
+                .eq('id', selectedMatch.id);
+
+            if (error) throw error;
+            
+            await loadTournamentData();
+            setIsScheduleModalVisible(false);
+            Alert.alert('Éxito', 'Horario y cancha guardados.');
+        } catch (error) {
+            console.error('Error saving schedule:', error);
+            Alert.alert('Error', 'No se pudo guardar la programación.');
+        } finally {
+            setSavingSchedule(false);
+        }
+    };
+
+    const resolveWinnerIds = (match: any, score: string) => {
         const sets = score.split(/\s*,\s*/).filter(Boolean);
         let playerAWins = 0;
         let playerBWins = 0;
@@ -222,11 +289,13 @@ export default function AdminTournamentDetailScreen() {
             if (b > a) playerBWins += 1;
         });
 
-        if (playerAWins === playerBWins) return null;
-        return playerAWins > playerBWins ? match.player_a_id : match.player_b_id;
+        if (playerAWins === playerBWins) return { w1: null, w2: null };
+        return playerAWins > playerBWins 
+            ? { w1: match.player_a_id, w2: match.player_a2_id }
+            : { w1: match.player_b_id, w2: match.player_b2_id };
     };
 
-    const propagateWinnerToNextMatch = async (match: any, winnerId: string | null) => {
+    async function propagateWinnerToNextMatch(match: any, winnerId: string | null, winner2Id: string | null = null) {
         if (!winnerId || String(match.round || '').startsWith('Grupo ')) return;
 
         const isRoundRobinFinal = String(match.round || '').includes('RR');
@@ -253,13 +322,82 @@ export default function AdminTournamentDetailScreen() {
         if (!nextMatch) return;
 
         const nextSlotField = currentIndex % 2 === 0 ? 'player_a_id' : 'player_b_id';
+        const nextSlotField2 = currentIndex % 2 === 0 ? 'player_a2_id' : 'player_b2_id';
+        
+        const updateData: any = { [nextSlotField]: winnerId };
+        if (winner2Id) {
+            updateData[nextSlotField2] = winner2Id;
+        }
+
         const { error } = await supabase
             .from('matches')
-            .update({ [nextSlotField]: winnerId })
+            .update(updateData)
             .eq('id', nextMatch.id);
 
         if (error) throw error;
+        await checkAndProcessByes([...matches, { ...nextMatch, ...updateData }]);
     };
+
+    async function checkAndProcessByes(allMatches: any[]) {
+        const pendingMatches = allMatches.filter(m => m.status === 'pending');
+        
+        for (const m of pendingMatches) {
+            const nameA = getDisplayName(m, 1);
+            const nameB = getDisplayName(m, 2);
+
+            const isABye = nameA === 'BYE';
+            const isBBye = nameB === 'BYE';
+
+            // If one is BYE and the other is a real player
+            if (isABye || isBBye) {
+                let winnerId = null;
+                let score = 'W.O.';
+
+                if (isABye && m.player_b_id && m.player_b_id !== 'BYE') {
+                    winnerId = m.player_b_id;
+                } else if (isBBye && m.player_a_id && m.player_a_id !== 'BYE') {
+                    winnerId = m.player_a_id;
+                }
+
+                if (winnerId) {
+                    const { error } = await supabase
+                        .from('matches')
+                        .update({ score, winner_id: winnerId, status: 'finished' })
+                        .eq('id', m.id);
+                    
+                    if (!error) {
+                        await propagateWinnerToNextMatch(m, winnerId);
+                    }
+                }
+            }
+        }
+    }
+
+    async function finalizeTournament() {
+        Alert.alert(
+            'Finalizar Torneo',
+            '¿Estás seguro de que quieres dar por finalizado este torneo? Esto permitirá que los resultados se reflejen en los perfiles y rankings de los jugadores.',
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Finalizar',
+                    onPress: async () => {
+                        const { error } = await supabase
+                            .from('tournaments')
+                            .update({ status: 'finished' })
+                            .eq('id', id);
+
+                        if (error) {
+                            Alert.alert('Error', 'No se pudo finalizar el torneo.');
+                        } else {
+                            await loadTournamentData();
+                            Alert.alert('Éxito', 'Torneo finalizado.');
+                        }
+                    }
+                }
+            ]
+        );
+    }
 
     const saveMatchScore = async () => {
         if (!selectedMatch) return;
@@ -272,14 +410,19 @@ export default function AdminTournamentDetailScreen() {
             .join(', ');
 
         try {
-            const winnerId = resolveWinnerId(selectedMatch, finalScore);
+            const { w1, w2 } = resolveWinnerIds(selectedMatch, finalScore);
             const { error } = await supabase
                 .from('matches')
-                .update({ score: finalScore, winner_id: winnerId, status: 'finished' })
+                .update({ 
+                    score: finalScore, 
+                    winner_id: w1, 
+                    winner_2_id: w2,
+                    status: 'finished' 
+                })
                 .eq('id', selectedMatch.id);
 
             if (error) throw error;
-            await propagateWinnerToNextMatch(selectedMatch, winnerId);
+            await propagateWinnerToNextMatch(selectedMatch, w1, w2);
             await loadTournamentData();
             setIsEditModalVisible(false);
         } catch (error) {
@@ -299,6 +442,60 @@ export default function AdminTournamentDetailScreen() {
         if (!pId) return 'Por definir';
         const player = players.find(p => p.player_id === pId);
         return player ? (player.profiles?.name || 'Desconocido') : 'Por definir';
+    };
+
+    const removeParticipant = async (pId: string) => {
+        Alert.alert(
+            'Eliminar Participante',
+            '¿Estás seguro de que quieres eliminar a este participante de este torneo?',
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Eliminar',
+                    style: 'destructive',
+                    onPress: async () => {
+                        const { error } = await supabase
+                            .from('registrations')
+                            .delete()
+                            .eq('tournament_id', id)
+                            .eq('player_id', pId);
+
+                        if (error) {
+                            Alert.alert('Error', 'No se pudo eliminar el participante.');
+                        } else {
+                            await loadTournamentData();
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+    const registerParticipant = async (pId: string) => {
+        setSavingPlayer(true);
+        try {
+            const { error } = await supabase
+                .from('registrations')
+                .insert({
+                    tournament_id: id,
+                    player_id: pId,
+                    status: 'confirmed',
+                    fee_amount: tournament?.registration_fee || 0,
+                    is_paid: false
+                });
+
+            if (error) throw error;
+            setIsPlayerModalVisible(false);
+            await loadTournamentData();
+        } catch (error: any) {
+            if (error.code === '23505') {
+                Alert.alert('Información', 'Este jugador ya está registrado.');
+            } else {
+                Alert.alert('Error', 'No se pudo registrar al jugador.');
+            }
+        } finally {
+            setSavingPlayer(false);
+        }
     };
 
     const manualAssignments = useMemo(() => parseManualAssignments(tournament?.description), [tournament?.description]);
@@ -440,7 +637,9 @@ export default function AdminTournamentDetailScreen() {
         const { matchId, slot } = selectedSlot;
         const updateData: any = {};
         if (slot === 1) updateData.player_a_id = profileId;
-        else updateData.player_b_id = profileId;
+        else if (slot === 2) updateData.player_a2_id = profileId;
+        else if (slot === 3) updateData.player_b_id = profileId;
+        else if (slot === 4) updateData.player_b2_id = profileId;
 
         const { error } = await supabase
             .from('matches')
@@ -514,7 +713,10 @@ export default function AdminTournamentDetailScreen() {
     };
 
     const updateMatchPlayer = async (profileId: string) => {
-        if (!selectedSlot && !selectedGroupSlot) return;
+        if (!selectedSlot && !selectedGroupSlot) {
+            await registerParticipant(profileId);
+            return;
+        }
 
         try {
             await assignPlayerToSelectedSlot(profileId);
@@ -572,7 +774,9 @@ export default function AdminTournamentDetailScreen() {
                 const { matchId, slot } = selectedSlot;
                 const updateData: any = {};
                 if (slot === 1) updateData.player_a_id = null;
-                else updateData.player_b_id = null;
+                else if (slot === 2) updateData.player_a2_id = null;
+                else if (slot === 3) updateData.player_b_id = null;
+                else if (slot === 4) updateData.player_b2_id = null;
 
                 const { error } = await supabase
                     .from('matches')
@@ -747,20 +951,35 @@ export default function AdminTournamentDetailScreen() {
         return slot === 1 ? pairing[0] : pairing[1];
     };
     const finalRoundRobinMatches = useMemo(
-        () => matches.filter(m => String(m.round || '').includes('RR')),
+        () => matches.filter(m => !String(m.round || '').includes('Grupo')),
         [matches]
     );
 
     const getGroupRows = (groupName: string) => {
         const groupMatches = roundRobinMatchesByGroup[groupName] || [];
         const fallbackSlots = getRoundRobinSlots(tournamentMaxPlayers, groupName, tournamentFormat, tournament?.description);
-        const playerIds = [...new Set(groupMatches.flatMap(m => [m.player_a_id, m.player_b_id]).filter(Boolean))];
+        const playerPairs = groupMatches.reduce((acc: any, m) => {
+            const slotA = getRoundRobinSlotIndexForMatchSide(groupName, m.id, 1);
+            const slotB = getRoundRobinSlotIndexForMatchSide(groupName, m.id, 2);
+            if (slotA !== null) {
+                acc[slotA] = acc[slotA] || { p1: m.player_a_id, p2: m.player_a2_id };
+            }
+            if (slotB !== null) {
+                acc[slotB] = acc[slotB] || { p1: m.player_b_id, p2: m.player_b2_id };
+            }
+            return acc;
+        }, {});
 
         return fallbackSlots.map((slot, index) => {
-            const playerId = playerIds[index];
+            const pair = playerPairs[index];
+            const p1Name = pair?.p1 ? getPlayerName(pair.p1) : (getAssignedNameForGroupSlot(groupName, index) || slot.name);
+            const p2Name = pair?.p2 ? getPlayerName(pair.p2) : null;
+            
             return {
-                id: playerId || slot.id,
-                name: playerId ? getPlayerName(playerId) : (getAssignedNameForGroupSlot(groupName, index) || slot.name),
+                id: pair?.p1 || slot.id,
+                name: p2Name ? `${p1Name} / ${p2Name}` : p1Name,
+                p1Id: pair?.p1,
+                p2Id: pair?.p2,
                 slotIndex: index,
             };
         });
@@ -839,19 +1058,30 @@ export default function AdminTournamentDetailScreen() {
         });
     };
 
-    const getDisplayName = (match: any, slot: 1 | 2) => {
-        const playerId = slot === 1 ? match.player_a_id : match.player_b_id;
+    const getDisplayName = (match: any, slot: 1 | 2 | 3 | 4) => {
+        let playerId = null;
+        if (slot === 1) playerId = match.player_a_id;
+        else if (slot === 2) playerId = match.player_a2_id;
+        else if (slot === 3) playerId = match.player_b_id;
+        else if (slot === 4) playerId = match.player_b2_id;
         if (playerId) return getPlayerName(playerId);
 
         if (String(match.round || '').startsWith('Grupo ')) {
             const groupName = String(match.round || '').replace('Grupo ', '');
-            const slotIndex = getRoundRobinSlotIndexForMatchSide(groupName, match.id, slot);
+            const entrySlot = (slot === 1 || slot === 2) ? 1 : 2;
+            const slotIndex = getRoundRobinSlotIndexForMatchSide(groupName, match.id, entrySlot as 1 | 2);
             if (slotIndex !== null) {
-                return getAssignedNameForGroupSlot(groupName, slotIndex) || 'Por definir';
+                const assignedName = getAssignedNameForGroupSlot(groupName, slotIndex);
+                if (assignedName) return assignedName;
+                return `Cupo ${groupName}${slotIndex + 1}${ (slot === 2 || slot === 4) ? ' (P2)' : ''}`;
             }
         }
 
-        return getAssignedNameForMatchSlot(match.id, slot) || 'Por definir';
+        const matchSlotKey = (slot === 1 || slot === 2) ? 'player_a' : 'player_b';
+        const assignedName = getAssignedNameForMatchSlot(match.id, matchSlotKey as any);
+        if (assignedName) return assignedName;
+
+        return 'Por definir';
     };
 
     const currentGroupRows = useMemo(() => getGroupRows(currentGroupName), [currentGroupName, roundRobinMatchesByGroup, players, tournamentMaxPlayers, tournamentFormat, tournament?.description]);
@@ -906,6 +1136,9 @@ export default function AdminTournamentDetailScreen() {
                         <TouchableOpacity style={[styles.tab, activeTab === 'finales' && styles.activeTab]} onPress={() => setActiveTab('finales')}>
                             <Text style={[styles.tabText, activeTab === 'finales' && styles.activeTabText]}>Finales</Text>
                         </TouchableOpacity>
+                        <TouchableOpacity style={[styles.tab, activeTab === 'participantes' && styles.activeTab]} onPress={() => setActiveTab('participantes')}>
+                            <Text style={[styles.tabText, activeTab === 'participantes' && styles.activeTabText]}>Participantes</Text>
+                        </TouchableOpacity>
                     </>
                 ) : (
                     <>
@@ -917,22 +1150,87 @@ export default function AdminTournamentDetailScreen() {
                                 <Text style={[styles.tabText, activeTab === 'consolacion' && styles.activeTabText]}>Consolación</Text>
                             </TouchableOpacity>
                         )}
+                        <TouchableOpacity style={[styles.tab, activeTab === 'participantes' && styles.activeTab]} onPress={() => setActiveTab('participantes')}>
+                            <Text style={[styles.tabText, activeTab === 'participantes' && styles.activeTabText]}>Participantes</Text>
+                        </TouchableOpacity>
                     </>
                 )}
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent}>
 
-                {/* Summary Info Card like in HTML */}
-                <View style={styles.summaryCard}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs }}>
-                        <Ionicons name="podium" size={20} color={colors.primary[500]} />
-                        <Text style={styles.summaryText}>Nivel {tournament.level?.toUpperCase().replace('-', ' ')} | {tournament.surface?.toUpperCase()}</Text>
+                {/* Summary Info Card */}
+                <View style={[styles.summaryCard, { paddingVertical: spacing.lg }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'nowrap' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1, marginRight: spacing.sm }}>
+                            <Ionicons name="podium" size={20} color={colors.primary[500]} />
+                            <Text style={[styles.summaryText, { flex: 1 }]} numberOfLines={1} ellipsizeMode="tail">
+                                Nivel {tournament.level?.toUpperCase().replace('-', ' ')} | {tournament.surface?.toUpperCase()}
+                            </Text>
+                        </View>
+                        <View style={{ flexShrink: 0 }}>
+                            {tournament.status !== 'finished' && tournament.status !== 'completed' && (
+                                <TouchableOpacity 
+                                    style={{ backgroundColor: colors.primary[500], paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.sm }}
+                                    onPress={finalizeTournament}
+                                >
+                                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Finalizar Torneo</Text>
+                                </TouchableOpacity>
+                            )}
+                            {(tournament.status === 'finished' || tournament.status === 'completed') && (
+                                <View style={{ backgroundColor: colors.success + '20', paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.sm, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                    <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                                    <Text style={{ color: colors.success, fontSize: 11, fontWeight: '800' }}>FINALIZADO</Text>
+                                </View>
+                            )}
+                        </View>
                     </View>
-                    <Text style={styles.summaryTextSecondary}>{players.length} Jugadores | {tournament.format} | Máx: {tournament.max_players}</Text>
+                    <Text style={[styles.summaryTextSecondary, { marginTop: spacing.xs }]}>{players.length} Jugadores | {tournament.format} | {tournament.modality === 'dobles' ? 'Dobles' : 'Singles'} | Máx: {tournament.max_players}</Text>
                 </View>
 
-                {matches.length === 0 ? (
+                {activeTab === 'participantes' ? (
+                    <View style={{ gap: spacing.md }}>
+                        <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: spacing.md }}>Lista de Participantes</Text>
+                        <TouchableOpacity 
+                            style={[styles.generateBtn, { marginBottom: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, justifyContent: 'center' }]}
+                            onPress={() => {
+                                setSelectedSlot(null);
+                                setSelectedGroupSlot(null);
+                                setIsPlayerModalVisible(true);
+                            }}
+                        >
+                            <Ionicons name="person-add-outline" size={18} color="#fff" />
+                            <Text style={styles.generateBtnText}>Agregar Participante</Text>
+                        </TouchableOpacity>
+
+                        {players.length > 0 ? (
+                            players.map((p) => (
+                                // ... existing view (already handled by snippet above or I'll fix it in one go)
+                                <View key={p.player_id} style={styles.playerListItem}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                                        <View style={styles.playerListItemAvatar}>
+                                            <Text style={styles.playerListItemInitials}>
+                                                {p.profiles?.name?.substring(0, 2).toUpperCase()}
+                                            </Text>
+                                        </View>
+                                        <Text style={styles.playerListItemName}>{p.profiles?.name || 'Desconocido'}</Text>
+                                    </View>
+                                    <TouchableOpacity 
+                                        style={{ padding: spacing.sm }} 
+                                        onPress={() => removeParticipant(p.player_id)}
+                                    >
+                                        <Ionicons name="trash-outline" size={20} color={colors.error} />
+                                    </TouchableOpacity>
+                                </View>
+                            ))
+                        ) : (
+                            <View style={styles.emptyMatches}>
+                                <Ionicons name="people-outline" size={48} color={colors.border} />
+                                <Text style={styles.emptyMatchesText}>No hay participantes registrados aún.</Text>
+                            </View>
+                        )}
+                    </View>
+                ) : matches.length === 0 ? (
                     <View style={styles.emptyMatches}>
                         <Ionicons name="git-network-outline" size={48} color={colors.border} />
                         <Text style={styles.emptyMatchesText}>No hay partidos generados aún.</Text>
@@ -950,25 +1248,78 @@ export default function AdminTournamentDetailScreen() {
                             <TouchableOpacity key={m.id} style={[styles.matchCard, { paddingVertical: spacing.lg }]} onPress={() => handleMatchPress(m)}>
                                 <Text style={styles.roundText}>{m.round}</Text>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md }}>
-                                    <TouchableOpacity style={{ flex: 1, alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 1)}>
-                                        <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
-                                            <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 1).substring(0, 2).toUpperCase()}</Text>
-                                        </View>
-                                        <Text style={{ fontSize: 12, fontWeight: '700', color: colors.text, textAlign: 'center' }}>{getDisplayName(m, 1)}</Text>
-                                    </TouchableOpacity>
+                                    {/* Team A */}
+                                    <View style={{ flex: 1, gap: spacing.sm }}>
+                                        <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 1)}>
+                                            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
+                                                <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 1).substring(0, 2).toUpperCase()}</Text>
+                                            </View>
+                                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 1)}</Text>
+                                        </TouchableOpacity>
+                                        {IS_DOUBLES && (
+                                            <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 2)}>
+                                                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 2).substring(0, 2).toUpperCase()}</Text>
+                                                </View>
+                                                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 2)}</Text>
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
+
                                     <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md }} onPress={() => handleMatchPress(m)}>
                                         <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textTertiary }}>VS</Text>
                                         <View style={{ backgroundColor: colors.background, paddingHorizontal: 8, paddingVertical: 4, borderRadius: borderRadius.sm }}>
                                             <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textSecondary }}>{m.score || 'Por definir'}</Text>
                                         </View>
                                     </TouchableOpacity>
-                                    <TouchableOpacity style={{ flex: 1, alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 2)}>
-                                        <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
-                                            <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 2).substring(0, 2).toUpperCase()}</Text>
-                                        </View>
-                                        <Text style={{ fontSize: 12, fontWeight: '700', color: colors.text, textAlign: 'center' }}>{getDisplayName(m, 2)}</Text>
-                                    </TouchableOpacity>
+
+                                    {/* Team B */}
+                                    <View style={{ flex: 1, gap: spacing.sm }}>
+                                        <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 3)}>
+                                            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
+                                                <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 3).substring(0, 2).toUpperCase()}</Text>
+                                            </View>
+                                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 3)}</Text>
+                                        </TouchableOpacity>
+                                        {IS_DOUBLES && (
+                                            <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 4)}>
+                                                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 4).substring(0, 2).toUpperCase()}</Text>
+                                                </View>
+                                                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 4)}</Text>
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
                                 </View>
+                                {m.court || m.scheduled_at ? (
+                                    <View style={{ marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <View style={{ flexDirection: 'row', gap: spacing.md }}>
+                                            {m.scheduled_at && (
+                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                    <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                                                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>{new Date(m.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                                                </View>
+                                            )}
+                                            {m.court && (
+                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                    <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
+                                                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>{m.court}</Text>
+                                                </View>
+                                            )}
+                                        </View>
+                                        <TouchableOpacity onPress={() => handleSchedulePress(m)}>
+                                            <Ionicons name="calendar-outline" size={18} color={colors.primary[500]} />
+                                        </TouchableOpacity>
+                                    </View>
+                                ) : (
+                                    <TouchableOpacity 
+                                        style={{ marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 }}
+                                        onPress={() => handleSchedulePress(m)}
+                                    >
+                                        <Ionicons name="calendar-outline" size={14} color={colors.textTertiary} />
+                                        <Text style={{ fontSize: 12, color: colors.textTertiary, fontWeight: '600' }}>Programar partido</Text>
+                                    </TouchableOpacity>
+                                )}
                             </TouchableOpacity>
                         ))}
                     </View>
@@ -1019,31 +1370,78 @@ export default function AdminTournamentDetailScreen() {
                                     .map(m => (
                                         <TouchableOpacity key={m.id} style={[styles.matchCard, { paddingVertical: spacing.lg }]} onPress={() => handleMatchPress(m)}>
                                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md }}>
-                                                <TouchableOpacity
-                                                    style={{ flex: 1, alignItems: 'center', gap: spacing.xs }}
-                                                    onPress={() => handlePlayerPress(m.id, 1)}
-                                                >
-                                                    <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
-                                                        <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 1).substring(0, 2).toUpperCase()}</Text>
-                                                    </View>
-                                                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.text, textAlign: 'center' }}>{getDisplayName(m, 1)}</Text>
-                                                </TouchableOpacity>
+                                                {/* Team A */}
+                                                <View style={{ flex: 1, gap: spacing.sm }}>
+                                                    <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 1)}>
+                                                        <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
+                                                            <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 1).substring(0, 2).toUpperCase()}</Text>
+                                                        </View>
+                                                        <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 1)}</Text>
+                                                    </TouchableOpacity>
+                                                    {IS_DOUBLES && (
+                                                        <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 2)}>
+                                                            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
+                                                                <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 2).substring(0, 2).toUpperCase()}</Text>
+                                                            </View>
+                                                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 2)}</Text>
+                                                        </TouchableOpacity>
+                                                    )}
+                                                </View>
+
                                                 <View style={{ alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md }}>
                                                     <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textTertiary }}>VS</Text>
                                                     <View style={{ backgroundColor: colors.background, paddingHorizontal: 8, paddingVertical: 4, borderRadius: borderRadius.sm }}>
                                                         <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textSecondary }}>{m.score || 'Próximo'}</Text>
                                                     </View>
                                                 </View>
-                                                <TouchableOpacity
-                                                    style={{ flex: 1, alignItems: 'center', gap: spacing.xs }}
-                                                    onPress={() => handlePlayerPress(m.id, 2)}
-                                                >
-                                                    <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
-                                                        <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 2).substring(0, 2).toUpperCase()}</Text>
-                                                    </View>
-                                                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.text, textAlign: 'center' }}>{getDisplayName(m, 2)}</Text>
-                                                </TouchableOpacity>
+
+                                                {/* Team B */}
+                                                <View style={{ flex: 1, gap: spacing.sm }}>
+                                                    <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 3)}>
+                                                        <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
+                                                            <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 3).substring(0, 2).toUpperCase()}</Text>
+                                                        </View>
+                                                        <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 3)}</Text>
+                                                    </TouchableOpacity>
+                                                    {IS_DOUBLES && (
+                                                        <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 4)}>
+                                                            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
+                                                                <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 4).substring(0, 2).toUpperCase()}</Text>
+                                                            </View>
+                                                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 4)}</Text>
+                                                        </TouchableOpacity>
+                                                    )}
+                                                </View>
                                             </View>
+                                            {m.court || m.scheduled_at ? (
+                                                <View style={{ marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <View style={{ flexDirection: 'row', gap: spacing.md }}>
+                                                        {m.scheduled_at && (
+                                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                                <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                                                                <Text style={{ fontSize: 12, color: colors.textSecondary }}>{new Date(m.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                                                            </View>
+                                                        )}
+                                                        {m.court && (
+                                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                                <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
+                                                                <Text style={{ fontSize: 12, color: colors.textSecondary }}>{m.court}</Text>
+                                                            </View>
+                                                        )}
+                                                    </View>
+                                                    <TouchableOpacity onPress={() => handleSchedulePress(m)}>
+                                                        <Ionicons name="calendar-outline" size={18} color={colors.primary[500]} />
+                                                    </TouchableOpacity>
+                                                </View>
+                                            ) : (
+                                                <TouchableOpacity 
+                                                    style={{ marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 }}
+                                                    onPress={() => handleSchedulePress(m)}
+                                                >
+                                                    <Ionicons name="calendar-outline" size={14} color={colors.textTertiary} />
+                                                    <Text style={{ fontSize: 12, color: colors.textTertiary, fontWeight: '600' }}>Programar partido</Text>
+                                                </TouchableOpacity>
+                                            )}
                                         </TouchableOpacity>
                                     ))}
                             </View>
@@ -1097,54 +1495,100 @@ export default function AdminTournamentDetailScreen() {
                                                                     <Text style={{ textAlign: 'center', fontSize: 10, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase' }}>{m.round}</Text>
                                                                 </View>
                                                             )}
-                                                            <TouchableOpacity
-                                                                style={{ padding: spacing.md, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: colors.background, flex: 1, backgroundColor: m.winner_id === m.player_a_id ? colors.primary[500] + '15' : colors.surface }}
-                                                                onPress={() => handlePlayerPress(m.id, 1)}
-                                                            >
-                                                                <Text style={{ fontSize: 13, fontWeight: m.winner_id === m.player_a_id ? '800' : (isTBD ? '400' : '600'), color: isTBD ? colors.textTertiary : colors.text }}>{getDisplayName(m, 1)}</Text>
-                                                                <TouchableOpacity onPress={() => handleMatchPress(m)} style={{ flexDirection: 'row', gap: 4 }}>
-                                                                    {(m.score ? m.score.split(/\s*,\s*/) : ['-']).map((setStr: string, sIdx: number) => {
-                                                                        const setScores = setStr.split(/[ -]/);
-                                                                        return (
-                                                                            <View key={sIdx} style={{ backgroundColor: isUnplayed ? colors.background : colors.primary[500], paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm, minWidth: 24, alignItems: 'center' }}>
-                                                                                <Text style={{ color: isUnplayed ? colors.textSecondary : '#fff', fontSize: 11, fontWeight: '700' }}>
-                                                                                    {isUnplayed ? '-' : setScores[0]}
-                                                                                </Text>
-                                                                            </View>
-                                                                        );
-                                                                    })}
+                                                            <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: colors.background, backgroundColor: (m.winner_id === m.player_a_id || m.winner_2_id === m.player_a2_id) ? colors.primary[500] + '15' : colors.surface }}>
+                                                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flex: 1 }}>
+                                                                    <View style={{ flex: 1 }}>
+                                                                        <TouchableOpacity
+                                                                            style={{ paddingHorizontal: spacing.md, paddingVertical: IS_DOUBLES ? 4 : spacing.md, justifyContent: 'center' }}
+                                                                            onPress={() => handlePlayerPress(m.id, 1)}
+                                                                        >
+                                                                            <Text style={{ fontSize: IS_DOUBLES ? 11 : 13, fontWeight: m.winner_id === m.player_a_id ? '800' : (isTBD ? '400' : '600'), color: isTBD ? colors.textTertiary : colors.text }} numberOfLines={1}>{getDisplayName(m, 1)}</Text>
+                                                                        </TouchableOpacity>
+                                                                        {IS_DOUBLES && (
+                                                                            <TouchableOpacity
+                                                                                style={{ paddingHorizontal: spacing.md, paddingVertical: 4, justifyContent: 'center' }}
+                                                                                onPress={() => handlePlayerPress(m.id, 2)}
+                                                                            >
+                                                                                <Text style={{ fontSize: 11, fontWeight: m.winner_2_id === m.player_a2_id ? '800' : (isTBD ? '400' : '600'), color: isTBD ? colors.textTertiary : colors.text }} numberOfLines={1}>{getDisplayName(m, 2)}</Text>
+                                                                            </TouchableOpacity>
+                                                                        )}
+                                                                    </View>
+                                                                    <TouchableOpacity onPress={() => handleMatchPress(m)} style={{ flexDirection: 'row', gap: 4, paddingRight: spacing.md }}>
+                                                                        {(m.score ? m.score.split(/\s*,\s*/) : ['-']).map((setStr: string, sIdx: number) => {
+                                                                            const setScores = setStr.split(/[ -]/);
+                                                                            return (
+                                                                                <View key={sIdx} style={{ backgroundColor: isUnplayed ? colors.background : colors.primary[500], paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm, minWidth: 24, alignItems: 'center' }}>
+                                                                                    <Text style={{ color: isUnplayed ? colors.textSecondary : '#fff', fontSize: 11, fontWeight: '700' }}>
+                                                                                        {isUnplayed ? '-' : setScores[0]}
+                                                                                    </Text>
+                                                                                </View>
+                                                                            );
+                                                                        })}
+                                                                    </TouchableOpacity>
+                                                                </View>
+                                                            </View>
+
+                                                            <View style={{ flex: 1, opacity: isTBD ? 0.6 : 1, backgroundColor: (m.winner_id === m.player_b_id || m.winner_2_id === m.player_b2_id) ? colors.primary[500] + '15' : colors.surface }}>
+                                                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flex: 1 }}>
+                                                                    <View style={{ flex: 1 }}>
+                                                                        <TouchableOpacity
+                                                                            style={{ paddingHorizontal: spacing.md, paddingVertical: IS_DOUBLES ? 4 : spacing.md, justifyContent: 'center' }}
+                                                                            onPress={() => handlePlayerPress(m.id, 3)}
+                                                                        >
+                                                                            <Text style={{ fontSize: IS_DOUBLES ? 11 : 13, fontWeight: m.winner_id === m.player_b_id ? '800' : (isTBD ? '400' : '500'), color: isTBD ? colors.textTertiary : colors.text }} numberOfLines={1}>{getDisplayName(m, 3)}</Text>
+                                                                        </TouchableOpacity>
+                                                                        {IS_DOUBLES && (
+                                                                            <TouchableOpacity
+                                                                                style={{ paddingHorizontal: spacing.md, paddingVertical: 4, justifyContent: 'center' }}
+                                                                                onPress={() => handlePlayerPress(m.id, 4)}
+                                                                            >
+                                                                                <Text style={{ fontSize: 11, fontWeight: m.winner_2_id === m.player_b2_id ? '800' : (isTBD ? '400' : '500'), color: isTBD ? colors.textTertiary : colors.text }} numberOfLines={1}>{getDisplayName(m, 4)}</Text>
+                                                                            </TouchableOpacity>
+                                                                        )}
+                                                                    </View>
+                                                                    <TouchableOpacity onPress={() => handleMatchPress(m)} style={{ flexDirection: 'row', gap: 4, paddingRight: spacing.md }}>
+                                                                        {(m.score ? m.score.split(/\s*,\s*/) : ['-']).map((setStr: string, sIdx: number) => {
+                                                                            const setScores = setStr.split(/[ -]/);
+                                                                            return (
+                                                                                <View key={sIdx} style={{ backgroundColor: isUnplayed ? colors.background : colors.primary[500], paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm, minWidth: 24, alignItems: 'center' }}>
+                                                                                    <Text style={{ color: isUnplayed ? colors.textSecondary : '#fff', fontSize: 11, fontWeight: '700' }}>
+                                                                                        {isUnplayed ? '-' : setScores[1] || '0'}
+                                                                                    </Text>
+                                                                                </View>
+                                                                            );
+                                                                        })}
+                                                                    </TouchableOpacity>
+                                                                </View>
+                                                            </View>
+                                                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 4, backgroundColor: colors.background + '50' }}>
+                                                                <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                                                                    {m.scheduled_at && (
+                                                                        <Text style={{ fontSize: 9, color: colors.textTertiary, fontWeight: '600' }}>
+                                                                            {new Date(m.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                        </Text>
+                                                                    )}
+                                                                    {m.court && (
+                                                                        <Text style={{ fontSize: 9, color: colors.textTertiary, fontWeight: '600' }}>
+                                                                            {m.court}
+                                                                        </Text>
+                                                                    )}
+                                                                </View>
+                                                                <TouchableOpacity onPress={() => handleSchedulePress(m)}>
+                                                                    <Ionicons name="calendar-outline" size={12} color={colors.textTertiary} />
                                                                 </TouchableOpacity>
-                                                            </TouchableOpacity>
-                                                            <TouchableOpacity
-                                                                style={{ padding: spacing.md, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', opacity: isTBD ? 0.6 : 1, flex: 1, backgroundColor: m.winner_id === m.player_b_id ? colors.primary[500] + '15' : colors.surface }}
-                                                                onPress={() => handlePlayerPress(m.id, 2)}
-                                                            >
-                                                                <Text style={{ fontSize: 13, fontWeight: m.winner_id === m.player_b_id ? '800' : (isTBD ? '400' : '500'), color: isTBD ? colors.textTertiary : colors.text }}>{getDisplayName(m, 2)}</Text>
-                                                                <TouchableOpacity onPress={() => handleMatchPress(m)} style={{ flexDirection: 'row', gap: 4 }}>
-                                                                    {(m.score ? m.score.split(/\s*,\s*/) : ['-']).map((setStr: string, sIdx: number) => {
-                                                                        const setScores = setStr.split(/[ -]/);
-                                                                        return (
-                                                                            <View key={sIdx} style={{ backgroundColor: isUnplayed ? colors.background : colors.primary[500], paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm, minWidth: 24, alignItems: 'center' }}>
-                                                                                <Text style={{ color: isUnplayed ? colors.textSecondary : '#fff', fontSize: 11, fontWeight: '700' }}>
-                                                                                    {isUnplayed ? '-' : setScores[1] || '0'}
-                                                                                </Text>
-                                                                            </View>
-                                                                        );
-                                                                    })}
-                                                                </TouchableOpacity>
-                                                            </TouchableOpacity>
+                                                            </View>
                                                             {isTBD && (
                                                                 <View style={{ backgroundColor: colors.primary[500] + '15', padding: 4, alignItems: 'center' }}>
                                                                     <Text style={{ color: colors.primary[500], fontSize: 9, fontWeight: '700', textTransform: 'uppercase' }}>Próximamente</Text>
                                                                 </View>
                                                             )}
                                                         </View>
-                                                    );
+                                                    )
                                                 })}
                                             </View>
                                         </View>
-                                    );
-                                });
+                                    )
+                                })
                             })()}
                         </View>
                     </ScrollView>
@@ -1237,24 +1681,7 @@ export default function AdminTournamentDetailScreen() {
                         </TouchableOpacity>
                     </View>
 
-                    <View style={styles.searchBox}>
-                        <Ionicons name="search" size={20} color={colors.textTertiary} />
-                        <TextInput
-                            style={[styles.searchInput, { color: colors.text }]}
-                            placeholder="Buscar jugador..."
-                            placeholderTextColor={colors.textTertiary}
-                            value={searchQuery}
-                            onChangeText={setSearchQuery}
-                            autoFocus
-                        />
-                        {searchQuery.length > 0 && (
-                            <TouchableOpacity onPress={() => setSearchQuery('')}>
-                                <Ionicons name="close-circle" size={20} color={colors.textTertiary} />
-                            </TouchableOpacity>
-                        )}
-                    </View>
-
-                    <View style={{ paddingHorizontal: spacing.xl, gap: spacing.sm, marginTop: -spacing.sm, marginBottom: spacing.sm, flexDirection: 'row' }}>
+                    <View style={{ paddingHorizontal: spacing.xl, gap: spacing.sm, marginTop: spacing.md, marginBottom: spacing.sm, flexDirection: 'row' }}>
                         <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={() => setIsManualPlayerModalVisible(true)}>
                             <Text style={styles.modalBtnSaveText}>Agregar Manual</Text>
                         </TouchableOpacity>
@@ -1271,32 +1698,61 @@ export default function AdminTournamentDetailScreen() {
                         <Text style={{ color: colors.error, fontWeight: '600' }}>Quitar Jugador / Por definir</Text>
                     </TouchableOpacity>
 
-                    {isSearching ? (
-                        <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.primary[500]} />
-                    ) : (
-                        <FlatList
-                            data={searchResults}
-                            keyExtractor={item => item.id}
-                            contentContainerStyle={styles.modalList}
-                            renderItem={({ item }) => (
-                                <TouchableOpacity
-                                    style={styles.searchResultRow}
-                                    onPress={() => updateMatchPlayer(item.id)}
-                                >
-                                    <View style={styles.searchResultAvatar}>
-                                        <Text style={styles.searchResultInitials}>
-                                            {item.name?.substring(0, 2).toUpperCase()}
-                                        </Text>
-                                    </View>
-                                    <View>
-                                        <Text style={styles.searchResultName}>{item.name}</Text>
-                                    </View>
-                                </TouchableOpacity>
-                            )}
-                            ListEmptyComponent={
-                                <Text style={styles.modalEmpty}>No se encontraron jugadores.</Text>
-                            }
+                    <Text style={styles.modalSectionTitle}>Participantes Registrados</Text>
+                    <ScrollView style={{ maxHeight: 300 }}>
+                        {players.map((p) => (
+                            <TouchableOpacity 
+                                key={p.player_id} 
+                                style={styles.playerSearchItem}
+                                onPress={() => updateMatchPlayer(p.player_id)}
+                            >
+                                <View>
+                                    <Text style={styles.playerSearchName}>{p.profiles?.name || 'Desconocido'}</Text>
+                                    <Text style={styles.playerSearchRole}>Participante Inscrito</Text>
+                                </View>
+                                <Ionicons name="add-circle-outline" size={20} color={colors.primary[500]} />
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+
+                    <View style={styles.modalDivider}>
+                        <Text style={styles.modalDividerText}>O buscar otros usuarios</Text>
+                    </View>
+
+                    <View style={styles.searchBox}>
+                        <Ionicons name="search" size={20} color={colors.textTertiary} />
+                        <TextInput
+                            style={[styles.searchInput, { color: colors.text }]}
+                            placeholder="Buscar usuario..."
+                            placeholderTextColor={colors.textTertiary}
+                            value={searchQuery}
+                            onChangeText={setSearchQuery}
                         />
+                        {searchQuery.length > 0 && (
+                            <TouchableOpacity onPress={() => setSearchQuery('')}>
+                                <Ionicons name="close-circle" size={20} color={colors.textTertiary} />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+
+                    {isSearching ? (
+                        <ActivityIndicator size="small" color={colors.primary[500]} style={{ marginTop: spacing.md }} />
+                    ) : (
+                        <ScrollView style={{ maxHeight: 200 }}>
+                            {searchResults.map((user) => (
+                                <TouchableOpacity 
+                                    key={user.id} 
+                                    style={styles.playerSearchItem}
+                                    onPress={() => updateMatchPlayer(user.id)}
+                                >
+                                    <View>
+                                        <Text style={styles.playerSearchName}>{user.name}</Text>
+                                        <Text style={styles.playerSearchRole}>Usuario del sistema</Text>
+                                    </View>
+                                    <Ionicons name="add-circle-outline" size={20} color={colors.primary[500]} />
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
                     )}
                 </KeyboardAvoidingView>
             </Modal>
@@ -1330,83 +1786,205 @@ export default function AdminTournamentDetailScreen() {
                     </View>
                 </View>
             </Modal>
-        </View >
+
+            {/* Schedule Match Modal */}
+            <Modal visible={isScheduleModalVisible} transparent animationType="fade">
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Programar Partido</Text>
+                        <View style={{ gap: spacing.md, marginVertical: spacing.md }}>
+                            <DateField 
+                                label="Fecha del partido"
+                                value={scheduleData.date}
+                                onChange={(date) => setScheduleData({ ...scheduleData, date })}
+                            />
+                            
+                            <View>
+                                <Text style={[styles.modalDividerText, { textAlign: 'left', marginBottom: 4 }]}>Hora (HH:MM)</Text>
+                                <TextInput
+                                    style={[styles.scoreInput, { color: colors.text, textAlign: 'left' }]}
+                                    placeholder="Ej: 18:30"
+                                    placeholderTextColor={colors.textTertiary}
+                                    value={scheduleData.time}
+                                    onChangeText={(time) => setScheduleData({ ...scheduleData, time })}
+                                    maxLength={5}
+                                />
+                            </View>
+
+                            <View>
+                                <Text style={[styles.modalDividerText, { textAlign: 'left', marginBottom: 4 }]}>Cancha</Text>
+                                <TextInput
+                                    style={[styles.scoreInput, { color: colors.text, textAlign: 'left' }]}
+                                    placeholder="Ej: Cancha 1"
+                                    placeholderTextColor={colors.textTertiary}
+                                    value={scheduleData.court}
+                                    onChangeText={(court) => setScheduleData({ ...scheduleData, court })}
+                                />
+                            </View>
+                        </View>
+
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsScheduleModalVisible(false)}>
+                                <Text style={styles.modalBtnCancelText}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={saveMatchSchedule} disabled={savingSchedule}>
+                                {savingSchedule ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalBtnSaveText}>Guardar</Text>}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+        </View>
     );
 }
 
-const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background },
-    centerAll: { justifyContent: 'center', alignItems: 'center' },
-    errorText: { fontSize: 16, color: colors.error },
+function getStyles(colors: any) {
+    return StyleSheet.create({
+        container: { flex: 1, backgroundColor: colors.background },
+        centerAll: { justifyContent: 'center', alignItems: 'center' },
+        errorText: { fontSize: 16, color: colors.error },
 
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.xl, paddingVertical: spacing.md, backgroundColor: colors.surface },
-    backButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'flex-start' },
-    actionButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'flex-end' },
-    headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: colors.text, textAlign: 'center' },
+        header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.xl, paddingVertical: spacing.md, backgroundColor: colors.surface },
+        backButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'flex-start' },
+        actionButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'flex-end' },
+        headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: colors.text, textAlign: 'center' },
 
-    tabsContainer: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.surface },
-    tab: { flex: 1, paddingVertical: spacing.md, alignItems: 'center', borderBottomWidth: 3, borderBottomColor: 'transparent' },
-    activeTab: { borderBottomColor: colors.primary[500] },
-    tabText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
-    activeTabText: { color: colors.primary[500] },
+        tabsContainer: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.surface },
+        tab: { flex: 1, paddingVertical: spacing.md, alignItems: 'center', borderBottomWidth: 3, borderBottomColor: 'transparent' },
+        activeTab: { borderBottomColor: colors.primary[500] },
+        tabText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
+        activeTabText: { color: colors.primary[500] },
 
-    scrollContent: { padding: spacing.xl, paddingBottom: 100 },
+        scrollContent: { padding: spacing.xl, paddingBottom: 100 },
 
-    summaryCard: { backgroundColor: colors.primary[500] + '10', padding: spacing.md, borderRadius: borderRadius.lg, borderWidth: 1, borderColor: colors.primary[500] + '20', marginBottom: spacing.xl, gap: spacing.xs },
-    summaryRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-    summaryText: { fontSize: 15, fontWeight: '700', color: colors.text },
-    summaryTextSecondary: { fontSize: 13, color: colors.textSecondary },
+        summaryCard: { backgroundColor: colors.primary[500] + '10', padding: spacing.md, borderRadius: borderRadius.lg, borderWidth: 1, borderColor: colors.primary[500] + '20', marginBottom: spacing.xl, gap: spacing.xs },
+        summaryRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+        summaryText: { fontSize: 15, fontWeight: '700', color: colors.text },
+        summaryTextSecondary: { fontSize: 13, color: colors.textSecondary },
 
-    emptyMatches: { alignItems: 'center', marginTop: spacing['4xl'], gap: spacing.md },
-    emptyMatchesText: { fontSize: 16, color: colors.textSecondary },
-    generateBtn: { backgroundColor: colors.primary[500], paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: borderRadius.lg },
-    generateBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+        emptyMatches: { alignItems: 'center', marginTop: spacing['4xl'], gap: spacing.md },
+        emptyMatchesText: { fontSize: 16, color: colors.textSecondary },
+        generateBtn: { backgroundColor: colors.primary[500], paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: borderRadius.lg },
+        generateBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
-    matchesContainer: { gap: spacing.md },
-    matchCard: { backgroundColor: colors.surface, padding: spacing.md, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border },
-    roundText: { fontSize: 12, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', marginBottom: spacing.sm },
-    matchPlayersRow: { gap: spacing.xs },
-    playerName: { fontSize: 14, fontWeight: '500', color: colors.text },
-    scoreRow: { marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, alignItems: 'center' },
-    scoreText: { fontSize: 14, fontWeight: '700', color: colors.primary[500] },
+        matchesContainer: { gap: spacing.md },
+        matchCard: { backgroundColor: colors.surface, padding: spacing.md, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border },
+        roundText: { fontSize: 12, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', marginBottom: spacing.sm },
+        matchPlayersRow: { gap: spacing.xs },
+        playerName: { fontSize: 14, fontWeight: '500', color: colors.text },
+        scoreRow: { marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, alignItems: 'center' },
+        scoreText: { fontSize: 14, fontWeight: '700', color: colors.primary[500] },
 
-    // Bracket Styles
-    roundTitle: { color: colors.textTertiary, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', marginBottom: spacing.sm, textAlign: 'center', letterSpacing: 1 },
-    bracketMatchCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.lg, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },
-    bracketPlayerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 10, backgroundColor: colors.surface },
-    bracketPlayerName: { fontSize: 13, fontWeight: '600', color: colors.text },
-    scoreBadge: { backgroundColor: colors.background, paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm },
-    scoreBadgeText: { color: colors.textSecondary, fontSize: 11, fontWeight: '700' },
-    matchScoreFooter: { backgroundColor: colors.primary[500] + '15', padding: spacing.xs, alignItems: 'center' },
-    matchScoreFooterText: { color: colors.primary[500], fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
-    matchLabelText: { textAlign: 'center', fontSize: 10, fontWeight: '700', color: colors.textTertiary, paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: colors.border },
+        // Bracket Styles
+        roundTitle: { color: colors.textTertiary, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', marginBottom: spacing.sm, textAlign: 'center', letterSpacing: 1 },
+        bracketMatchCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.lg, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },
+        bracketPlayerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 10, backgroundColor: colors.surface },
+        bracketPlayerName: { fontSize: 13, fontWeight: '600', color: colors.text },
+        scoreBadge: { backgroundColor: colors.background, paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm },
+        scoreBadgeText: { color: colors.textSecondary, fontSize: 11, fontWeight: '700' },
+        matchScoreFooter: { backgroundColor: colors.primary[500] + '15', padding: spacing.xs, alignItems: 'center' },
+        matchScoreFooterText: { color: colors.primary[500], fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
+        matchLabelText: { textAlign: 'center', fontSize: 10, fontWeight: '700', color: colors.textTertiary, paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: colors.border },
 
-    // Modal
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
-    modalContent: { width: '100%', backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.xl, gap: spacing.md },
-    modalTitle: { fontSize: 18, fontWeight: '700', color: colors.text, textAlign: 'center' },
-    modalSubtitle: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.sm },
-    scoreInput: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.md, height: 48, paddingHorizontal: spacing.md, fontSize: 16, textAlign: 'center' },
-    modalButtons: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
-    modalBtn: { flex: 1, height: 48, borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center' },
-    modalBtnCancel: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
-    modalBtnSave: { backgroundColor: colors.primary[500] },
-    modalBtnCancelText: { color: colors.text, fontWeight: '600' },
-    modalBtnSaveText: { color: '#fff', fontWeight: '700' },
+        // Modal
+        modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
+        modalContent: { width: '100%', backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.xl, gap: spacing.md },
+        modalTitle: { fontSize: 18, fontWeight: '700', color: colors.text, textAlign: 'center' },
+        modalSubtitle: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.sm },
+        scoreInput: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.md, height: 48, paddingHorizontal: spacing.md, fontSize: 16, textAlign: 'center' },
+        modalButtons: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
+        modalBtn: { flex: 1, height: 48, borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center' },
+        modalBtnCancel: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
+        modalBtnSave: { backgroundColor: colors.primary[500] },
+        modalBtnCancelText: { color: colors.text, fontWeight: '600' },
+        modalBtnSaveText: { color: '#fff', fontWeight: '700' },
 
-    // Player Selection Modal Styles
-    modalContainer: { flex: 1, backgroundColor: colors.background },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.xl, borderBottomWidth: 1, borderBottomColor: colors.border },
-    modalCloseBtn: { padding: spacing.xs },
-    searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, margin: spacing.xl, paddingHorizontal: spacing.md, height: 48, borderRadius: borderRadius.lg, borderWidth: 1, borderColor: colors.border },
-    searchInput: { flex: 1, marginLeft: spacing.sm, fontSize: 16, color: colors.text },
-    modalList: { paddingHorizontal: spacing.xl, paddingBottom: spacing['4xl'] },
-    searchResultRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
-    searchResultAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', justifyContent: 'center', alignItems: 'center', marginRight: spacing.md },
-    searchResultInitials: { fontSize: 14, fontWeight: '700', color: colors.primary[500] },
-    searchResultName: { fontSize: 16, fontWeight: '500', color: colors.text },
-    searchResultEmail: { fontSize: 13, color: colors.textSecondary },
-    modalEmpty: { textAlign: 'center', color: colors.textTertiary, marginTop: spacing.xl },
-});
+        // Player Selection Modal Styles
+        modalContainer: { flex: 1, backgroundColor: colors.background },
+        modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.xl, borderBottomWidth: 1, borderBottomColor: colors.border },
+        modalCloseBtn: { padding: spacing.xs },
+        searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, marginHorizontal: spacing.xl, marginBottom: spacing.md, paddingHorizontal: spacing.md, height: 48, borderRadius: borderRadius.lg, borderWidth: 1, borderColor: colors.border },
+        searchInput: { flex: 1, marginLeft: spacing.sm, fontSize: 16, color: colors.text },
+        modalList: { paddingHorizontal: spacing.xl, paddingBottom: spacing['4xl'] },
+        searchResultRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+        searchResultAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', justifyContent: 'center', alignItems: 'center', marginRight: spacing.md },
+        searchResultInitials: { fontSize: 14, fontWeight: '700', color: colors.primary[500] },
+        searchResultName: { fontSize: 16, fontWeight: '500', color: colors.text },
+        searchResultEmail: { fontSize: 13, color: colors.textSecondary },
+        modalEmpty: { textAlign: 'center', color: colors.textTertiary, marginTop: spacing.xl },
 
+        // New styles for participants list
+        playerListItem: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            padding: spacing.md,
+            backgroundColor: colors.surface,
+            borderRadius: borderRadius.lg,
+            borderWidth: 1,
+            borderColor: colors.border,
+        },
+        playerListItemAvatar: {
+            width: 36,
+            height: 36,
+            borderRadius: 18,
+            backgroundColor: colors.primary[500] + '20',
+            justifyContent: 'center',
+            alignItems: 'center',
+            marginRight: spacing.md,
+        },
+        playerListItemInitials: {
+            fontSize: 12,
+            fontWeight: '700',
+            color: colors.primary[500],
+        },
+        playerListItemName: {
+            fontSize: 15,
+            fontWeight: '600',
+            color: colors.text,
+        },
 
+        // Player search item in modal
+        playerSearchItem: {
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            paddingVertical: spacing.md,
+            paddingHorizontal: spacing.xl,
+            borderBottomWidth: 1,
+            borderBottomColor: colors.border,
+        },
+        playerSearchName: {
+            fontSize: 15,
+            fontWeight: '700',
+            color: colors.text,
+        },
+        playerSearchRole: {
+            fontSize: 11,
+            color: colors.textTertiary,
+            marginTop: 2,
+        },
+        modalSectionTitle: {
+            fontSize: 14,
+            fontWeight: '800',
+            color: colors.primary[500],
+            marginLeft: spacing.xl,
+            marginTop: spacing.lg,
+            marginBottom: spacing.sm,
+            textTransform: 'uppercase',
+        },
+        modalDivider: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            margin: spacing.xl,
+        },
+        modalDividerText: {
+            flex: 1,
+            fontSize: 12,
+            fontWeight: '700',
+            color: colors.textTertiary,
+            textAlign: 'center',
+            backgroundColor: colors.background,
+            paddingHorizontal: spacing.sm,
+        },
+    });
+}

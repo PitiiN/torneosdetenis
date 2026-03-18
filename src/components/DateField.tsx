@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { borderRadius, colors, spacing } from '@/theme';
+import { borderRadius, useTheme, spacing } from '@/theme';
 
 const MONTH_NAMES = [
   'Enero',
@@ -38,9 +38,13 @@ interface DateFieldProps {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  hideLabel?: boolean;
+  isCompact?: boolean;
 }
 
-export const DateField = ({ label, value, onChange }: DateFieldProps) => {
+export const DateField = ({ label, value, onChange, hideLabel, isCompact }: DateFieldProps) => {
+  const { colors } = useTheme();
+  const styles = getStyles(colors);
   const initialDate = useMemo(() => parseIsoDate(value), [value]);
   const [visible, setVisible] = useState(false);
   const [cursor, setCursor] = useState(initialDate);
@@ -64,14 +68,17 @@ export const DateField = ({ label, value, onChange }: DateFieldProps) => {
 
   return (
     <>
-      <TouchableOpacity style={styles.trigger} onPress={open}>
-        <View>
-          <Text style={styles.label}>{label}</Text>
-          <Text style={[styles.value, !value && styles.placeholder]}>
-            {value ? formatDisplayDate(value) : 'Seleccionar fecha'}
+      <TouchableOpacity 
+        style={[styles.trigger, isCompact && styles.triggerCompact]} 
+        onPress={open}
+      >
+        <View style={isCompact && { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          {!hideLabel && <Text style={styles.label}>{label}</Text>}
+          <Text style={[styles.value, !value && styles.placeholder, isCompact && styles.valueCompact]}>
+            {value ? formatDisplayDate(value) : (isCompact ? 'Fecha' : 'Seleccionar fecha')}
           </Text>
         </View>
-        <Ionicons name="calendar-outline" size={20} color={colors.textTertiary} />
+        {!isCompact && <Ionicons name="calendar-outline" size={20} color={colors.textTertiary} />}
       </TouchableOpacity>
 
       <Modal visible={visible} transparent animationType="fade">
@@ -136,7 +143,7 @@ export const DateField = ({ label, value, onChange }: DateFieldProps) => {
   );
 };
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
   trigger: {
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -160,6 +167,18 @@ const styles = StyleSheet.create({
   placeholder: {
     color: colors.textTertiary,
     fontWeight: '400',
+  },
+  triggerCompact: {
+    padding: 0,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    borderRadius: 0,
+    minHeight: 'auto',
+  },
+  valueCompact: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
   overlay: {
     flex: 1,

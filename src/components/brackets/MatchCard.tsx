@@ -1,10 +1,11 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { colors, spacing, borderRadius } from '@/theme';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme, spacing, borderRadius } from '@/theme';
 
 interface Player {
   name: string;
-  score?: number | string;
+  scores?: (number | string)[];
   isWinner?: boolean;
 }
 
@@ -12,30 +13,49 @@ interface MatchCardProps {
   player1: Player;
   player2: Player;
   status?: string;
+  scheduledAt?: string | null;
+  court?: string | null;
 }
 
-export const MatchCard = ({ player1, player2, status }: MatchCardProps) => {
+export const MatchCard = ({ player1, player2, status, scheduledAt, court }: MatchCardProps) => {
+  const { colors } = useTheme();
+  const styles = getStyles(colors);
+
+  const renderScores = (player: Player, otherPlayer: Player) => {
+    if (!player.scores || player.scores.length === 0) {
+      return (
+        <View style={styles.scoreBox}>
+          <Text style={styles.scoreText}>-</Text>
+        </View>
+      );
+    }
+
+    return player.scores.map((s, idx) => (
+      <View key={idx} style={[styles.scoreBox, player.isWinner && styles.scoreBoxWinner]}>
+        <Text style={[styles.scoreText, player.isWinner && styles.scoreTextWinner]}>
+          {s ?? '-'}
+        </Text>
+      </View>
+    ));
+  };
+
   return (
     <View style={styles.card}>
       <View style={[styles.playerRow, player1.isWinner && styles.winnerRow]}>
-        <Text style={[styles.playerName, !player1.isWinner && player2.isWinner && styles.loserText]}>
+        <Text style={[styles.playerName, !player1.isWinner && player2.isWinner && styles.loserText]} numberOfLines={1}>
           {player1.name}
         </Text>
-        <View style={[styles.scoreBox, player1.isWinner && styles.scoreBoxWinner]}>
-          <Text style={[styles.scoreText, player1.isWinner && styles.scoreTextWinner]}>
-            {player1.score ?? '-'}
-          </Text>
+        <View style={styles.scoresRow}>
+          {renderScores(player1, player2)}
         </View>
       </View>
       
       <View style={[styles.playerRow, player2.isWinner && styles.winnerRow, styles.bottomRow]}>
-        <Text style={[styles.playerName, !player2.isWinner && player1.isWinner && styles.loserText]}>
+        <Text style={[styles.playerName, !player2.isWinner && player1.isWinner && styles.loserText]} numberOfLines={1}>
           {player2.name}
         </Text>
-        <View style={[styles.scoreBox, player2.isWinner && styles.scoreBoxWinner]}>
-          <Text style={[styles.scoreText, player2.isWinner && styles.scoreTextWinner]}>
-            {player2.score ?? '-'}
-          </Text>
+        <View style={styles.scoresRow}>
+          {renderScores(player2, player1)}
         </View>
       </View>
       
@@ -44,17 +64,34 @@ export const MatchCard = ({ player1, player2, status }: MatchCardProps) => {
           <Text style={styles.statusText}>{status.toUpperCase()}</Text>
         </View>
       )}
+
+      {(scheduledAt || court) && (
+        <View style={styles.schedulingInfo}>
+          {scheduledAt && (
+             <View style={styles.scheduleRow}>
+                <Ionicons name="time-outline" size={12} color={colors.textTertiary} />
+                <Text style={styles.scheduleText}>{new Date(scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+             </View>
+          )}
+          {court && (
+             <View style={styles.scheduleRow}>
+                <Ionicons name="location-outline" size={12} color={colors.textTertiary} />
+                <Text style={styles.scheduleText}>{court}</Text>
+             </View>
+          )}
+        </View>
+      )}
     </View>
   );
 };
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    width: 200,
+    width: 240,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -70,14 +107,14 @@ const styles = StyleSheet.create({
     height: 48,
   },
   winnerRow: {
-    backgroundColor: 'rgba(236, 91, 19, 0.05)',
+    backgroundColor: colors.primary[500] + '0D', // 0D is ~5% opacity
   },
   bottomRow: {
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
   playerName: {
-    color: '#fff',
+    color: colors.text,
     fontSize: 14,
     fontWeight: '600',
     flex: 1,
@@ -85,6 +122,10 @@ const styles = StyleSheet.create({
   loserText: {
     color: colors.textTertiary,
     fontWeight: '400',
+  },
+  scoresRow: {
+    flexDirection: 'row',
+    gap: 4,
   },
   scoreBox: {
     width: 24,
@@ -107,7 +148,7 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   statusBadge: {
-    backgroundColor: 'rgba(236, 91, 19, 0.15)',
+    backgroundColor: colors.primary[500] + '26', // 26 is ~15% opacity
     paddingVertical: 4,
     alignItems: 'center',
   },
@@ -116,5 +157,24 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 1,
+  },
+  schedulingInfo: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.md,
+    paddingVertical: 4,
+    backgroundColor: colors.background + '50',
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  scheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  scheduleText: {
+    fontSize: 10,
+    color: colors.textTertiary,
+    fontWeight: '700',
   }
 });

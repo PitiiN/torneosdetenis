@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Dimensions, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius } from '@/theme';
+import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { useFocusEffect } from 'expo-router';
 
@@ -20,6 +20,8 @@ interface PaymentRecord {
 
 export default function PaymentsScreen() {
     const insets = useSafeAreaInsets();
+    const { colors } = useTheme();
+    const styles = getStyles(colors);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [payments, setPayments] = useState<PaymentRecord[]>([]);
@@ -47,12 +49,11 @@ export default function PaymentsScreen() {
                     tournament_id,
                     fee_amount,
                     is_paid,
-                    created_at,
                     status,
-                    tournaments:tournaments!inner(name)
+                    tournaments:tournaments!inner(name, end_date, start_date)
                 `)
                 .eq('player_id', session.user.id)
-                .order('created_at', { ascending: false });
+                .order('id', { ascending: false });
 
             if (error) throw error;
 
@@ -62,7 +63,7 @@ export default function PaymentsScreen() {
                 tournament_name: r.tournaments.name,
                 fee_amount: r.fee_amount,
                 is_paid: r.is_paid,
-                created_at: r.created_at,
+                created_at: r.tournaments.end_date || r.tournaments.start_date || new Date().toISOString(),
                 status: r.status
             }));
 
@@ -143,7 +144,7 @@ export default function PaymentsScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
@@ -164,7 +165,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 18,
         fontWeight: '900',
-        color: '#fff',
+        color: colors.text,
     },
     scrollContent: {
         padding: spacing.xl,
@@ -191,13 +192,13 @@ const styles = StyleSheet.create({
     summaryValue: {
         fontSize: 32,
         fontWeight: '900',
-        color: '#fff',
+        color: colors.text,
     },
     summaryIcon: {
         width: 56,
         height: 56,
         borderRadius: borderRadius.xl,
-        backgroundColor: 'rgba(255,255,255,0.03)',
+        backgroundColor: colors.surfaceSecondary,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -207,7 +208,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 20,
         fontWeight: '800',
-        color: '#fff',
+        color: colors.text,
     },
     list: {
         gap: spacing.md,
@@ -229,7 +230,7 @@ const styles = StyleSheet.create({
     tournamentName: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#fff',
+        color: colors.text,
         marginBottom: 4,
     },
     dateRow: {
@@ -248,7 +249,7 @@ const styles = StyleSheet.create({
     amountText: {
         fontSize: 16,
         fontWeight: '800',
-        color: '#fff',
+        color: colors.text,
     },
     statusBadge: {
         paddingHorizontal: 8,
@@ -256,10 +257,10 @@ const styles = StyleSheet.create({
         borderRadius: borderRadius.md,
     },
     statusPaid: {
-        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+        backgroundColor: colors.success + '1A',
     },
     statusUnpaid: {
-        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        backgroundColor: colors.error + '1A',
     },
     statusText: {
         fontSize: 10,

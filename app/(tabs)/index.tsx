@@ -2,10 +2,13 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius } from '@/theme';
+import { useTheme, spacing, borderRadius } from '@/theme';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '@/services/supabase';
 import * as SecureStore from 'expo-secure-store';
+import { DateField } from '@/components/DateField';
+import { CHILEAN_COMUNAS } from '@/constants/tournamentOptions';
+import { Modal } from 'react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -20,24 +23,46 @@ interface Organization {
 export default function InicioScreen() {
     const insets = useSafeAreaInsets();
     const router = useRouter();
+    const { colors } = useTheme();
+    const styles = getStyles(colors);
     const [organizations, setOrganizations] = useState<Organization[]>([]);
     const [loading, setLoading] = useState(true);
+    const [selectedComuna, setSelectedComuna] = useState<string | null>(null);
+    const [selectedDate, setSelectedDate] = useState<string | null>(null);
+    const [showComunaModal, setShowComunaModal] = useState(false);
 
     useFocusEffect(
         useCallback(() => {
             fetchOrganizations();
-        }, [])
+        }, [selectedComuna, selectedDate])
     );
 
     async function fetchOrganizations() {
+        setLoading(true);
         try {
+            // Fetch organizations with their tournaments to apply filters
             const { data, error } = await supabase
                 .from('organizations')
-                .select('*')
-                .order('name');
+                .select('*, tournaments(*)');
             
             if (error) throw error;
-            setOrganizations(data || []);
+
+            let filtered = data || [];
+
+            if (selectedComuna || selectedDate) {
+                filtered = filtered.filter((org: any) => {
+                    const orgTournaments = org.tournaments || [];
+                    return orgTournaments.some((t: any) => {
+                        const matchComuna = !selectedComuna || t.comuna === selectedComuna;
+                        const matchDate = !selectedDate || t.start_date >= selectedDate;
+                        // For open tournaments only where registration is still possible
+                        const isPublished = t.status === 'open';
+                        return matchComuna && matchDate && isPublished;
+                    });
+                });
+            }
+
+            setOrganizations(filtered);
         } catch (error) {
             console.error('Error fetching organizations:', error);
         } finally {
@@ -61,6 +86,45 @@ export default function InicioScreen() {
                 <View style={styles.welcomeSection}>
                     <Text style={styles.welcomeTitle}>Explora Organizaciones</Text>
                     <Text style={styles.welcomeSubtitle}>Encuentra tu próximo club y únete a sus torneos</Text>
+                </View>
+
+                {/* Filter Section */}
+                <View style={styles.filterSection}>
+                    <View style={styles.filterRow}>
+                        <TouchableOpacity 
+                            style={[styles.filterChip, selectedComuna && styles.activeFilterChip]} 
+                            onPress={() => setShowComunaModal(true)}
+                        >
+                            <Ionicons name="location-outline" size={16} color={selectedComuna ? '#fff' : colors.textTertiary} />
+                            <Text style={[styles.filterChipText, selectedComuna && styles.activeFilterChipText]}>
+                                {selectedComuna || 'Comuna'}
+                            </Text>
+                            {selectedComuna && (
+                                <TouchableOpacity onPress={() => setSelectedComuna(null)}>
+                                    <Ionicons name="close-circle" size={14} color="#fff" style={{ marginLeft: 4 }} />
+                                </TouchableOpacity>
+                            )}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity 
+                            style={[styles.filterChip, selectedDate && styles.activeFilterChip]}
+                            onPress={() => {}} // DateField handles its own modal
+                        >
+                            <Ionicons name="calendar-outline" size={16} color={selectedDate ? '#fff' : colors.textTertiary} />
+                            <DateField 
+                                value={selectedDate || ''} 
+                                onChange={(date) => setSelectedDate(date || null)}
+                                label="" 
+                                hideLabel
+                                isCompact
+                            />
+                            {selectedDate && (
+                                <TouchableOpacity onPress={() => setSelectedDate(null)}>
+                                    <Ionicons name="close-circle" size={14} color="#fff" style={{ marginLeft: 4 }} />
+                                </TouchableOpacity>
+                            )}
+                        </TouchableOpacity>
+                    </View>
                 </View>
 
                 {/* Organizations Vitrine */}
@@ -113,11 +177,40 @@ export default function InicioScreen() {
                     </View>
                 )}
             </ScrollView>
+
+            {/* Selection Modal for Comuna */}
+            <Modal visible={showComunaModal} transparent animationType="fade">
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Seleccionar Comuna</Text>
+                        <ScrollView style={{ maxHeight: 400 }}>
+                            {CHILEAN_COMUNAS.map((comuna) => (
+                                <TouchableOpacity 
+                                    key={comuna} 
+                                    style={styles.modalOption} 
+                                    onPress={() => {
+                                        setSelectedComuna(comuna);
+                                        setShowComunaModal(false);
+                                    }}
+                                >
+                                    <Text style={styles.modalOptionText}>{comuna}</Text>
+                                    {selectedComuna === comuna && (
+                                        <Ionicons name="checkmark" size={20} color={colors.primary[500]} />
+                                    )}
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                        <TouchableOpacity style={styles.modalClose} onPress={() => setShowComunaModal(false)}>
+                            <Text style={styles.modalCloseText}>Cancelar</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
@@ -153,13 +246,43 @@ const styles = StyleSheet.create({
     welcomeTitle: {
         fontSize: 28,
         fontWeight: '900',
-        color: '#fff',
+        color: colors.text,
         letterSpacing: -0.5,
     },
     welcomeSubtitle: {
         fontSize: 14,
         color: colors.textSecondary,
         marginTop: 4,
+    },
+    filterSection: {
+        marginBottom: spacing.xl,
+    },
+    filterRow: {
+        flexDirection: 'row',
+        gap: spacing.sm,
+    },
+    filterChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: borderRadius.full,
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.border,
+        gap: 6,
+    },
+    activeFilterChip: {
+        backgroundColor: colors.primary[500],
+        borderColor: colors.primary[500],
+    },
+    filterChipText: {
+        fontSize: 13,
+        color: colors.textSecondary,
+        fontWeight: '600',
+    },
+    activeFilterChipText: {
+        color: '#fff',
     },
     sectionHeader: {
         flexDirection: 'row',
@@ -170,7 +293,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 20,
         fontWeight: '800',
-        color: '#fff',
+        color: colors.text,
     },
     orgGrid: {
         flexDirection: 'row',
@@ -204,7 +327,7 @@ const styles = StyleSheet.create({
     orgName: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#fff',
+        color: colors.text,
         textAlign: 'center',
     },
     orgMeta: {
@@ -229,5 +352,48 @@ const styles = StyleSheet.create({
         fontSize: 14,
         textAlign: 'center',
         marginTop: spacing.md,
-    }
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: spacing.xl,
+    },
+    modalContent: {
+        backgroundColor: colors.surface,
+        borderRadius: borderRadius['2xl'],
+        width: '100%',
+        padding: spacing.xl,
+        maxHeight: '80%',
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: '800',
+        color: colors.text,
+        marginBottom: spacing.xl,
+    },
+    modalOption: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: spacing.lg,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+    },
+    modalOptionText: {
+        fontSize: 16,
+        color: colors.text,
+        fontWeight: '600',
+    },
+    modalClose: {
+        marginTop: spacing.xl,
+        alignItems: 'center',
+        paddingVertical: spacing.md,
+    },
+    modalCloseText: {
+        fontSize: 16,
+        color: colors.primary[500],
+        fontWeight: '700',
+    },
 });

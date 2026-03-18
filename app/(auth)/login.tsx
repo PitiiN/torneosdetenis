@@ -6,7 +6,10 @@ import { colors, spacing, borderRadius, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 
+import { useRouter } from 'expo-router';
+
 export default function LoginScreen() {
+    const router = useRouter();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -25,20 +28,6 @@ export default function LoginScreen() {
         setLoading(false);
     }
 
-    async function signUpWithEmail() {
-        setLoading(true);
-        const { error } = await supabase.auth.signUp({
-            email,
-            password,
-        });
-
-        if (error) {
-            Alert.alert('Error', error.message);
-        } else {
-            Alert.alert('Éxito', 'Se ha enviado un correo de confirmación (si está habilitado) o ya puedes iniciar sesión.');
-        }
-        setLoading(false);
-    }
 
     return (
         <View style={styles.container}>
@@ -112,7 +101,7 @@ export default function LoginScreen() {
 
                             <TouchableOpacity 
                                 style={styles.registerButton} 
-                                onPress={signUpWithEmail}
+                                onPress={() => router.push('/(auth)/register')}
                                 disabled={loading}
                             >
                                 <Text style={styles.registerButtonText}>Crear una cuenta</Text>

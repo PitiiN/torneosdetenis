@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, spacing, borderRadius } from '@/theme';
+import { useTheme, spacing, borderRadius } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/services/supabase';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -21,6 +21,8 @@ export default function TournamentFinanceDetail() {
     const { id } = useLocalSearchParams();
     const insets = useSafeAreaInsets();
     const router = useRouter();
+    const { colors } = useTheme();
+    const styles = getStyles(colors);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState<string | null>(null);
     const [tournament, setTournament] = useState<any>(null);
@@ -95,7 +97,7 @@ export default function TournamentFinanceDetail() {
 
             if (error) throw error;
 
-            setRegistrations(current => 
+            setRegistrations(current =>
                 current.map(reg => reg.id === regId ? { ...reg, ...updates } : reg)
             );
         } catch (error) {
@@ -112,7 +114,7 @@ export default function TournamentFinanceDetail() {
 
     const handleFeeChange = (regId: string, value: string) => {
         const amount = parseInt(value) || 0;
-        setRegistrations(current => 
+        setRegistrations(current =>
             current.map(reg => reg.id === regId ? { ...reg, fee_amount: amount } : reg)
         );
     };
@@ -142,8 +144,8 @@ export default function TournamentFinanceDetail() {
                 <View style={{ width: 40 }} />
             </View>
 
-            <KeyboardAvoidingView 
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
             >
                 <ScrollView contentContainerStyle={styles.content}>
@@ -170,7 +172,7 @@ export default function TournamentFinanceDetail() {
                                                 <Text style={styles.paidBadgeText}>{reg.is_paid ? 'PAGADO' : 'PENDIENTE'}</Text>
                                             </View>
                                         </View>
-                                        <TouchableOpacity 
+                                        <TouchableOpacity
                                             style={[styles.toggleBtn, reg.is_paid ? styles.toggleBtnPaid : styles.toggleBtnUnpaid]}
                                             onPress={() => togglePayment(reg)}
                                             disabled={!!saving}
@@ -210,189 +212,191 @@ export default function TournamentFinanceDetail() {
     );
 }
 
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: colors.background,
-    },
-    center: {
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: spacing.xl,
-        paddingBottom: spacing.lg,
-        borderBottomWidth: 1,
-        borderBottomColor: colors.border,
-        backgroundColor: colors.surface,
-    },
-    backButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: 'rgba(255,255,255,0.05)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    headerTextContainer: {
-        flex: 1,
-        paddingHorizontal: spacing.md,
-    },
-    title: {
-        fontSize: 18,
-        fontWeight: '900',
-        color: '#fff',
-    },
-    subtitle: {
-        fontSize: 12,
-        color: colors.primary[500],
-        fontWeight: '700',
-    },
-    content: {
-        padding: spacing.xl,
-        paddingBottom: 40,
-        gap: spacing.xl,
-    },
-    summaryGrid: {
-        flexDirection: 'row',
-        gap: spacing.md,
-    },
-    summaryCard: {
-        flex: 1,
-        backgroundColor: colors.surface,
-        borderRadius: borderRadius.xl,
-        borderWidth: 1,
-        borderColor: colors.border,
-        padding: spacing.lg,
-        gap: spacing.xs,
-    },
-    summaryLabel: {
-        color: colors.textSecondary,
-        fontSize: 11,
-        fontWeight: '700',
-        textTransform: 'uppercase',
-    },
-    summaryValue: {
-        fontSize: 20,
-        fontWeight: '900',
-    },
-    section: {
-        gap: spacing.md,
-    },
-    sectionTitle: {
-        fontSize: 16,
-        fontWeight: '800',
-        color: '#fff',
-    },
-    playersList: {
-        gap: spacing.md,
-    },
-    playerCard: {
-        backgroundColor: colors.surface,
-        borderRadius: borderRadius.xl,
-        borderWidth: 1,
-        borderColor: colors.border,
-        padding: spacing.lg,
-        gap: spacing.md,
-    },
-    playerHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-    },
-    playerInfo: {
-        flex: 1,
-        gap: spacing.xs,
-    },
-    playerName: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: '800',
-    },
-    paidBadge: {
-        alignSelf: 'flex-start',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: borderRadius.sm,
-    },
-    paidBadgeActive: {
-        backgroundColor: 'rgba(34, 197, 94, 0.1)',
-    },
-    unpaidBadge: {
-        backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    },
-    paidBadgeText: {
-        fontSize: 10,
-        fontWeight: '900',
-        color: colors.success,
-    },
-    toggleBtn: {
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.sm,
-        borderRadius: borderRadius.lg,
-    },
-    toggleBtnPaid: {
-        backgroundColor: colors.error + '20',
-        borderWidth: 1,
-        borderColor: colors.error,
-    },
-    toggleBtnUnpaid: {
-        backgroundColor: colors.success + '20',
-        borderWidth: 1,
-        borderColor: colors.success,
-    },
-    toggleBtnText: {
-        fontSize: 12,
-        fontWeight: '800',
-        color: '#fff',
-    },
-    feeRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingTop: spacing.md,
-        borderTopWidth: 1,
-        borderTopColor: colors.border,
-    },
-    feeLabel: {
-        color: colors.textSecondary,
-        fontSize: 14,
-        fontWeight: '600',
-    },
-    feeInputWrapper: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: colors.background,
-        borderRadius: borderRadius.md,
-        borderWidth: 1,
-        borderColor: colors.border,
-        paddingHorizontal: spacing.sm,
-    },
-    currencySymbol: {
-        color: colors.textTertiary,
-        fontSize: 14,
-        fontWeight: '700',
-    },
-    feeInput: {
-        color: '#fff',
-        paddingHorizontal: spacing.xs,
-        paddingVertical: 8,
-        fontSize: 14,
-        fontWeight: '800',
-        width: 80,
-        textAlign: 'right',
-    },
-    emptyContainer: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 40,
-        gap: spacing.md,
-    },
-    emptyText: {
-        color: colors.textTertiary,
-        textAlign: 'center',
-    }
-});
+function getStyles(colors: any) {
+    return StyleSheet.create({
+        container: {
+            flex: 1,
+            backgroundColor: colors.background,
+        },
+        center: {
+            justifyContent: 'center',
+            alignItems: 'center',
+        },
+        header: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: spacing.xl,
+            paddingBottom: spacing.lg,
+            borderBottomWidth: 1,
+            borderBottomColor: colors.border,
+            backgroundColor: colors.surface,
+        },
+        backButton: {
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            backgroundColor: 'rgba(255,255,255,0.05)',
+            justifyContent: 'center',
+            alignItems: 'center',
+        },
+        headerTextContainer: {
+            flex: 1,
+            paddingHorizontal: spacing.md,
+        },
+        title: {
+            fontSize: 18,
+            fontWeight: '900',
+            color: colors.text,
+        },
+        subtitle: {
+            fontSize: 12,
+            color: colors.primary[500],
+            fontWeight: '700',
+        },
+        content: {
+            padding: spacing.xl,
+            paddingBottom: 40,
+            gap: spacing.xl,
+        },
+        summaryGrid: {
+            flexDirection: 'row',
+            gap: spacing.md,
+        },
+        summaryCard: {
+            flex: 1,
+            backgroundColor: colors.surface,
+            borderRadius: borderRadius.xl,
+            borderWidth: 1,
+            borderColor: colors.border,
+            padding: spacing.lg,
+            gap: spacing.xs,
+        },
+        summaryLabel: {
+            color: colors.textSecondary,
+            fontSize: 11,
+            fontWeight: '700',
+            textTransform: 'uppercase',
+        },
+        summaryValue: {
+            fontSize: 20,
+            fontWeight: '900',
+        },
+        section: {
+            gap: spacing.md,
+        },
+        sectionTitle: {
+            fontSize: 16,
+            fontWeight: '800',
+            color: colors.text,
+        },
+        playersList: {
+            gap: spacing.md,
+        },
+        playerCard: {
+            backgroundColor: colors.surface,
+            borderRadius: borderRadius.xl,
+            borderWidth: 1,
+            borderColor: colors.border,
+            padding: spacing.lg,
+            gap: spacing.md,
+        },
+        playerHeader: {
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+        },
+        playerInfo: {
+            flex: 1,
+            gap: spacing.xs,
+        },
+        playerName: {
+            color: colors.text,
+            fontSize: 16,
+            fontWeight: '800',
+        },
+        paidBadge: {
+            alignSelf: 'flex-start',
+            paddingHorizontal: 8,
+            paddingVertical: 4,
+            borderRadius: borderRadius.sm,
+        },
+        paidBadgeActive: {
+            backgroundColor: colors.success + '15',
+        },
+        unpaidBadge: {
+            backgroundColor: colors.error + '15',
+        },
+        paidBadgeText: {
+            fontSize: 10,
+            fontWeight: '900',
+            color: colors.success,
+        },
+        toggleBtn: {
+            paddingHorizontal: spacing.md,
+            paddingVertical: spacing.sm,
+            borderRadius: borderRadius.lg,
+        },
+        toggleBtnPaid: {
+            backgroundColor: colors.error + '20',
+            borderWidth: 1,
+            borderColor: colors.error,
+        },
+        toggleBtnUnpaid: {
+            backgroundColor: colors.success + '20',
+            borderWidth: 1,
+            borderColor: colors.success,
+        },
+        toggleBtnText: {
+            fontSize: 12,
+            fontWeight: '800',
+            color: colors.text,
+        },
+        feeRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingTop: spacing.md,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+        },
+        feeLabel: {
+            color: colors.textSecondary,
+            fontSize: 14,
+            fontWeight: '600',
+        },
+        feeInputWrapper: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: colors.background,
+            borderRadius: borderRadius.md,
+            borderWidth: 1,
+            borderColor: colors.border,
+            paddingHorizontal: spacing.sm,
+        },
+        currencySymbol: {
+            color: colors.textTertiary,
+            fontSize: 14,
+            fontWeight: '700',
+        },
+        feeInput: {
+            color: colors.text,
+            paddingHorizontal: spacing.xs,
+            paddingVertical: 8,
+            fontSize: 14,
+            fontWeight: '800',
+            width: 80,
+            textAlign: 'right',
+        },
+        emptyContainer: {
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingVertical: 40,
+            gap: spacing.md,
+        },
+        emptyText: {
+            color: colors.textTertiary,
+            textAlign: 'center',
+        }
+    });
+}

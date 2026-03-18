@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Alert, Image, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, spacing, borderRadius } from '@/theme';
+import { useTheme, spacing, borderRadius } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/services/supabase';
 import * as ImagePicker from 'expo-image-picker';
@@ -12,6 +12,8 @@ const ROLE_OPTIONS = ['player', 'admin'];
 
 export default function SettingsScreen() {
     const insets = useSafeAreaInsets();
+    const { colors } = useTheme();
+    const styles = getStyles(colors);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [savingLogo, setSavingLogo] = useState(false);
@@ -191,7 +193,7 @@ export default function SettingsScreen() {
             const { data, error } = await supabase
                 .from('profiles')
                 .select('*')
-                .ilike('name', `%${query}%`)
+                .or(`name.ilike.%${query}%,email.ilike.%${query}%`)
                 .limit(10);
             
             if (data) setUserSearchResults(data);
@@ -374,7 +376,7 @@ export default function SettingsScreen() {
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>Editar Usuario</Text>
                             <TouchableOpacity onPress={() => setShowUserModal(false)}>
-                                <Ionicons name="close" size={24} color="#fff" />
+                                <Ionicons name="close" size={24} color={colors.text} />
                             </TouchableOpacity>
                         </View>
 
@@ -432,7 +434,7 @@ export default function SettingsScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
@@ -452,7 +454,7 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 28,
         fontWeight: '900',
-        color: '#fff',
+        color: colors.text,
     },
     subtitle: {
         fontSize: 14,
@@ -474,7 +476,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 18,
         fontWeight: '800',
-        color: '#fff',
+        color: colors.text,
         marginBottom: spacing.xs,
     },
     inputGroup: {
@@ -492,7 +494,7 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: colors.border,
         padding: spacing.md,
-        color: '#fff',
+        color: colors.text,
         fontSize: 16,
     },
     cardPreviewContainer: {
@@ -530,7 +532,7 @@ const styles = StyleSheet.create({
         borderColor: colors.surface,
     },
     cardPreviewName: {
-        color: '#fff',
+        color: colors.text,
         fontSize: 18,
         fontWeight: '800',
     },
@@ -599,7 +601,7 @@ const styles = StyleSheet.create({
         borderColor: colors.border,
     },
     userNameText: {
-        color: '#fff',
+        color: colors.text,
         fontWeight: '700',
         fontSize: 15,
     },
@@ -630,7 +632,7 @@ const styles = StyleSheet.create({
     modalTitle: {
         fontSize: 22,
         fontWeight: '900',
-        color: '#fff',
+        color: colors.text,
     },
     optionsGrid: {
         flexDirection: 'row',

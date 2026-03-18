@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { Animated, View, Text, StyleSheet, ScrollView } from 'react-native';
-import { colors, spacing } from '@/theme';
+import { useTheme, spacing } from '@/theme';
 import { MatchCard } from './MatchCard';
 
 interface SingleEliminationProps {
@@ -8,9 +8,11 @@ interface SingleEliminationProps {
         title: string;
         matches: {
             id: string;
-            player1: { name: string; score?: number; isWinner?: boolean };
-            player2: { name: string; score?: number; isWinner?: boolean };
+            player1: { name: string; scores?: (number | string)[]; isWinner?: boolean };
+            player2: { name: string; scores?: (number | string)[]; isWinner?: boolean };
             status?: string;
+            scheduledAt?: string | null;
+            court?: string | null;
         }[];
     }[];
 }
@@ -19,6 +21,8 @@ export const SingleEliminationBracket = ({ rounds }: SingleEliminationProps) => 
     const scale = useRef(new Animated.Value(1)).current;
     const baseScaleRef = useRef(1);
     const startDistanceRef = useRef<number | null>(null);
+    const { colors } = useTheme();
+    const styles = getStyles(colors);
 
     const distanceBetweenTouches = (touches: any[]) => {
         if (touches.length < 2) return null;
@@ -64,6 +68,8 @@ export const SingleEliminationBracket = ({ rounds }: SingleEliminationProps) => 
                                         player1={match.player1}
                                         player2={match.player2}
                                         status={match.status}
+                                        scheduledAt={match.scheduledAt}
+                                        court={match.court}
                                     />
                                 </View>
                             ))}
@@ -75,7 +81,7 @@ export const SingleEliminationBracket = ({ rounds }: SingleEliminationProps) => 
     );
 };
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     scrollContent: {
         paddingHorizontal: spacing.xl,
         gap: spacing['3xl'],

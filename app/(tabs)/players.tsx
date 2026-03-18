@@ -1,8 +1,8 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius } from '@/theme';
+import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { TOURNAMENT_CATEGORIES } from '@/constants/tournamentOptions';
 import { getTournamentPlacements } from '@/services/ranking';
@@ -19,21 +19,24 @@ type RankingRow = {
 
 export default function PlayersScreen() {
     const insets = useSafeAreaInsets();
+    const { colors } = useTheme();
+    const styles = getStyles(colors);
     const [activeCategory, setActiveCategory] = useState(TOURNAMENT_CATEGORIES[0]);
     const [loading, setLoading] = useState(true);
     const [organizationId, setOrganizationId] = useState<string | null>(null);
     const [organizationName, setOrganizationName] = useState('');
     const [rankingRows, setRankingRows] = useState<RankingRow[]>([]);
+    const [modality, setModality] = useState<'singles' | 'dobles'>('singles');
     const [page, setPage] = useState(0);
 
     useEffect(() => {
         loadRanking(activeCategory);
-    }, [activeCategory]);
+    }, [activeCategory, modality]);
 
     useFocusEffect(
         React.useCallback(() => {
             loadRanking(activeCategory);
-        }, [activeCategory])
+        }, [activeCategory, modality])
     );
 
     const getMockRankingRows = (): RankingRow[] =>
@@ -85,10 +88,10 @@ export default function PlayersScreen() {
                     .select('*', { count: 'exact', head: true })
                     .eq('organization_id', orgId)
                     .eq('level', category)
-                    .in('status', ['completed', 'finalized']);
+                    .in('status', ['completed', 'finalized', 'finished']);
 
                 if (!count || count === 0) {
-                    setRankingRows(getMockRankingRows());
+                    setRankingRows([]);
                     setPage(0);
                     return;
                 }
@@ -96,10 +99,11 @@ export default function PlayersScreen() {
 
             const { data: tournaments, error: tournamentsError } = await supabase
                 .from('tournaments')
-                .select('id, name, description, format, status, level, end_date, start_date')
+                .select('id, name, description, format, status, level, end_date, start_date, modality')
                 .eq('organization_id', orgId)
                 .eq('level', category)
-                .in('status', ['completed', 'finalized'])
+                .eq('modality', modality)
+                .in('status', ['completed', 'finalized', 'finished'])
                 .order('end_date', { ascending: false });
 
             if (tournamentsError) throw tournamentsError;
@@ -136,8 +140,12 @@ export default function PlayersScreen() {
                 sourceTournaments.forEach((tournament: any) => {
                     const placements = getTournamentPlacements(tournament, matchesByTournament[tournament.id] || []);
                     placements.forEach((placement) => {
-                        if (!placement.playerId) return;
-                        totals[placement.playerId] = (totals[placement.playerId] || 0) + placement.points;
+                        if (placement.playerId) {
+                            totals[placement.playerId] = (totals[placement.playerId] || 0) + placement.points;
+                        }
+                        if (placement.playerId2) {
+                            totals[placement.playerId2] = (totals[placement.playerId2] || 0) + placement.points;
+                        }
                     });
                 });
 
@@ -205,10 +213,6 @@ export default function PlayersScreen() {
                     previousRank: previousRankMap[row.playerId] || null,
                 }));
 
-            if (organizationNameValue === 'Chile Open' && category === 'Escalafón' && nextRows.length < 20) {
-                nextRows = getMockRankingRows();
-            }
-
             setRankingRows(nextRows);
             setPage(0);
         } catch (error) {
@@ -268,8 +272,25 @@ export default function PlayersScreen() {
             <View style={[styles.header, { paddingTop: Math.max(insets.top, spacing.md) }]}>
                 <Text style={styles.title}>Ranking</Text>
                 <Text style={styles.subtitle}>
-                    {organizationId ? `${organizationName || 'Organización actual'} · ${activeCategory}` : 'Selecciona tu organización para ver el ranking'}
+                    {organizationId ? `${organizationName || 'Organización actual'} · ${activeCategory} · ${modality === 'dobles' ? 'Dobles' : 'Singles'}` : 'Selecciona tu organización para ver el ranking'}
                 </Text>
+            </View>
+
+            <View style={styles.modalitySelectorContainer}>
+                <View style={styles.modalitySelector}>
+                    <TouchableOpacity 
+                        style={[styles.modalityBtn, modality === 'singles' && styles.modalityBtnActive]}
+                        onPress={() => setModality('singles')}
+                    >
+                        <Text style={[styles.modalityBtnText, modality === 'singles' && styles.modalityBtnTextActive]}>Singles</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        style={[styles.modalityBtn, modality === 'dobles' && styles.modalityBtnActive]}
+                        onPress={() => setModality('dobles')}
+                    >
+                        <Text style={[styles.modalityBtnText, modality === 'dobles' && styles.modalityBtnTextActive]}>Dobles</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -368,7 +389,7 @@ export default function PlayersScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
@@ -450,12 +471,12 @@ const styles = StyleSheet.create({
         borderColor: '#FFB089',
     },
     podiumCardSecond: {
-        backgroundColor: '#EFF3F8',
-        borderColor: '#D9E1EC',
+        backgroundColor: colors.isDark ? '#EFF3F8' : colors.surfaceSecondary,
+        borderColor: colors.border,
     },
     podiumCardThird: {
-        backgroundColor: '#F3F6EC',
-        borderColor: '#D7DFC7',
+        backgroundColor: colors.isDark ? '#F3F6EC' : colors.surfaceSecondary,
+        borderColor: colors.border,
     },
     podiumPlace: {
         color: colors.primary[500],
@@ -480,11 +501,11 @@ const styles = StyleSheet.create({
     podiumNameCompact: {
         fontSize: 14,
         lineHeight: 16,
-        color: '#132238',
+        color: colors.text,
         marginBottom: 2,
     },
     podiumPoints: {
-        color: '#fff',
+        color: colors.text,
         fontSize: 14,
         fontWeight: '800',
         marginBottom: 2,
@@ -493,7 +514,7 @@ const styles = StyleSheet.create({
         color: '#FFF3E8',
     },
     podiumPointsCompact: {
-        color: '#42546B',
+        color: colors.textSecondary,
         fontSize: 12,
         marginBottom: 2,
     },
@@ -585,6 +606,40 @@ const styles = StyleSheet.create({
         color: colors.textSecondary,
         marginTop: spacing.sm,
         textAlign: 'center',
+    },
+    modalitySelectorContainer: {
+        paddingHorizontal: spacing.xl,
+        paddingBottom: spacing.md,
+        backgroundColor: colors.background,
+    },
+    modalitySelector: { 
+        flexDirection: 'row', 
+        backgroundColor: colors.surfaceSecondary, 
+        borderRadius: borderRadius.lg, 
+        padding: 4,
+    },
+    modalityBtn: { 
+        flex: 1, 
+        paddingVertical: 8, 
+        alignItems: 'center', 
+        borderRadius: borderRadius.md 
+    },
+    modalityBtnActive: { 
+        backgroundColor: colors.surface,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+        elevation: 2 
+    },
+    modalityBtnText: { 
+        fontSize: 13, 
+        fontWeight: '600', 
+        color: colors.textSecondary 
+    },
+    modalityBtnTextActive: { 
+        color: colors.primary[500], 
+        fontWeight: '700' 
     },
 });
 

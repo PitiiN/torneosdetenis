@@ -1,22 +1,25 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions, Alert, ActivityIndicator, TextInput, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions, Alert, ActivityIndicator, TextInput, Modal, BackHandler, Platform, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius } from '@/theme';
+import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { getTournamentPlacements } from '@/services/ranking';
 import { adminModeService } from '@/services/adminMode';
+import { notificationService } from '@/services/notificationService';
 
 const { width } = Dimensions.get('window');
 const GLOBAL_ADMIN_EMAIL = 'javier.aravena25@gmail.com';
-const ROLE_OPTIONS = ['player', 'admin'];
 
 export default function ProfileScreen() {
     const insets = useSafeAreaInsets();
+    const { colors, toggleTheme, isDark } = useTheme();
+    const styles = getStyles(colors);
     const router = useRouter();
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
     const [updating, setUpdating] = useState(false);
     const [user, setUser] = useState<any>(null);
     const [stats, setStats] = useState({
@@ -24,10 +27,19 @@ export default function ProfileScreen() {
         trophies: 0,
         wins: 0,
         winRate: '0%',
-        totalMatches: 0
+        totalMatches: 0,
+        setsWon: 0,
+        setsLost: 0,
+        gamesWon: 0,
+        gamesLost: 0
     });
+    const [modality, setModality] = useState<'singles' | 'dobles'>('singles');
     const [recentTournaments, setRecentTournaments] = useState<any[]>([]);
-    
+
+    // Profile Fields
+    const [isEditingBackhand, setIsEditingBackhand] = useState(false);
+    const [isEditingDominantHand, setIsEditingDominantHand] = useState(false);
+
     // Filters
     const [userContexts, setUserContexts] = useState<any[]>([]); // { org_id, org_name, level }
     const [selectedContext, setSelectedContext] = useState<any>(null);
@@ -40,6 +52,27 @@ export default function ProfileScreen() {
     const [orgSearch, setOrgSearch] = useState('');
     const [showOrgSearchModal, setShowOrgSearchModal] = useState(false);
 
+    useEffect(() => {
+        const backAction = () => {
+            if (showContextModal) {
+                setShowContextModal(false);
+                return true;
+            }
+            if (showOrgSearchModal) {
+                setShowOrgSearchModal(false);
+                return true;
+            }
+            return false;
+        };
+
+        const backHandler = BackHandler.addEventListener(
+            'hardwareBackPress',
+            backAction
+        );
+
+        return () => backHandler.remove();
+    }, [showContextModal, showOrgSearchModal]);
+
     useFocusEffect(
         useCallback(() => {
             loadProfileData();
@@ -50,7 +83,7 @@ export default function ProfileScreen() {
         if (selectedContext) {
             calculateStats();
         }
-    }, [selectedContext, user?.id]);
+    }, [selectedContext, user?.id, modality]);
 
     useEffect(() => {
         const unsubscribe = adminModeService.subscribe((m) => {
@@ -58,6 +91,12 @@ export default function ProfileScreen() {
         });
         return unsubscribe;
     }, []);
+
+    useEffect(() => {
+        if (user?.id && user.notifications_enabled) {
+            notificationService.registerForPushNotifications(user.id);
+        }
+    }, [user?.id, user?.notifications_enabled]);
 
     const handleToggleMode = () => {
         const next = viewMode === 'admin' ? 'user' : 'admin';
@@ -103,7 +142,7 @@ export default function ProfileScreen() {
             if (!ctxErr && contexts) {
                 const uniqueContexts: any[] = [];
                 const seen = new Set();
-                
+
                 contexts.forEach((c: any) => {
                     const key = `${c.tournaments.organization_id}|${c.tournaments.level}`;
                     if (!seen.has(key)) {
@@ -128,20 +167,20 @@ export default function ProfileScreen() {
                 .select(`
                     tournament_id,
                     tournaments:tournaments!inner(
-                        id, name, level, status, end_date, format, start_date
+                        id, name, level, status, end_date, format, start_date, modality
                     )
                 `)
                 .eq('player_id', session.user.id)
-                .order('created_at', { ascending: false })
+                .order('registered_at', { ascending: false })
                 .limit(3);
 
             if (!recentErr && recent) {
                 const tourData = await Promise.all(recent.map(async (r: any) => {
                     const t = r.tournaments;
-                    if (t.status === 'completed' || t.status === 'finalized') {
+                    if (t.status === 'completed' || t.status === 'finalized' || t.status === 'finished') {
                         const { data: tMatches } = await supabase.from('matches').select('*').eq('tournament_id', t.id);
                         const placements = getTournamentPlacements(t, tMatches || []);
-                        const myPlacement = placements.find(p => p.playerId === session.user.id);
+                        const myPlacement = placements.find(p => p.playerId === session.user.id || p.playerId2 === session.user.id);
                         return { ...t, place: myPlacement ? `${myPlacement.place}° LUGAR` : 'FINALIZADO' };
                     }
                     return { ...t, place: 'EN CURSO' };
@@ -153,8 +192,14 @@ export default function ProfileScreen() {
             console.error('Error loading profile:', error);
         } finally {
             setLoading(false);
+            setRefreshing(false);
         }
     };
+
+    const onRefresh = useCallback(() => {
+        setRefreshing(true);
+        loadProfileData();
+    }, []);
 
     const fetchAllOrganizations = async () => {
         const { data, error } = await supabase
@@ -170,27 +215,58 @@ export default function ProfileScreen() {
         if (!selectedContext || !user) return;
 
         try {
-            // 1. Get all matches for this context where user participated
             const { data: matches, error: matchErr } = await supabase
                 .from('matches')
-                .select('*, tournaments!inner(organization_id, level, status)')
+                .select('*, tournaments!inner(organization_id, level, status, modality)')
                 .eq('tournaments.organization_id', selectedContext.org_id)
                 .eq('tournaments.level', selectedContext.level)
-                .or(`player_a_id.eq.${user.id},player_b_id.eq.${user.id}`);
+                .eq('tournaments.modality', modality)
+                .or(`player_a_id.eq.${user.id},player_a2_id.eq.${user.id},player_b_id.eq.${user.id},player_b2_id.eq.${user.id}`);
 
             if (matchErr) throw matchErr;
 
             const totalMatches = matches?.length || 0;
-            const wins = matches?.filter(m => m.winner_id === user.id).length || 0;
+            const wins = matches?.filter(m => m.winner_id === user.id || m.winner_2_id === user.id).length || 0;
             const winRate = totalMatches > 0 ? Math.round((wins / totalMatches) * 100) : 0;
 
-            // 2. Calculate Trophies (1st places) and Ranking
+            let setsWon = 0;
+            let setsLost = 0;
+            let gamesWon = 0;
+            let gamesLost = 0;
+
+            matches?.forEach(m => {
+                const isPlayerA = m.player_a_id === user.id || m.player_a2_id === user.id;
+                if (m.score) {
+                    const sets = m.score.split(/\s*,\s*/);
+                    sets.forEach((s: string) => {
+                        const parts = s.trim().split(/[- ]+/).map(Number);
+                        if (parts.length >= 2) {
+                            const [s1, s2] = parts;
+                            if (!isNaN(s1) && !isNaN(s2)) {
+                                if (isPlayerA) {
+                                    gamesWon += s1;
+                                    gamesLost += s2;
+                                    if (s1 > s2) setsWon++;
+                                    else if (s2 > s1) setsLost++;
+                                } else {
+                                    gamesWon += s2;
+                                    gamesLost += s1;
+                                    if (s2 > s1) setsWon++;
+                                    else if (s1 > s2) setsLost++;
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+
             const { data: tournaments, error: tourErr } = await supabase
                 .from('tournaments')
                 .select('*')
                 .eq('organization_id', selectedContext.org_id)
                 .eq('level', selectedContext.level)
-                .in('status', ['completed', 'finalized']);
+                .eq('modality', modality)
+                .in('status', ['completed', 'finalized', 'finished']);
 
             let trophies = 0;
             let allPlayersPoints: Record<string, number> = {};
@@ -210,13 +286,13 @@ export default function ProfileScreen() {
                 tournaments.forEach(t => {
                     const placements = getTournamentPlacements(t, matchesByTour[t.id] || []);
                     placements.forEach(p => {
-                        if (p.playerId === user.id && p.place === '1') trophies++;
-                        allPlayersPoints[p.playerId] = (allPlayersPoints[p.playerId] || 0) + p.points;
+                        if ((p.playerId === user.id || p.playerId2 === user.id) && p.place === '1') trophies++;
+                        if (p.playerId) allPlayersPoints[p.playerId] = (allPlayersPoints[p.playerId] || 0) + p.points;
+                        if (p.playerId2) allPlayersPoints[p.playerId2] = (allPlayersPoints[p.playerId2] || 0) + p.points;
                     });
                 });
             }
 
-            // 3. Calculate Rank
             const sortedRanking = Object.entries(allPlayersPoints).sort((a, b) => b[1] - a[1]);
             const userRankIndex = sortedRanking.findIndex(([id]) => id === user.id);
             const rank = userRankIndex !== -1 ? `#${userRankIndex + 1}` : '-';
@@ -226,7 +302,11 @@ export default function ProfileScreen() {
                 trophies,
                 wins,
                 winRate: `${winRate}%`,
-                totalMatches
+                totalMatches,
+                setsWon,
+                setsLost,
+                gamesWon,
+                gamesLost
             });
 
         } catch (error) {
@@ -248,20 +328,6 @@ export default function ProfileScreen() {
         }
     };
 
-    const handleUpdateName = async (newName: string) => {
-        if (!user || !newName.trim()) return;
-        try {
-            const { error } = await supabase
-                .from('profiles')
-                .update({ name: newName.trim() })
-                .eq('id', user.id);
-            if (error) throw error;
-            setUser({ ...user, name: newName.trim() });
-        } catch (error) {
-            Alert.alert('Error', 'No se pudo actualizar el nombre.');
-        }
-    };
-
     const handleUpdatePhone = async (newPhone: string) => {
         if (!user) return;
         try {
@@ -273,6 +339,63 @@ export default function ProfileScreen() {
             setUser({ ...user, phone: newPhone.trim() });
         } catch (error) {
             Alert.alert('Error', 'No se pudo actualizar el teléfono.');
+        }
+    };
+
+    const handleUpdateBackhand = (val: string) => {
+        setUser({ ...user, revés: val });
+    };
+
+    const handleUpdateDominantHand = (val: string) => {
+        setUser({ ...user, mano_dominante: val });
+    };
+
+    const handleToggleNotifications = async () => {
+        if (!user) return;
+        const newValue = !user.notifications_enabled;
+        setUpdating(true);
+        try {
+            const { error } = await supabase
+                .from('profiles')
+                .update({ notifications_enabled: newValue })
+                .eq('id', user.id);
+            if (error) throw error;
+            
+            if (newValue) {
+                await notificationService.registerForPushNotifications(user.id);
+            }
+            
+            setUser({ ...user, notifications_enabled: newValue });
+        } catch (error) {
+            console.error(error);
+            Alert.alert('Error', 'No se pudo actualizar la configuración de notificaciones.');
+        } finally {
+            setUpdating(false);
+        }
+    };
+
+    const handleSaveAll = async () => {
+        setUpdating(true);
+        try {
+            const { error } = await supabase
+                .from('profiles')
+                .update({
+                    name: user.name,
+                    phone: user.phone,
+                    location: user.location,
+                    revés: user.revés,
+                    mano_dominante: user.mano_dominante
+                })
+                .eq('id', user.id);
+            if (error) throw error;
+            Alert.alert('Éxito', 'Cambios guardados correctamente.');
+            setIsEditingBackhand(false);
+            setIsEditingDominantHand(false);
+        } catch (error) {
+            console.error(error);
+            Alert.alert('Error', 'No se pudieron guardar los cambios.');
+        } finally {
+            setUpdating(false);
         }
     };
 
@@ -308,7 +431,7 @@ export default function ProfileScreen() {
                 return;
             }
             result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: 'images',
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: true,
                 aspect: [1, 1],
                 quality: 0.5,
@@ -389,14 +512,14 @@ export default function ProfileScreen() {
                     </View>
 
                     {isGlobalAdmin && (
-                        <TouchableOpacity 
-                            style={[styles.viewToggle, viewMode === 'user' && styles.viewToggleUser]} 
+                        <TouchableOpacity
+                            style={[styles.viewToggle, viewMode === 'user' && styles.viewToggleUser]}
                             onPress={handleToggleMode}
                         >
-                            <Ionicons 
-                                name={viewMode === 'admin' ? 'eye-outline' : 'settings-outline'} 
-                                size={14} 
-                                color="#fff" 
+                            <Ionicons
+                                name={viewMode === 'admin' ? 'eye-outline' : 'settings-outline'}
+                                size={14}
+                                color="#fff"
                             />
                             <Text style={styles.viewToggleText}>
                                 {viewMode === 'admin' ? 'VISTA USUARIO' : 'VISTA ADMIN'}
@@ -406,14 +529,18 @@ export default function ProfileScreen() {
                 </View>
             </View>
 
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <ScrollView 
+                contentContainerStyle={styles.scrollContent} 
+                showsVerticalScrollIndicator={false}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary[500]} />}
+            >
                 {/* Profile Brief */}
                 <View style={styles.profileSection}>
                     <View style={styles.profileMain}>
                         <TouchableOpacity style={styles.avatarContainer} onPress={handlePickImage} disabled={updating}>
-                            <Image 
-                                source={user.avatar_url ? { uri: user.avatar_url } : require('../../assets/images/placeholder.png')} 
-                                style={styles.avatar} 
+                            <Image
+                                source={user.avatar_url ? { uri: user.avatar_url } : require('../../assets/images/placeholder.png')}
+                                style={styles.avatar}
                             />
                             <View style={styles.avatarEditBtn}>
                                 {updating ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="camera" size={14} color="#fff" />}
@@ -447,46 +574,106 @@ export default function ProfileScreen() {
                                     </View>
                                 </View>
                             </View>
-                            {(user.role === 'admin' && viewMode === 'admin') ? (
-                                <TextInput
-                                    style={styles.userNameInput}
-                                    value={user.name}
-                                    onChangeText={(val) => setUser({ ...user, name: val })}
-                                    onBlur={() => handleUpdateName(user.name)}
-                                    placeholder="Tu nombre completo..."
-                                    placeholderTextColor={colors.textTertiary}
-                                    multiline={false}
-                                />
-                            ) : (
-                                <Text style={styles.userName}>{user.name}</Text>
-                            )}
-                            <Text style={styles.userBio}>
-                                {user.bio || 'Jugador de tenis entusiasta.'}
-                            </Text>
+                            <View>
+                                {(isGlobalAdmin && viewMode === 'admin') ? (
+                                    <TextInput
+                                        style={styles.userNameInput}
+                                        value={user.name}
+                                        onChangeText={(val) => setUser({ ...user, name: val })}
+                                        placeholder="Tu nombre completo..."
+                                        placeholderTextColor={colors.textTertiary}
+                                        multiline={false}
+                                    />
+                                ) : (
+                                    <Text style={styles.userName}>{user.name}</Text>
+                                )}
+                            </View>
+
+                            <View style={styles.extraFields}>
+                                <TouchableOpacity style={styles.extraField} onPress={() => setIsEditingBackhand(true)}>
+                                    <Text style={styles.extraFieldLabel}>Revés:</Text>
+                                    {isEditingBackhand ? (
+                                        <TextInput
+                                            style={styles.extraFieldInput}
+                                            value={user.revés || ''}
+                                            onChangeText={handleUpdateBackhand}
+                                            placeholder="una mano/2 manos"
+                                            placeholderTextColor={colors.textTertiary}
+                                            autoFocus
+                                        />
+                                    ) : (
+                                        <Text style={styles.extraFieldText}>{user.revés || 'una mano/2 manos'}</Text>
+                                    )}
+                                </TouchableOpacity>
+
+                                <TouchableOpacity style={styles.extraField} onPress={() => setIsEditingDominantHand(true)}>
+                                    <Text style={styles.extraFieldLabel}>Mano dominante:</Text>
+                                    {isEditingDominantHand ? (
+                                        <TextInput
+                                            style={styles.extraFieldInput}
+                                            value={user.mano_dominante || ''}
+                                            onChangeText={handleUpdateDominantHand}
+                                            placeholder="Diestro/Zurdo"
+                                            placeholderTextColor={colors.textTertiary}
+                                            autoFocus
+                                        />
+                                    ) : (
+                                        <Text style={styles.extraFieldText}>{user.mano_dominante || 'Diestro/Zurdo'}</Text>
+                                    )}
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={styles.miniSaveBtn}
+                                    onPress={handleSaveAll}
+                                    disabled={updating}
+                                >
+                                    {updating ? (
+                                        <ActivityIndicator size="small" color="#fff" />
+                                    ) : (
+                                        <Text style={styles.miniSaveBtnText}>Guardar cambios</Text>
+                                    )}
+                                </TouchableOpacity>
+                            </View>
                         </View>
                     </View>
 
                     {/* Context Selector */}
                     {(userContexts.length > 0 || isGlobalAdmin) && (
-                        <TouchableOpacity 
-                            style={styles.contextSelector} 
+                        <TouchableOpacity
+                            style={styles.contextSelector}
                             onPress={() => (isGlobalAdmin && viewMode === 'admin') ? setShowOrgSearchModal(true) : setShowContextModal(true)}
                         >
                             <View style={styles.contextInfo}>
-                                <Ionicons name="business-outline" size={16} color={colors.primary[500]} />
+                                <Ionicons name="filter-outline" size={16} color={colors.primary[500]} />
                                 <Text style={styles.contextText}>
-                                    {selectedContext ? `${selectedContext.org_name} · ${selectedContext.level}` : 'Seleccionar Contexto'}
+                                    {selectedContext ? `${selectedContext.org_name} · ${selectedContext.level}` : 'Filtrar por Organización/Nivel'}
                                 </Text>
                             </View>
-                            <Ionicons name="swap-horizontal" size={16} color={colors.primary[500]} />
+                            <Ionicons name="chevron-forward" size={16} color={colors.primary[500]} />
                         </TouchableOpacity>
                     )}
+
+                    {/* Modality Selector */}
+                    <View style={styles.modalitySelector}>
+                        <TouchableOpacity 
+                            style={[styles.modalityBtn, modality === 'singles' && styles.modalityBtnActive]}
+                            onPress={() => setModality('singles')}
+                        >
+                            <Text style={[styles.modalityBtnText, modality === 'singles' && styles.modalityBtnTextActive]}>Singles</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.modalityBtn, modality === 'dobles' && styles.modalityBtnActive]}
+                            onPress={() => setModality('dobles')}
+                        >
+                            <Text style={[styles.modalityBtnText, modality === 'dobles' && styles.modalityBtnTextActive]}>Dobles</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
 
                 {/* Stats Bento */}
                 <View style={styles.statsGrid}>
                     <View style={styles.mainRankCard}>
-                        <Text style={styles.statLabel}>POSICIÓN RANKING</Text>
+                        <Text style={styles.statLabel} numberOfLines={1}>POSICIÓN RANKING</Text>
                         <View>
                             <Text style={styles.rankValue}>{stats.rank}</Text>
                             <View style={styles.rankStatus}>
@@ -494,18 +681,18 @@ export default function ProfileScreen() {
                             </View>
                         </View>
                     </View>
-                    
+
                     <View style={styles.statsRightColumn}>
                         <View style={styles.statsMiniRow}>
                             <View style={styles.miniStatCard}>
                                 <Ionicons name="trophy" size={24} color={colors.primary[500]} />
                                 <Text style={styles.miniStatValue}>{stats.trophies}</Text>
-                                <Text style={styles.miniStatLabel}>TROFEOS</Text>
+                                <Text style={styles.miniStatLabel} numberOfLines={1}>TROFEOS</Text>
                             </View>
                             <View style={styles.miniStatCard}>
                                 <Ionicons name="medal" size={24} color={colors.textSecondary} />
                                 <Text style={styles.miniStatValue}>{stats.wins}</Text>
-                                <Text style={styles.miniStatLabel}>VICTORIAS</Text>
+                                <Text style={styles.miniStatLabel} numberOfLines={1}>VICTORIAS</Text>
                             </View>
                         </View>
                         <View style={styles.statsMiniRow}>
@@ -514,13 +701,37 @@ export default function ProfileScreen() {
                                 <Text style={stats.winRate === '0%' ? styles.miniStatValueDim : styles.miniStatValue}>
                                     {stats.winRate}
                                 </Text>
-                                <Text style={styles.miniStatLabel}>WIN RATE</Text>
+                                <Text style={styles.miniStatLabel} numberOfLines={1}>WIN RATE</Text>
                             </View>
                             <View style={styles.miniStatCard}>
                                 <Ionicons name="tennisball" size={24} color={colors.textSecondary} />
                                 <Text style={styles.miniStatValue}>{stats.totalMatches}</Text>
-                                <Text style={styles.miniStatLabel}>PARTIDOS</Text>
+                                <Text style={styles.miniStatLabel} numberOfLines={1}>PARTIDOS</Text>
                             </View>
+                        </View>
+                        
+                        <View style={styles.setsFullCard}>
+                             <View style={styles.setStatItem}>
+                                <Text style={[styles.setStatValue, { color: colors.success }]}>{stats.setsWon}</Text>
+                                <Text style={styles.setStatLabel}>TOTAL SETS GANADOS</Text>
+                             </View>
+                             <View style={styles.setStatDivider} />
+                             <View style={styles.setStatItem}>
+                                <Text style={[styles.setStatValue, { color: colors.error }]}>{stats.setsLost}</Text>
+                                <Text style={styles.setStatLabel}>TOTAL SETS PERDIDOS</Text>
+                             </View>
+                        </View>
+
+                        <View style={[styles.setsFullCard, { marginTop: spacing.md }]}>
+                             <View style={styles.setStatItem}>
+                                <Text style={[styles.setStatValue, { color: colors.success }]}>{stats.gamesWon}</Text>
+                                <Text style={styles.setStatLabel}>TOTAL GAMES GANADOS</Text>
+                             </View>
+                             <View style={styles.setStatDivider} />
+                             <View style={styles.setStatItem}>
+                                <Text style={[styles.setStatValue, { color: colors.error }]}>{stats.gamesLost}</Text>
+                                <Text style={styles.setStatLabel}>TOTAL GAMES PERDIDOS</Text>
+                             </View>
                         </View>
                     </View>
                 </View>
@@ -538,7 +749,7 @@ export default function ProfileScreen() {
                             </View>
                             <View style={styles.historyInfo}>
                                 <Text style={styles.historyName}>{t.name}</Text>
-                                <Text style={styles.historyMeta}>{t.level} · {t.format}</Text>
+                                <Text style={styles.historyMeta}>{t.level} · {t.format} · {t.modality === 'dobles' ? 'Dobles' : 'Singles'}</Text>
                             </View>
                             <View style={styles.historyResult}>
                                 <View style={t.place.includes('1°') ? styles.winnerBadge : styles.resultBadge}>
@@ -559,17 +770,23 @@ export default function ProfileScreen() {
                 {/* Account Settings */}
                 <View style={styles.settingsSection}>
                     <Text style={styles.settingsTitle}>Configuración de Cuenta</Text>
-                    
+
                     <View style={styles.settingsGrid}>
-                        <TouchableOpacity style={styles.settingItem}>
+                        <TouchableOpacity style={styles.settingItem} onPress={handleToggleNotifications}>
                             <View style={styles.settingIcon}>
-                                <Ionicons name="notifications-outline" size={20} color={colors.textSecondary} />
+                                <Ionicons 
+                                    name={user.notifications_enabled ? "notifications" : "notifications-off-outline"} 
+                                    size={20} 
+                                    color={user.notifications_enabled ? colors.primary[500] : colors.textSecondary} 
+                                />
                             </View>
                             <View style={styles.settingText}>
                                 <Text style={styles.settingLabel}>Notificaciones</Text>
                                 <Text style={styles.settingDesc}>Alertas de partidos y eventos</Text>
                             </View>
-                            <Ionicons name="chevron-forward" size={20} color={colors.border} />
+                            <View style={[styles.themeToggle, { backgroundColor: user.notifications_enabled ? colors.primary[500] : colors.surfaceSecondary }]}>
+                                <View style={[styles.themeToggleCircle, { alignSelf: user.notifications_enabled ? 'flex-end' : 'flex-start' }]} />
+                            </View>
                         </TouchableOpacity>
 
                         <TouchableOpacity style={styles.settingItem}>
@@ -581,6 +798,19 @@ export default function ProfileScreen() {
                                 <Text style={styles.settingDesc}>Contraseña y visibilidad</Text>
                             </View>
                             <Ionicons name="chevron-forward" size={20} color={colors.border} />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.settingItem} onPress={toggleTheme}>
+                            <View style={styles.settingIcon}>
+                                <Ionicons name="moon-outline" size={20} color={isDark ? colors.primary[500] : colors.textSecondary} />
+                            </View>
+                            <View style={styles.settingText}>
+                                <Text style={styles.settingLabel}>Modo Oscuro</Text>
+                                <Text style={styles.settingDesc}>Cambiar el tema de la aplicación</Text>
+                            </View>
+                            <View style={[styles.themeToggle, { backgroundColor: isDark ? colors.primary[500] : colors.surfaceSecondary }]}>
+                                <View style={[styles.themeToggleCircle, { alignSelf: isDark ? 'flex-end' : 'flex-start' }]} />
+                            </View>
                         </TouchableOpacity>
 
                         <TouchableOpacity style={styles.settingItem} onPress={handleSignOut}>
@@ -597,7 +827,7 @@ export default function ProfileScreen() {
             </ScrollView>
 
             {/* Context Selector Modal */}
-            <Modal visible={showContextModal} transparent animationType="slide">
+            <Modal visible={showContextModal} transparent animationType="slide" onRequestClose={() => setShowContextModal(false)}>
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
@@ -608,8 +838,8 @@ export default function ProfileScreen() {
                         </View>
                         <ScrollView style={{ maxHeight: 300, marginVertical: spacing.md }}>
                             {userContexts.map((ctx, idx) => (
-                                <TouchableOpacity 
-                                    key={idx} 
+                                <TouchableOpacity
+                                    key={idx}
                                     style={[styles.ctxItem, selectedContext?.org_id === ctx.org_id && selectedContext.level === ctx.level && styles.ctxItemActive]}
                                     onPress={() => {
                                         setSelectedContext(ctx);
@@ -627,7 +857,7 @@ export default function ProfileScreen() {
             </Modal>
 
             {/* Global Admin: Organization Search Modal */}
-            <Modal visible={showOrgSearchModal} transparent animationType="slide">
+            <Modal visible={showOrgSearchModal} transparent animationType="slide" onRequestClose={() => setShowOrgSearchModal(false)}>
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
@@ -649,11 +879,10 @@ export default function ProfileScreen() {
                                 .map(org => (
                                     <View key={org.id} style={styles.orgGroup}>
                                         <Text style={styles.orgGroupName}>{org.name}</Text>
-                                        {/* Levels usually fixed or fetched from registrations. Here we can offer standard ones or fetch unique levels for this org */}
                                         <View style={styles.levelChips}>
-                                            {['Primera', 'Segunda', 'Tercera', 'Cuarta', 'Quinta', 'Honor'].map(lvl => (
-                                                <TouchableOpacity 
-                                                    key={lvl} 
+                                            {['Primera', 'Segunda', 'Tercera', 'Cuarta', 'Quinta', 'Honor', 'Escalafón'].map(lvl => (
+                                                <TouchableOpacity
+                                                    key={lvl}
                                                     style={[styles.levelChip, selectedContext?.org_id === org.id && selectedContext.level === lvl && styles.levelChipActive]}
                                                     onPress={() => {
                                                         setSelectedContext({ org_id: org.id, org_name: org.name, level: lvl });
@@ -675,7 +904,7 @@ export default function ProfileScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
@@ -786,25 +1015,55 @@ const styles = StyleSheet.create({
     userName: {
         fontSize: 26,
         fontWeight: '900',
-        color: '#fff',
+        color: colors.text,
         letterSpacing: -0.5,
         marginTop: 4,
     },
     userNameInput: {
         fontSize: 26,
         fontWeight: '900',
-        color: '#fff',
+        color: colors.text,
         letterSpacing: -0.5,
         padding: 0,
         margin: 0,
         marginTop: 4,
     },
-    userBio: {
-        fontSize: 13,
-        color: colors.textSecondary,
-        lineHeight: 18,
-        marginTop: 4,
+    extraFields: {
+        marginTop: 8,
+        gap: 6,
     },
+    extraField: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    extraFieldLabel: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: colors.textSecondary,
+    },
+    extraFieldText: {
+        fontSize: 12,
+        color: colors.text,
+        flex: 1,
+    },
+    extraFieldInput: {
+        fontSize: 12,
+        color: colors.text,
+        flex: 1,
+        padding: 0,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.primary[500] + '40',
+    },
+    miniSaveBtn: { marginTop: spacing.md, backgroundColor: colors.primary[500], paddingVertical: 8, paddingHorizontal: spacing.md, borderRadius: borderRadius.md, alignSelf: 'flex-start' },
+    miniSaveBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+
+    modalitySelector: { flexDirection: 'row', backgroundColor: colors.surfaceSecondary, borderRadius: borderRadius.lg, padding: 4, marginTop: spacing.md },
+    modalityBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: borderRadius.md },
+    modalityBtnActive: { backgroundColor: colors.surface, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 },
+    modalityBtnText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+    modalityBtnTextActive: { color: colors.primary[500], fontWeight: '700' },
+
     contextSelector: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -827,13 +1086,13 @@ const styles = StyleSheet.create({
     },
     statsGrid: {
         flexDirection: 'row',
-        gap: spacing.lg,
+        gap: spacing.md,
     },
     mainRankCard: {
         flex: 1,
         backgroundColor: colors.surface,
         borderRadius: borderRadius['3xl'],
-        padding: spacing.xl,
+        padding: spacing.lg,
         borderLeftWidth: 8,
         borderLeftColor: colors.primary[500],
         justifyContent: 'center',
@@ -849,7 +1108,7 @@ const styles = StyleSheet.create({
     rankValue: {
         fontSize: 48,
         fontWeight: '900',
-        color: '#fff',
+        color: colors.text,
         fontStyle: 'italic',
         lineHeight: 48,
     },
@@ -867,14 +1126,14 @@ const styles = StyleSheet.create({
     },
     statsMiniRow: {
         flexDirection: 'row',
-        gap: spacing.lg,
+        gap: spacing.md,
         flex: 1,
     },
     miniStatCard: {
         flex: 1,
-        backgroundColor: 'rgba(255,255,255,0.03)',
+        backgroundColor: colors.surfaceSecondary + '1A',
         borderRadius: borderRadius['2xl'],
-        padding: spacing.md,
+        padding: spacing.sm,
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 1,
@@ -883,7 +1142,7 @@ const styles = StyleSheet.create({
     miniStatValue: {
         fontSize: 20,
         fontWeight: '900',
-        color: '#fff',
+        color: colors.text,
         marginTop: 6,
     },
     miniStatValueDim: {
@@ -893,11 +1152,11 @@ const styles = StyleSheet.create({
         marginTop: 6,
     },
     miniStatLabel: {
-        fontSize: 9,
+        fontSize: 8,
         fontWeight: '800',
         color: colors.textTertiary,
         marginTop: 4,
-        letterSpacing: 0.5,
+        letterSpacing: 0.2,
         textAlign: 'center',
     },
     sectionHeader: {
@@ -906,7 +1165,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 22,
         fontWeight: '900',
-        color: '#fff',
+        color: colors.text,
     },
     tournamentList: {
         gap: spacing.md,
@@ -935,7 +1194,7 @@ const styles = StyleSheet.create({
     historyName: {
         fontSize: 15,
         fontWeight: '700',
-        color: '#fff',
+        color: colors.text,
     },
     historyMeta: {
         fontSize: 11,
@@ -946,7 +1205,7 @@ const styles = StyleSheet.create({
         alignItems: 'flex-end',
     },
     winnerBadge: {
-        backgroundColor: 'rgba(34, 197, 94, 0.15)',
+        backgroundColor: colors.success + '26',
         paddingHorizontal: 8,
         paddingVertical: 4,
         borderRadius: borderRadius.full,
@@ -957,7 +1216,7 @@ const styles = StyleSheet.create({
         color: colors.success,
     },
     resultBadge: {
-        backgroundColor: 'rgba(255,255,255,0.05)',
+        backgroundColor: colors.textSecondary + '0D',
         paddingHorizontal: 8,
         paddingVertical: 4,
         borderRadius: borderRadius.full,
@@ -971,6 +1230,38 @@ const styles = StyleSheet.create({
         fontSize: 9,
         color: colors.textTertiary,
         marginTop: 4,
+    },
+    setsFullCard: {
+        backgroundColor: colors.surface,
+        borderRadius: borderRadius['2xl'],
+        padding: spacing.lg,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-around',
+        borderWidth: 1,
+        borderColor: colors.border,
+        minHeight: 80,
+    },
+    setStatItem: {
+        alignItems: 'center',
+        flex: 1,
+        paddingHorizontal: spacing.xs,
+    },
+    setStatValue: {
+        fontSize: 22,
+        fontWeight: '900',
+    },
+    setStatLabel: {
+        fontSize: 9,
+        fontWeight: '800',
+        color: colors.textTertiary,
+        marginTop: 4,
+        textAlign: 'center',
+    },
+    setStatDivider: {
+        width: 1,
+        height: '60%',
+        backgroundColor: colors.border,
     },
     emptyCard: {
         backgroundColor: colors.surface,
@@ -986,7 +1277,7 @@ const styles = StyleSheet.create({
         fontSize: 13,
     },
     settingsSection: {
-        backgroundColor: 'rgba(255,255,255,0.02)',
+        backgroundColor: colors.surface + '05',
         borderRadius: borderRadius['3xl'],
         padding: spacing.xl,
         gap: spacing.xl,
@@ -994,7 +1285,7 @@ const styles = StyleSheet.create({
     settingsTitle: {
         fontSize: 18,
         fontWeight: '800',
-        color: '#fff',
+        color: colors.text,
     },
     settingsGrid: {
         gap: spacing.md,
@@ -1023,7 +1314,7 @@ const styles = StyleSheet.create({
     settingLabel: {
         fontSize: 14,
         fontWeight: '700',
-        color: '#fff',
+        color: colors.text,
     },
     settingDesc: {
         fontSize: 11,
@@ -1047,7 +1338,7 @@ const styles = StyleSheet.create({
         marginBottom: spacing.md,
     },
     modalTitle: {
-        color: '#fff',
+        color: colors.text,
         fontSize: 18,
         fontWeight: '800',
     },
@@ -1069,19 +1360,11 @@ const styles = StyleSheet.create({
         color: colors.primary[500],
         fontWeight: '800',
     },
-    adminManagementCard: {
-        backgroundColor: colors.surface,
-        borderRadius: borderRadius['2xl'],
-        padding: spacing.xl,
-        borderWidth: 1,
-        borderColor: colors.border,
-        gap: spacing.md,
-    },
     modalSearchInput: {
         backgroundColor: colors.background,
         borderRadius: borderRadius.lg,
         padding: spacing.md,
-        color: '#fff',
+        color: colors.text,
         borderWidth: 1,
         borderColor: colors.border,
         marginBottom: spacing.md,
@@ -1091,7 +1374,7 @@ const styles = StyleSheet.create({
         gap: spacing.md,
     },
     orgGroupName: {
-        color: '#fff',
+        color: colors.text,
         fontSize: 16,
         fontWeight: '800',
         borderLeftWidth: 3,
@@ -1123,18 +1406,6 @@ const styles = StyleSheet.create({
     levelChipTextActive: {
         color: '#fff',
     },
-    saveButton: {
-        backgroundColor: colors.primary[500],
-        paddingVertical: spacing.lg,
-        borderRadius: borderRadius.xl,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    saveButtonText: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: '800',
-    },
     viewToggle: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -1151,5 +1422,17 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 10,
         fontWeight: '900',
+    },
+    themeToggle: {
+        width: 36,
+        height: 20,
+        borderRadius: 10,
+        padding: 2,
+    },
+    themeToggleCircle: {
+        width: 16,
+        height: 16,
+        borderRadius: 8,
+        backgroundColor: '#fff',
     },
 });
