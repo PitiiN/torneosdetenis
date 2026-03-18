@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Torneo de Tenis - Categoría A</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#ec5b13",
+                        "background-light": "#f8f6f6",
+                        "background-dark": "#221610",
+                    },
+                    fontFamily: {
+                        "display": ["Public Sans"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body { font-family: 'Public Sans', sans-serif; }
+        .bracket-connector { border-color: #cbd5e1; }
+        .dark .bracket-connector { border-color: #4b3621; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display transition-colors duration-300">
+<!-- Header Section -->
+<header class="sticky top-0 z-50 bg-background-light dark:bg-background-dark border-b border-slate-200 dark:border-slate-800">
+<div class="flex items-center p-4 justify-between max-w-5xl mx-auto">
+<div class="flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer">
+<span class="material-symbols-outlined text-slate-700 dark:text-slate-200">arrow_back</span>
+</div>
+<h1 class="text-slate-900 dark:text-slate-100 text-lg font-bold leading-tight tracking-tight flex-1 text-center">Torneo de Tenis - Categoría A</h1>
+<div class="flex w-10 items-center justify-end">
+<button class="flex items-center justify-center rounded-full size-10 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
+<span class="material-symbols-outlined text-slate-700 dark:text-slate-200">info</span>
+</button>
+</div>
+</div>
+<!-- Tabs -->
+<div class="max-w-5xl mx-auto">
+<div class="flex border-b border-slate-200 dark:border-slate-800 px-4">
+<a class="flex flex-col items-center justify-center border-b-[3px] border-primary text-primary pb-3 pt-4 flex-1 font-bold text-sm" href="#">
+                    Cuadro Principal
+                </a>
+<a class="flex flex-col items-center justify-center border-b-[3px] border-transparent text-slate-500 dark:text-slate-400 pb-3 pt-4 flex-1 font-bold text-sm hover:text-slate-700 dark:hover:text-slate-200" href="#">
+                    Cuadro de Consolación
+                </a>
+</div>
+</div>
+</header>
+<main class="max-w-5xl mx-auto p-4 space-y-6">
+<!-- Tournament Rules Card -->
+<div class="@container">
+<div class="flex flex-col items-start justify-between gap-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5 @[480px]:flex-row @[480px]:items-center shadow-sm">
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary scale-75">gavel</span>
+<p class="text-slate-900 dark:text-slate-100 text-base font-bold leading-tight">Reglas del Torneo</p>
+</div>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-normal leading-normal">
+                        Formato: Consolación | Singles | Un set a 6 juegos (Tie-break en 6-6).
+                    </p>
+</div>
+<a class="text-sm font-bold leading-normal tracking-wide flex items-center gap-2 text-primary hover:underline" href="#">
+                    Ver detalles completos
+                    <span class="material-symbols-outlined text-sm">arrow_forward</span>
+</a>
+</div>
+</div>
+<!-- Bracket Visualization Section -->
+<div class="overflow-x-auto pb-8">
+<div class="min-w-[800px] flex flex-row gap-8 py-4">
+<!-- QUARTER FINALS -->
+<div class="flex-1 space-y-8">
+<h3 class="text-slate-400 dark:text-slate-500 text-xs font-bold uppercase tracking-widest px-2">Cuartos de Final</h3>
+<!-- Match 1 -->
+<div class="space-y-1">
+<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-sm">
+<div class="p-3 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50">
+<span class="text-sm font-medium">Carlos Alcaraz</span>
+<span class="bg-primary text-white text-xs px-2 py-0.5 rounded font-bold">6</span>
+</div>
+<div class="p-3 flex items-center justify-between opacity-60">
+<span class="text-sm">Jannik Sinner</span>
+<span class="text-xs px-2 py-0.5 font-bold">4</span>
+</div>
+</div>
+</div>
+<!-- Match 2 -->
+<div class="space-y-1">
+<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-sm">
+<div class="p-3 flex items-center justify-between opacity-60">
+<span class="text-sm">Novak Djokovic</span>
+<span class="text-xs px-2 py-0.5 font-bold">5</span>
+</div>
+<div class="p-3 flex items-center justify-between border-t border-slate-100 dark:border-slate-800/50">
+<span class="text-sm font-medium">Daniil Medvedev</span>
+<span class="bg-primary text-white text-xs px-2 py-0.5 rounded font-bold">7</span>
+</div>
+</div>
+</div>
+<!-- Match 3 -->
+<div class="space-y-1">
+<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-sm">
+<div class="p-3 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50">
+<span class="text-sm font-medium">Alexander Zverev</span>
+<span class="bg-primary text-white text-xs px-2 py-0.5 rounded font-bold">6</span>
+</div>
+<div class="p-3 flex items-center justify-between opacity-60">
+<span class="text-sm">Casper Ruud</span>
+<span class="text-xs px-2 py-0.5 font-bold">3</span>
+</div>
+</div>
+</div>
+<!-- Match 4 -->
+<div class="space-y-1">
+<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-sm">
+<div class="p-3 flex items-center justify-between opacity-60">
+<span class="text-sm">Andrey Rublev</span>
+<span class="text-xs px-2 py-0.5 font-bold">2</span>
+</div>
+<div class="p-3 flex items-center justify-between border-t border-slate-100 dark:border-slate-800/50">
+<span class="text-sm font-medium">Hubert Hurkacz</span>
+<span class="bg-primary text-white text-xs px-2 py-0.5 rounded font-bold">6</span>
+</div>
+</div>
+</div>
+</div>
+<!-- SEMI FINALS -->
+<div class="flex-1 flex flex-col justify-around py-12">
+<h3 class="text-slate-400 dark:text-slate-500 text-xs font-bold uppercase tracking-widest px-2 mb-4">Semifinales</h3>
+<!-- Match 5 -->
+<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-md">
+<div class="p-3 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50">
+<span class="text-sm font-medium">Carlos Alcaraz</span>
+<span class="bg-slate-100 dark:bg-slate-800 text-slate-500 text-xs px-2 py-0.5 rounded font-bold">-</span>
+</div>
+<div class="p-3 flex items-center justify-between">
+<span class="text-sm font-medium">Daniil Medvedev</span>
+<span class="bg-slate-100 dark:bg-slate-800 text-slate-500 text-xs px-2 py-0.5 rounded font-bold">-</span>
+</div>
+<div class="bg-primary/10 p-1 text-center text-[10px] text-primary font-bold uppercase tracking-tight">Próximamente</div>
+</div>
+<!-- Match 6 -->
+<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-md">
+<div class="p-3 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50">
+<span class="text-sm font-medium">Alexander Zverev</span>
+<span class="bg-slate-100 dark:bg-slate-800 text-slate-500 text-xs px-2 py-0.5 rounded font-bold">-</span>
+</div>
+<div class="p-3 flex items-center justify-between">
+<span class="text-sm font-medium">Hubert Hurkacz</span>
+<span class="bg-slate-100 dark:bg-slate-800 text-slate-500 text-xs px-2 py-0.5 rounded font-bold">-</span>
+</div>
+<div class="bg-primary/10 p-1 text-center text-[10px] text-primary font-bold uppercase tracking-tight">Próximamente</div>
+</div>
+</div>
+<!-- FINAL -->
+<div class="flex-1 flex flex-col justify-center">
+<h3 class="text-slate-400 dark:text-slate-500 text-xs font-bold uppercase tracking-widest px-2 mb-4 text-center">Gran Final</h3>
+<div class="bg-primary/5 dark:bg-primary/10 border-2 border-dashed border-primary/30 rounded-xl p-8 flex flex-col items-center justify-center gap-4">
+<span class="material-symbols-outlined text-4xl text-primary">emoji_events</span>
+<div class="text-center">
+<p class="text-slate-400 dark:text-slate-500 text-[10px] uppercase font-bold tracking-widest">Esperando finalistas</p>
+<div class="mt-4 flex flex-col gap-2 w-full min-w-[160px]">
+<div class="h-8 bg-slate-200 dark:bg-slate-800 rounded animate-pulse"></div>
+<div class="h-8 bg-slate-200 dark:bg-slate-800 rounded animate-pulse"></div>
+</div>
+</div>
+</div>
+</div><!-- THIRD PLACE MATCH -->
+<div class="flex-1 flex flex-col justify-center gap-8">
+<div class="flex flex-col gap-4">
+<h3 class="text-slate-400 dark:text-slate-500 text-xs font-bold uppercase tracking-widest px-2 mb-4 text-center">3er y 4to Puesto</h3>
+<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-md mx-4">
+<div class="p-3 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50 opacity-60">
+<span class="text-sm font-medium">Perdedor SF1</span>
+<span class="bg-slate-100 dark:bg-slate-800 text-slate-500 text-xs px-2 py-0.5 rounded font-bold">-</span>
+</div>
+<div class="p-3 flex items-center justify-between opacity-60">
+<span class="text-sm font-medium">Perdedor SF2</span>
+<span class="bg-slate-100 dark:bg-slate-800 text-slate-500 text-xs px-2 py-0.5 rounded font-bold">-</span>
+</div>
+<div class="bg-slate-100 dark:bg-slate-800 p-1 text-center text-[10px] text-slate-500 font-bold uppercase tracking-tight">Por definir</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Navigation Bar -->
+<!-- Content padding for fixed bottom nav -->
+</body></html>

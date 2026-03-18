@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800;900&amp;family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-container": "#edeeef",
+              "on-primary-fixed": "#380d00",
+              "primary-fixed": "#ffdbce",
+              "primary-container": "#ff6b2b",
+              "surface-container-high": "#e7e8e9",
+              "error": "#ba1a1a",
+              "surface-container-low": "#f3f4f5",
+              "surface-container-highest": "#e1e3e4",
+              "primary": "#a83900",
+              "on-error": "#ffffff",
+              "tertiary-fixed-dim": "#b4cf95",
+              "outline-variant": "#e2bfb3",
+              "secondary-fixed": "#d5e3ff",
+              "primary-fixed-dim": "#ffb59a",
+              "secondary-fixed-dim": "#b0c8f0",
+              "secondary": "#485f83",
+              "on-background": "#191c1d",
+              "inverse-primary": "#ffb59a",
+              "on-tertiary": "#ffffff",
+              "on-secondary-container": "#455c80",
+              "surface-bright": "#f8f9fa",
+              "on-secondary-fixed-variant": "#30486a",
+              "surface-tint": "#a83900",
+              "error-container": "#ffdad6",
+              "on-tertiary-container": "#22370c",
+              "tertiary": "#4e6535",
+              "on-primary": "#ffffff",
+              "inverse-on-surface": "#f0f1f2",
+              "outline": "#8d7167",
+              "on-secondary-fixed": "#001c3b",
+              "secondary-container": "#bed6ff",
+              "on-tertiary-fixed": "#0e2000",
+              "surface": "#f8f9fa",
+              "surface-container-lowest": "#ffffff",
+              "tertiary-fixed": "#d0ecaf",
+              "on-surface-variant": "#594138",
+              "on-secondary": "#ffffff",
+              "on-primary-fixed-variant": "#802a00",
+              "on-primary-container": "#5c1c00",
+              "background": "#f8f9fa",
+              "on-surface": "#191c1d",
+              "surface-variant": "#e1e3e4",
+              "surface-dim": "#d9dadb",
+              "tertiary-container": "#88a26b",
+              "on-error-container": "#93000a",
+              "on-tertiary-fixed-variant": "#374d20",
+              "inverse-surface": "#2e3132"
+            },
+            fontFamily: {
+              "headline": ["Lexend"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface font-body text-on-surface selection:bg-primary-container selection:text-on-primary-container min-h-screen pb-32">
+<!-- TopAppBar -->
+<header class="bg-white/70 backdrop-blur-md text-[#FF6B2B] docked full-width top-0 sticky z-50 shadow-[0_12px_32px_rgba(25,28,29,0.06)]">
+<div class="flex justify-between items-center px-6 h-16 w-full max-w-7xl mx-auto">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-2xl">sports_tennis</span>
+<h1 class="font-['Lexend'] font-black text-[#a83900] italic text-2xl tracking-tight">MatchPoint Pro</h1>
+</div>
+<div class="hidden md:flex items-center gap-8">
+<a class="text-[#485f83] font-['Lexend'] font-medium hover:bg-[#f3f4f5] transition-colors px-3 py-1 rounded-lg" href="#">Home</a>
+<a class="text-[#485f83] font-['Lexend'] font-medium hover:bg-[#f3f4f5] transition-colors px-3 py-1 rounded-lg" href="#">Tournaments</a>
+<a class="text-[#FF6B2B] font-['Lexend'] font-bold hover:bg-[#f3f4f5] transition-colors px-3 py-1 rounded-lg" href="#">Players</a>
+<a class="text-[#485f83] font-['Lexend'] font-medium hover:bg-[#f3f4f5] transition-colors px-3 py-1 rounded-lg" href="#">Profile</a>
+</div>
+<button class="material-symbols-outlined text-[#485f83] hover:bg-[#f3f4f5] p-2 rounded-full transition-colors active:scale-95 duration-200">notifications</button>
+</div>
+</header>
+<main class="max-w-7xl mx-auto px-6 pt-8">
+<!-- Header Section -->
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
+<div>
+<h2 class="font-headline font-extrabold text-5xl tracking-tight text-on-surface">Players</h2>
+<p class="text-secondary font-medium mt-2">Discover and track the world's elite talent.</p>
+</div>
+<!-- Search Bar -->
+<div class="relative w-full md:w-96 group">
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-secondary opacity-60 group-focus-within:text-primary transition-colors">search</span>
+<input class="w-full bg-surface-container-lowest border-none rounded-2xl pl-12 pr-4 py-4 shadow-[0_8px_24px_rgba(25,28,29,0.04)] focus:ring-2 focus:ring-primary-container outline-none text-on-surface placeholder:text-secondary/50 font-medium transition-all" placeholder="Search by name, rank, or country..." type="text"/>
+</div>
+</div>
+<!-- Filter Chips -->
+<div class="flex items-center gap-3 mb-12 overflow-x-auto no-scrollbar pb-2">
+<button class="bg-primary-container text-white px-6 py-2.5 rounded-full font-headline font-semibold text-sm whitespace-nowrap shadow-lg shadow-primary-container/20 active:scale-95 transition-transform">All Players</button>
+<button class="bg-surface-container-low text-secondary hover:bg-surface-container-high px-6 py-2.5 rounded-full font-headline font-semibold text-sm whitespace-nowrap transition-colors">World Ranking</button>
+<button class="bg-surface-container-low text-secondary hover:bg-surface-container-high px-6 py-2.5 rounded-full font-headline font-semibold text-sm whitespace-nowrap transition-colors">Category A</button>
+<button class="bg-surface-container-low text-secondary hover:bg-surface-container-high px-6 py-2.5 rounded-full font-headline font-semibold text-sm whitespace-nowrap transition-colors">Category B</button>
+<button class="bg-surface-container-low text-secondary hover:bg-surface-container-high px-6 py-2.5 rounded-full font-headline font-semibold text-sm whitespace-nowrap transition-colors">Rising Stars</button>
+</div>
+<!-- Players Bento Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+<!-- Player Card 1 -->
+<div class="bg-surface-container-lowest rounded-[2rem] p-6 shadow-[0_12px_32px_rgba(25,28,29,0.04)] hover:shadow-[0_20px_48px_rgba(25,28,29,0.08)] transition-all group relative overflow-hidden">
+<div class="absolute top-0 right-0 p-6">
+<span class="bg-secondary-container text-on-secondary-container px-4 py-1.5 rounded-full text-xs font-bold tracking-widest font-headline">#12 RANK</span>
+</div>
+<div class="flex items-center gap-6 mb-8">
+<div class="w-24 h-24 rounded-2xl overflow-hidden bg-surface-container-high relative">
+<img alt="" class="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-500" data-alt="Professional male tennis player profile photo" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA9SIzcjW3b9OVCnpCqBSI3vRWlov7P3rG0SkrG66Y1vH6zHBNbgthQhWdzos4fwegbG5Sk1Ysz510xeS_bJVmbkohbImIsRKYx9kh044eDoClPllnclTwCi0Iu3ruJIat35DA6RoVxQimasmTuG1jyT18YL89-5nYGbYiw5PcYOeCyTopxeqvjPLpObXsLnxXUukabvj760sW5BAICD7XHddARUQbuqpLIu18Ycb0hsF87u7_UaVnlPElBPGyBKqcVgL78wWJNBhE"/>
+</div>
+<div>
+<h3 class="font-headline font-bold text-2xl text-on-surface leading-tight">Julian<br/>Vance</h3>
+<p class="text-secondary text-sm font-medium mt-1">United Kingdom</p>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-surface-container-low rounded-2xl p-4 flex flex-col items-center text-center">
+<span class="text-xs font-headline font-bold text-secondary uppercase tracking-widest mb-1">Win Rate</span>
+<span class="text-2xl font-headline font-black text-primary italic">78%</span>
+</div>
+<div class="bg-surface-container-low rounded-2xl p-4 flex flex-col items-center text-center">
+<span class="text-xs font-headline font-bold text-secondary uppercase tracking-widest mb-1">Matches</span>
+<span class="text-2xl font-headline font-black text-on-surface italic">150</span>
+</div>
+</div>
+<button class="w-full mt-6 py-4 bg-surface-container-highest text-on-surface font-headline font-bold rounded-xl group-hover:bg-primary-container group-hover:text-white transition-all duration-300 active:scale-95">View Statistics</button>
+</div>
+<!-- Player Card 2 -->
+<div class="bg-surface-container-lowest rounded-[2rem] p-6 shadow-[0_12px_32px_rgba(25,28,29,0.04)] hover:shadow-[0_20px_48px_rgba(25,28,29,0.08)] transition-all group relative overflow-hidden">
+<div class="absolute top-0 right-0 p-6">
+<span class="bg-primary-container text-white px-4 py-1.5 rounded-full text-xs font-bold tracking-widest font-headline">#03 RANK</span>
+</div>
+<div class="flex items-center gap-6 mb-8">
+<div class="w-24 h-24 rounded-2xl overflow-hidden bg-surface-container-high relative">
+<img alt="" class="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-500" data-alt="Female tennis player focused look" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBRqhA168sdXMB9GEkIZodXZyFj2PnylVSrcsNnR2BQ_6yN4IBezeurGHoouVIS5PERVLViJcO_Rj9Ltt0HahmEi-1Y3IjymafFDNb-ODOGPOU3aqLTn9OdWa0MwAlG3sgVpRlDLp7OQ-RclsUgKE9STFVEFtSguQqE14HG4kh58hN7qyGQvrZVCPtR7kkeAslePSFaOQoNB3VtWnx5ux-YQo19P49ADQntK6t3-9DULfDK2romp7chYxRQ_n854r5X2oVcDT4s1WY"/>
+</div>
+<div>
+<h3 class="font-headline font-bold text-2xl text-on-surface leading-tight">Elena<br/>Kostas</h3>
+<p class="text-secondary text-sm font-medium mt-1">Greece</p>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-surface-container-low rounded-2xl p-4 flex flex-col items-center text-center">
+<span class="text-xs font-headline font-bold text-secondary uppercase tracking-widest mb-1">Win Rate</span>
+<span class="text-2xl font-headline font-black text-primary italic">84%</span>
+</div>
+<div class="bg-surface-container-low rounded-2xl p-4 flex flex-col items-center text-center">
+<span class="text-xs font-headline font-bold text-secondary uppercase tracking-widest mb-1">Matches</span>
+<span class="text-2xl font-headline font-black text-on-surface italic">212</span>
+</div>
+</div>
+<button class="w-full mt-6 py-4 bg-surface-container-highest text-on-surface font-headline font-bold rounded-xl group-hover:bg-primary-container group-hover:text-white transition-all duration-300 active:scale-95">View Statistics</button>
+</div>
+<!-- Player Card 3 -->
+<div class="bg-surface-container-lowest rounded-[2rem] p-6 shadow-[0_12px_32px_rgba(25,28,29,0.04)] hover:shadow-[0_20px_48px_rgba(25,28,29,0.08)] transition-all group relative overflow-hidden">
+<div class="absolute top-0 right-0 p-6">
+<span class="bg-tertiary-container text-on-tertiary-container px-4 py-1.5 rounded-full text-xs font-bold tracking-widest font-headline">#24 RANK</span>
+</div>
+<div class="flex items-center gap-6 mb-8">
+<div class="w-24 h-24 rounded-2xl overflow-hidden bg-surface-container-high relative">
+<img alt="" class="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-500" data-alt="Young professional tennis player portrait" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA6NDpMYkhJZnKZJnJ0VepwwYyyHZUvnnp95d40ZifSHsg-_0rjVNLU9ReP3iN75Ai2kB-Lq_K_ucPtuKi1FdNie14xRwHyVSpvpMxCYO3o-LSWCaxJeBKqqZ3-boT-lgPMUxFZhdars1BJSX8Y4LY1vhBuUemig2aSgzfSDUtUkNDTfHRpYNiRpDlm0qYIEilbwj3T1AfAMgWCgkLuXeeUr-qDrKemkcM5-M4yuTjBXlCXJj0buw5-M9tbdhHivr9p0qoLzsORg7M"/>
+</div>
+<div>
+<h3 class="font-headline font-bold text-2xl text-on-surface leading-tight">Marcus<br/>Chen</h3>
+<p class="text-secondary text-sm font-medium mt-1">Australia</p>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-surface-container-low rounded-2xl p-4 flex flex-col items-center text-center">
+<span class="text-xs font-headline font-bold text-secondary uppercase tracking-widest mb-1">Win Rate</span>
+<span class="text-2xl font-headline font-black text-primary italic">65%</span>
+</div>
+<div class="bg-surface-container-low rounded-2xl p-4 flex flex-col items-center text-center">
+<span class="text-xs font-headline font-bold text-secondary uppercase tracking-widest mb-1">Matches</span>
+<span class="text-2xl font-headline font-black text-on-surface italic">89</span>
+</div>
+</div>
+<button class="w-full mt-6 py-4 bg-surface-container-highest text-on-surface font-headline font-bold rounded-xl group-hover:bg-primary-container group-hover:text-white transition-all duration-300 active:scale-95">View Statistics</button>
+</div>
+<!-- Player Card 4 -->
+<div class="bg-surface-container-lowest rounded-[2rem] p-6 shadow-[0_12px_32px_rgba(25,28,29,0.04)] hover:shadow-[0_20px_48px_rgba(25,28,29,0.08)] transition-all group relative overflow-hidden">
+<div class="absolute top-0 right-0 p-6">
+<span class="bg-secondary-container text-on-secondary-container px-4 py-1.5 rounded-full text-xs font-bold tracking-widest font-headline">#15 RANK</span>
+</div>
+<div class="flex items-center gap-6 mb-8">
+<div class="w-24 h-24 rounded-2xl overflow-hidden bg-surface-container-high relative">
+<img alt="" class="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-500" data-alt="Female tennis pro action portrait" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAjPCupvN0KI1FRUfXEaaSgqlzvib8q_6fhYXrLT0N7HoHjKyTnXfxpj5daArZ2k1o8MMMzR8ocFMTteaKtlgHXHhV6vzlUtzICFItUyw9neWeCJFjjM8cmCmd1uOoCw6H5OyArXVDhivtGAt_jsl5eOUN1VBt1PjABhPyoOdeRhdbyrrT9YPt4hDbCBSh5xr8Cuq82GGIVlaUGBiFRwxO_9m__XNUbXESgs4clGjwMPbuI2M53wMjqc_Dclrjw_IC8dE85hlhy_6Y"/>
+</div>
+<div>
+<h3 class="font-headline font-bold text-2xl text-on-surface leading-tight">Sana<br/>Ismail</h3>
+<p class="text-secondary text-sm font-medium mt-1">Egypt</p>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-surface-container-low rounded-2xl p-4 flex flex-col items-center text-center">
+<span class="text-xs font-headline font-bold text-secondary uppercase tracking-widest mb-1">Win Rate</span>
+<span class="text-2xl font-headline font-black text-primary italic">71%</span>
+</div>
+<div class="bg-surface-container-low rounded-2xl p-4 flex flex-col items-center text-center">
+<span class="text-xs font-headline font-bold text-secondary uppercase tracking-widest mb-1">Matches</span>
+<span class="text-2xl font-headline font-black text-on-surface italic">124</span>
+</div>
+</div>
+<button class="w-full mt-6 py-4 bg-surface-container-highest text-on-surface font-headline font-bold rounded-xl group-hover:bg-primary-container group-hover:text-white transition-all duration-300 active:scale-95">View Statistics</button>
+</div>
+<!-- Player Card 5 -->
+<div class="bg-surface-container-lowest rounded-[2rem] p-6 shadow-[0_12px_32px_rgba(25,28,29,0.04)] hover:shadow-[0_20px_48px_rgba(25,28,29,0.08)] transition-all group relative overflow-hidden">
+<div class="absolute top-0 right-0 p-6">
+<span class="bg-primary-container text-white px-4 py-1.5 rounded-full text-xs font-bold tracking-widest font-headline">#07 RANK</span>
+</div>
+<div class="flex items-center gap-6 mb-8">
+<div class="w-24 h-24 rounded-2xl overflow-hidden bg-surface-container-high relative">
+<img alt="" class="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-500" data-alt="Experienced tennis player headshot" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDkPs4iAtYJepqBhn_jn0YCvhpA2l03lBsHjbhPDmmwQUQLzElKRWvms8lv75Ycap9WWO6oqwFumCLPgOVR5H6dFCoLMmuexvw7VNOmWODuRx0luaINzUI5c-Iegib4p3wcj-CycZJFKuyXWv-RP5TxhffFxm6ydUKnoVGkyy02pjRiRZnFuxEiSeNrv0LSK8rmR8MtR57t3-5bcIVLIZtjLWEtXjj5N-y0KjsgS98kx5Aa8r8Rmbc6XwiGcQcpBHtOAD0mhbEffC4"/>
+</div>
+<div>
+<h3 class="font-headline font-bold text-2xl text-on-surface leading-tight">David<br/>Miller</h3>
+<p class="text-secondary text-sm font-medium mt-1">USA</p>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-surface-container-low rounded-2xl p-4 flex flex-col items-center text-center">
+<span class="text-xs font-headline font-bold text-secondary uppercase tracking-widest mb-1">Win Rate</span>
+<span class="text-2xl font-headline font-black text-primary italic">79%</span>
+</div>
+<div class="bg-surface-container-low rounded-2xl p-4 flex flex-col items-center text-center">
+<span class="text-xs font-headline font-bold text-secondary uppercase tracking-widest mb-1">Matches</span>
+<span class="text-2xl font-headline font-black text-on-surface italic">340</span>
+</div>
+</div>
+<button class="w-full mt-6 py-4 bg-surface-container-highest text-on-surface font-headline font-bold rounded-xl group-hover:bg-primary-container group-hover:text-white transition-all duration-300 active:scale-95">View Statistics</button>
+</div>
+<!-- Player Card 6 -->
+<div class="bg-surface-container-lowest rounded-[2rem] p-6 shadow-[0_12px_32px_rgba(25,28,29,0.04)] hover:shadow-[0_20px_48px_rgba(25,28,29,0.08)] transition-all group relative overflow-hidden">
+<div class="absolute top-0 right-0 p-6">
+<span class="bg-secondary-container text-on-secondary-container px-4 py-1.5 rounded-full text-xs font-bold tracking-widest font-headline">#42 RANK</span>
+</div>
+<div class="flex items-center gap-6 mb-8">
+<div class="w-24 h-24 rounded-2xl overflow-hidden bg-surface-container-high relative">
+<img alt="" class="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-500" data-alt="Rising star tennis player portrait" src="https://lh3.googleusercontent.com/aida-public/AB6AXuACpx_qq3S-fSaYM4tZqIEpzHW8zW5Hfx7q-ByJaHRd9RX-oICgUFebsvVnnTeOp-c4pU1jZu65nWGYPb9eMJ-V9QxRulUvroPF6lEAJ6xj9FEO9H4AyQJNCyb6UCBoAdK5LIskY66cKm-84WlcIQExIdE7rzORcx14mRrOqZs0s0tbx5Acp9_GR_jPPH1234HIwP0bl5_tvGAT03YUQ57mkxYibqkuLv20-tZfOl7zNDZq5ChkZGbVbAKsAYdsIuBK8qY6f0rQ3wk"/>
+</div>
+<div>
+<h3 class="font-headline font-bold text-2xl text-on-surface leading-tight">Mia<br/>Larsen</h3>
+<p class="text-secondary text-sm font-medium mt-1">Denmark</p>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-surface-container-low rounded-2xl p-4 flex flex-col items-center text-center">
+<span class="text-xs font-headline font-bold text-secondary uppercase tracking-widest mb-1">Win Rate</span>
+<span class="text-2xl font-headline font-black text-primary italic">62%</span>
+</div>
+<div class="bg-surface-container-low rounded-2xl p-4 flex flex-col items-center text-center">
+<span class="text-xs font-headline font-bold text-secondary uppercase tracking-widest mb-1">Matches</span>
+<span class="text-2xl font-headline font-black text-on-surface italic">45</span>
+</div>
+</div>
+<button class="w-full mt-6 py-4 bg-surface-container-highest text-on-surface font-headline font-bold rounded-xl group-hover:bg-primary-container group-hover:text-white transition-all duration-300 active:scale-95">View Statistics</button>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="md:hidden fixed bottom-0 left-0 right-0 z-50">
+<div class="bg-[#ffffff] floating pill mx-6 mb-6 rounded-[2rem] overflow-hidden shadow-[0_12px_32px_rgba(25,28,29,0.08)]">
+<div class="flex justify-around items-center h-20 w-auto px-4">
+<a class="flex flex-col items-center justify-center text-[#485f83] opacity-70 px-4 py-1.5 hover:opacity-100 hover:scale-105 active:scale-90 transition-all duration-150" href="#">
+<span class="material-symbols-outlined mb-1">home</span>
+<span class="font-['Lexend'] font-medium text-[10px] uppercase tracking-wider">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#485f83] opacity-70 px-4 py-1.5 hover:opacity-100 hover:scale-105 active:scale-90 transition-all duration-150" href="#">
+<span class="material-symbols-outlined mb-1">emoji_events</span>
+<span class="font-['Lexend'] font-medium text-[10px] uppercase tracking-wider">Tournaments</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-[#FF6B2B] text-white rounded-full px-4 py-1.5 transition-all active:scale-90 duration-150" href="#">
+<span class="material-symbols-outlined mb-1">group</span>
+<span class="font-['Lexend'] font-medium text-[10px] uppercase tracking-wider">Players</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#485f83] opacity-70 px-4 py-1.5 hover:opacity-100 hover:scale-105 active:scale-90 transition-all duration-150" href="#">
+<span class="material-symbols-outlined mb-1">person</span>
+<span class="font-['Lexend'] font-medium text-[10px] uppercase tracking-wider">Profile</span>
+</a>
+</div>
+</div>
+</nav>
+<!-- Floating Action Button Contextual Check (Suppressed as per rules for Details/List screens, but here is the ghost border if needed) -->
+<div class="hidden">
+<button class="fixed bottom-32 right-8 bg-primary shadow-lg text-white w-14 h-14 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined">add</span>
+</button>
+</div>
+</body></html>

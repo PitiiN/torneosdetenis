@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#ec5b13",
+                        "background-light": "#f8f6f6",
+                        "background-dark": "#221610",
+                    },
+                    fontFamily: {
+                        "display": ["Public Sans"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body { font-family: 'Public Sans', sans-serif; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .fill-icon { font-variation-settings: 'FILL' 1; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display">
+<div class="relative flex min-h-screen w-full flex-col overflow-x-hidden">
+<!-- Top Header -->
+<header class="sticky top-0 z-50 flex items-center bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md p-4 border-b border-primary/10 justify-between">
+<div class="flex items-center gap-3">
+<button class="text-primary hover:bg-primary/10 p-2 rounded-full transition-colors">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="text-lg font-bold leading-tight tracking-tight">Finales del Torneo - Categoría B</h1>
+</div>
+<button class="text-primary p-2 rounded-full">
+<span class="material-symbols-outlined">share</span>
+</button>
+</header>
+<!-- Group Stage Summary Section -->
+<section class="px-4 py-6">
+<h3 class="text-slate-900 dark:text-slate-100 text-lg font-bold leading-tight tracking-tight mb-4">Resumen Fase de Grupos</h3>
+<div class="grid grid-cols-2 gap-4">
+<div class="flex flex-col gap-2 rounded-xl p-4 border border-primary/20 bg-white dark:bg-slate-800 shadow-sm">
+<p class="text-primary text-xs font-semibold uppercase tracking-wider">Líder Grupo A</p>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary fill-icon text-sm">stars</span>
+<p class="text-slate-900 dark:text-slate-100 text-lg font-bold">Carlos Ruiz</p>
+</div>
+</div>
+<div class="flex flex-col gap-2 rounded-xl p-4 border border-primary/20 bg-white dark:bg-slate-800 shadow-sm">
+<p class="text-primary text-xs font-semibold uppercase tracking-wider">Líder Grupo B</p>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary fill-icon text-sm">stars</span>
+<p class="text-slate-900 dark:text-slate-100 text-lg font-bold">Elena Pardo</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Definition Matches -->
+<section class="px-4 pb-24">
+<h2 class="text-slate-900 dark:text-slate-100 text-xl font-bold leading-tight tracking-tight mb-6">Partidos de Definición</h2>
+<div class="space-y-6">
+<!-- Grand Final -->
+<div class="relative overflow-hidden rounded-xl border-2 border-primary bg-white dark:bg-slate-800 shadow-lg">
+<div class="bg-primary px-4 py-1">
+<p class="text-white text-xs font-bold uppercase tracking-widest text-center">Gran Final (1º vs 1º)</p>
+</div>
+<div class="p-6">
+<div class="flex justify-between items-center gap-4">
+<div class="flex flex-col items-center flex-1">
+<div class="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-2 overflow-hidden border border-primary/20">
+<img alt="Carlos Ruiz" class="w-full h-full object-cover" data-alt="Close up portrait of a male tennis player" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAWr7jcjHU4DKsK1PIBatYWdeb-cjGZ3R8Kdc9C2rf6qwvAaZnW1mCEaohlV6PB5tw8r96cXjxef7bc0qg8H7rngsPDywCw6rXwLdH9vqN-PS6g-UAOi3WxbR6Y91o6YwbzJ9H8CUpQ-hadpUc3okwddXYKLDNZJGcOfBeCO5l1itPccS-65zDK1nLnNvBj14y3mlqO2BtFA7u3_hO1eITxiZkQ39-mclUzceb9w3rdehPiRDpXlqMiaflICleRISL-LjGGgLokQgw"/>
+</div>
+<p class="font-bold text-center text-sm">Carlos Ruiz</p>
+<span class="text-[10px] text-primary font-bold">GRUPO A</span>
+</div>
+<div class="flex flex-col items-center">
+<div class="text-primary font-black text-2xl italic tracking-tighter">VS</div>
+<div class="text-[10px] font-medium text-slate-400 mt-1">HOY 18:00</div>
+</div>
+<div class="flex flex-col items-center flex-1">
+<div class="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-2 overflow-hidden border border-primary/20">
+<img alt="Elena Pardo" class="w-full h-full object-cover" data-alt="Close up portrait of a female tennis player" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD0NnG5Is1jGg0boC5mABJC3nROdZbHDV1dizFvCq1FJybPCANqHg8wWKAPX2ODyMSKR1HttODJKosft0o8iwunAvEkhAWl69raLqo28E7p6BpK5VKMJExkxtEbvLMEMJRi_Kr5HZYWoVG0aW2ov6NDo9vm63esEr0DOPwMOrod5z1cocDwCk4ax0Y-ysWu8xu5IMYGHh3wClKwqxATgeQ8APmd85pY-5irsudLXtF_-CaCT3Ocxwp0WHHiY-SH7FMTScllnWNxVL8"/>
+</div>
+<p class="font-bold text-center text-sm">Elena Pardo</p>
+<span class="text-[10px] text-primary font-bold">GRUPO B</span>
+</div>
+</div>
+</div>
+<div class="px-4 pb-4">
+<button class="w-full bg-primary text-white font-bold py-2 rounded-lg text-sm shadow-md shadow-primary/20">VER DETALLES</button>
+</div>
+</div>
+<!-- 3rd and 4th -->
+<div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
+<div class="bg-slate-100 dark:bg-slate-700/50 px-4 py-1">
+<p class="text-slate-600 dark:text-slate-400 text-[10px] font-bold uppercase tracking-widest text-center">Definición 3er y 4to Puesto (2º vs 2º)</p>
+</div>
+<div class="p-4">
+<div class="flex justify-between items-center gap-2">
+<div class="flex items-center gap-3 flex-1">
+<img alt="Ana Méndez" class="w-10 h-10 rounded-full" data-alt="Tennis player profile picture" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDF54-1V6Ni_Lkhz_M4y6YRx7oJ26ygrcDK_lr4gJWzkyC14CmMZEKBuYWNhGudRz2edXo8cl0qnBQARbBaIkAbouorfpYE5RVHlS9LEjJpvr71gNXW-JJSXQhbQO2QGegjpx1oms3XjykgLtrLNlkGefyc5FbgVQkOWllgM9bSQ92mhGXN9Rvm6lu5KZ4xqt8JW31qmf4Okqr8aHz4MirJ4zkdByVuYMh8nfPgYeQkG4dH-e8KhGze0Laf5XTGEz2MKwDrHJIOf_M"/>
+<p class="font-semibold text-sm">Ana Méndez</p>
+</div>
+<div class="px-3 py-1 bg-slate-50 dark:bg-slate-900 rounded-lg text-[10px] font-bold text-slate-400 border border-slate-100 dark:border-slate-800">17:00</div>
+<div class="flex items-center gap-3 flex-1 justify-end">
+<p class="font-semibold text-sm text-right">Jorge Vera</p>
+<img alt="Jorge Vera" class="w-10 h-10 rounded-full" data-alt="Tennis player profile picture" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBxv9YzkW971_sPz5fBl4VS5jyj32hSprAhOme5HE8tZYxoM3fXCQvZPLlRpyOsCv5tHf7nA5TjkBN8-GOFK0hSZwKmki1DbMt9xeaM4FnMVZjRpHzR25PfOsV_2wdLOAutSwGhlIV3q43NceGn_yv68K-kJ_DEZeBiuK2yF-QVl-E0EfaC8BbsBS-5hIT827RctEVapDk8selmE63nml6-PJi0gWDybRnqPHpQLqU3gT5QpkVac2RfbzOo9Jg9AAFRWadWeKbmwT8"/>
+</div>
+</div>
+</div>
+</div>
+<!-- 5th and 6th -->
+<div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
+<div class="bg-slate-100 dark:bg-slate-700/50 px-4 py-1">
+<p class="text-slate-600 dark:text-slate-400 text-[10px] font-bold uppercase tracking-widest text-center">Definición 5to y 6to Puesto (3º vs 3º)</p>
+</div>
+<div class="p-4">
+<div class="flex justify-between items-center gap-2">
+<div class="flex items-center gap-3 flex-1">
+<img alt="Diego Solis" class="w-10 h-10 rounded-full" data-alt="Tennis player profile picture" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDlDJmpWJI1RS7BKkl02a39HaWHvOz98hZbPO0AxvFMV2Uir3yKvSO5oZPsFNbTjmwty1n5M-Ug-wXzTHbJlPShdsXQocWTW7mdRts2buUvY2iJTGm5knj6R3uv4jS0-20yOhUI0V8APO7Gi6r3lHF2iM7FIj7s-YSXJVl8lDNdWSZVO63peMy2HBs_oibxt6h6femNNDyAAvElFygG_uB4h422pGCgiABzmS6UbaClwIwqpGf6OzV7Rnxz9BH6h2AonXp0_H1_tSw"/>
+<p class="font-semibold text-sm">Diego Solis</p>
+</div>
+<div class="px-3 py-1 bg-slate-50 dark:bg-slate-900 rounded-lg text-[10px] font-bold text-slate-400 border border-slate-100 dark:border-slate-800">16:00</div>
+<div class="flex items-center gap-3 flex-1 justify-end">
+<p class="font-semibold text-sm text-right">Lucía Fer</p>
+<img alt="Lucía Fer" class="w-10 h-10 rounded-full" data-alt="Tennis player profile picture" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAZALfuSaZos-uIliooRYNa6IYl1dmg34ssUXzy65fYvBxL3brT84NZ1O2Z9htNR2pveHziRPYkiUnG91Tx9vcE3vh6SWzmxRpMsOYaO0rEAUxLmWjNIAzYqe03gp9FhcDlwtHbUlZEfdWfp6FVrHCJ1smLas84trCwl-Xk6TR4rohTmK5L1DOFfP70SnnjN-cPf2L6TltJR_alVZ8hMDZy-1TtVlU8HFV-Pxo4LoBm7XOxfyW3LCVYYOIUPkEETszVTYBsyhc2g7A"/>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Bottom Navigation Bar -->
+</div>
+</body></html>

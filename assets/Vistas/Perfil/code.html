@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Profile - MatchPoint Pro</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800;900&amp;family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-container": "#edeeef",
+                        "on-primary-fixed": "#380d00",
+                        "primary-fixed": "#ffdbce",
+                        "primary-container": "#ff6b2b",
+                        "surface-container-high": "#e7e8e9",
+                        "error": "#ba1a1a",
+                        "surface-container-low": "#f3f4f5",
+                        "surface-container-highest": "#e1e3e4",
+                        "primary": "#a83900",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed-dim": "#b4cf95",
+                        "outline-variant": "#e2bfb3",
+                        "secondary-fixed": "#d5e3ff",
+                        "primary-fixed-dim": "#ffb59a",
+                        "secondary-fixed-dim": "#b0c8f0",
+                        "secondary": "#485f83",
+                        "on-background": "#191c1d",
+                        "inverse-primary": "#ffb59a",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary-container": "#455c80",
+                        "surface-bright": "#f8f9fa",
+                        "on-secondary-fixed-variant": "#30486a",
+                        "surface-tint": "#a83900",
+                        "error-container": "#ffdad6",
+                        "on-tertiary-container": "#22370c",
+                        "tertiary": "#4e6535",
+                        "on-primary": "#ffffff",
+                        "inverse-on-surface": "#f0f1f2",
+                        "outline": "#8d7167",
+                        "on-secondary-fixed": "#001c3b",
+                        "secondary-container": "#bed6ff",
+                        "on-tertiary-fixed": "#0e2000",
+                        "surface": "#f8f9fa",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-fixed": "#d0ecaf",
+                        "on-surface-variant": "#594138",
+                        "on-secondary": "#ffffff",
+                        "on-primary-fixed-variant": "#802a00",
+                        "on-primary-container": "#5c1c00",
+                        "background": "#f8f9fa",
+                        "on-surface": "#191c1d",
+                        "surface-variant": "#e1e3e4",
+                        "surface-dim": "#d9dadb",
+                        "tertiary-container": "#88a26b",
+                        "on-error-container": "#93000a",
+                        "on-tertiary-fixed-variant": "#374d20",
+                        "inverse-surface": "#2e3132"
+                    },
+                    fontFamily: {
+                        "headline": ["Lexend"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body { font-family: 'Inter', sans-serif; }
+        h1, h2, h3, .font-headline { font-family: 'Lexend', sans-serif; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface min-h-screen pb-32">
+<!-- TopAppBar -->
+<header class="bg-white/70 backdrop-blur-md sticky top-0 z-50 shadow-[0_12px_32px_rgba(25,28,29,0.06)]">
+<div class="flex justify-between items-center px-6 h-16 w-full max-w-7xl mx-auto">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[#FF6B2B]" data-icon="sports_tennis">sports_tennis</span>
+<span class="font-['Lexend'] font-black text-[#a83900] italic text-2xl tracking-tight">MatchPoint Pro</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="hover:bg-[#f3f4f5] transition-colors p-2 rounded-full active:scale-95 duration-200">
+<span class="material-symbols-outlined text-[#485f83]" data-icon="notifications">notifications</span>
+</button>
+</div>
+</div>
+</header>
+<main class="max-w-7xl mx-auto px-6 pt-8 space-y-10">
+<!-- Profile Header: Asymmetric Layout -->
+<section class="relative">
+<div class="flex flex-col md:flex-row items-end gap-8">
+<div class="relative group">
+<div class="w-32 h-32 md:w-48 md:h-48 rounded-[2rem] overflow-hidden shadow-xl transform -rotate-3 hover:rotate-0 transition-transform duration-300 bg-surface-container-highest">
+<img alt="Carlos Alcaraz" class="w-full h-full object-cover" data-alt="Professional portrait of a male tennis player" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDS4XLQaj12T5sBXpX7toUA_AYE8Y5NPpMI3J9CoMQTYERgcNX7BVn4DWkXLkVrTPmwKLv_4COc8_wngq-GLxt6o8O32eRi-SBHMEtKPMaBx6VxTA52G3cDoI2GIQkp7oYwsdpfIGeVgWiY-2rZwgxg8fdxb2REtpqoPu5W-pG0fU7gBzcVhTHcCjy6xQnzHN_Ry8uIcFpKVdBmQwPXtcEgLO73LnE_FszoZ2LzNm-5xQEqTE5U132--9lgS4WmOC80qKMj1N06NOU"/>
+</div>
+<!-- Tennis Ball Decorative Element (Asymmetric) -->
+<div class="absolute -bottom-4 -right-4 w-12 h-12 bg-primary-container rounded-full flex items-center justify-center shadow-lg border-4 border-surface ring-2 ring-primary-container/20">
+<span class="material-symbols-outlined text-white text-xl" data-icon="star" data-weight="fill" style="font-variation-settings: 'FILL' 1;">star</span>
+</div>
+</div>
+<div class="flex-1 space-y-2 pb-2">
+<div class="flex items-center gap-3">
+<span class="bg-tertiary-container text-on-tertiary-container text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest">PRO PLAYER</span>
+<span class="text-secondary font-medium text-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-sm" data-icon="location_on">location_on</span>
+                            Murcia, Spain
+                        </span>
+</div>
+<h1 class="text-4xl md:text-6xl font-black text-on-surface tracking-tighter leading-none">Carlos Alcaraz</h1>
+<p class="text-secondary max-w-md text-sm md:text-base leading-relaxed">Right-handed (two-handed backhand). Focused on the upcoming Grand Slam and maintaining top-tier clay court performance.</p>
+</div>
+<div class="flex gap-3 pb-2">
+<button class="bg-primary-container text-on-primary-container font-headline font-bold px-8 py-3 rounded-xl shadow-lg hover:shadow-xl active:scale-95 transition-all">Edit Profile</button>
+<button class="bg-surface-container-lowest text-secondary p-3 rounded-xl shadow-sm hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined" data-icon="share">share</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Stats Grid: Bento Layout -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Main Rank Card -->
+<div class="md:col-span-1 bg-surface-container-lowest p-8 rounded-[2rem] shadow-[0_12px_32px_rgba(25,28,29,0.04)] flex flex-col justify-between border-l-8 border-primary-container">
+<span class="text-secondary font-headline font-semibold text-xs uppercase tracking-widest">Global Ranking</span>
+<div class="mt-4">
+<span class="text-6xl font-black font-headline text-on-surface">#1</span>
+<div class="flex items-center gap-1 text-tertiary font-bold text-sm mt-2">
+<span class="material-symbols-outlined text-sm" data-icon="arrow_upward">arrow_upward</span>
+<span>Stable</span>
+</div>
+</div>
+</div>
+<!-- Stats Mini Grid -->
+<div class="md:col-span-2 grid grid-cols-2 gap-6">
+<div class="bg-surface-container-high/50 p-6 rounded-[2rem] flex flex-col justify-center items-center text-center space-y-2">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="emoji_events" data-weight="fill" style="font-variation-settings: 'FILL' 1;">emoji_events</span>
+<span class="text-3xl font-black font-headline text-on-surface">12</span>
+<span class="text-secondary font-medium text-xs uppercase tracking-tighter">Total Trophies</span>
+</div>
+<div class="bg-surface-container-high/50 p-6 rounded-[2rem] flex flex-col justify-center items-center text-center space-y-2">
+<span class="material-symbols-outlined text-secondary text-3xl" data-icon="rebase_edit">rebase_edit</span>
+<span class="text-3xl font-black font-headline text-on-surface">158</span>
+<span class="text-secondary font-medium text-xs uppercase tracking-tighter">Matches Won</span>
+</div>
+<div class="bg-surface-container-high/50 p-6 rounded-[2rem] flex flex-col justify-center items-center text-center space-y-2">
+<span class="material-symbols-outlined text-secondary text-3xl" data-icon="bolt">bolt</span>
+<span class="text-3xl font-black font-headline text-on-surface">89%</span>
+<span class="text-secondary font-medium text-xs uppercase tracking-tighter">Win Rate</span>
+</div>
+<div class="bg-surface-container-high/50 p-6 rounded-[2rem] flex flex-col justify-center items-center text-center space-y-2">
+<span class="material-symbols-outlined text-secondary text-3xl" data-icon="timer">timer</span>
+<span class="text-3xl font-black font-headline text-on-surface">2.4h</span>
+<span class="text-secondary font-medium text-xs uppercase tracking-tighter">Avg Match Duration</span>
+</div>
+</div>
+</section>
+<!-- Recent Tournaments: List w/ Editorial Spacing -->
+<section class="space-y-6">
+<div class="flex justify-between items-end">
+<h2 class="text-2xl font-black font-headline text-on-surface tracking-tight">My Recent Tournaments</h2>
+<button class="text-primary font-bold text-sm hover:underline">View History</button>
+</div>
+<div class="space-y-4">
+<!-- Tournament Card 1 -->
+<div class="group bg-surface-container-low hover:bg-surface-container-lowest transition-all duration-300 p-6 rounded-2xl flex items-center gap-6">
+<div class="w-16 h-16 bg-white rounded-xl shadow-sm flex items-center justify-center text-primary-container">
+<span class="material-symbols-outlined text-3xl" data-icon="military_tech">military_tech</span>
+</div>
+<div class="flex-1">
+<h3 class="font-headline font-bold text-lg text-on-surface">Roland-Garros 2024</h3>
+<p class="text-secondary text-sm">Grand Slam • Paris, France</p>
+</div>
+<div class="text-right">
+<span class="bg-tertiary-container text-on-tertiary-container px-4 py-1 rounded-full text-[10px] font-bold uppercase">Winner</span>
+<p class="text-xs text-secondary mt-1 font-medium">May 26, 2024</p>
+</div>
+</div>
+<!-- Tournament Card 2 -->
+<div class="group bg-surface-container-low hover:bg-surface-container-lowest transition-all duration-300 p-6 rounded-2xl flex items-center gap-6">
+<div class="w-16 h-16 bg-white rounded-xl shadow-sm flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-3xl" data-icon="sports_tennis">sports_tennis</span>
+</div>
+<div class="flex-1">
+<h3 class="font-headline font-bold text-lg text-on-surface">Madrid Open</h3>
+<p class="text-secondary text-sm">ATP Masters 1000 • Madrid, Spain</p>
+</div>
+<div class="text-right">
+<span class="bg-secondary-container text-on-secondary-container px-4 py-1 rounded-full text-[10px] font-bold uppercase">Quarter Finals</span>
+<p class="text-xs text-secondary mt-1 font-medium">Apr 24, 2024</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Settings Section -->
+<section class="bg-surface-container-highest/30 rounded-[2.5rem] p-8 space-y-6">
+<h2 class="text-xl font-black font-headline text-on-surface tracking-tight px-2">Account Settings</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<button class="flex items-center gap-4 p-4 bg-surface-container-lowest rounded-2xl hover:bg-white transition-all shadow-sm group">
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-secondary group-hover:bg-primary-container group-hover:text-white transition-colors">
+<span class="material-symbols-outlined text-xl" data-icon="manage_accounts">manage_accounts</span>
+</div>
+<div class="text-left">
+<p class="font-bold text-on-surface text-sm">Edit Profile</p>
+<p class="text-secondary text-[11px]">Update personal info and photo</p>
+</div>
+<span class="material-symbols-outlined ml-auto text-surface-container-highest" data-icon="chevron_right">chevron_right</span>
+</button>
+<button class="flex items-center gap-4 p-4 bg-surface-container-lowest rounded-2xl hover:bg-white transition-all shadow-sm group">
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-secondary group-hover:bg-primary-container group-hover:text-white transition-colors">
+<span class="material-symbols-outlined text-xl" data-icon="notifications_active">notifications_active</span>
+</div>
+<div class="text-left">
+<p class="font-bold text-on-surface text-sm">Notification Settings</p>
+<p class="text-secondary text-[11px]">Manage match and event alerts</p>
+</div>
+<span class="material-symbols-outlined ml-auto text-surface-container-highest" data-icon="chevron_right">chevron_right</span>
+</button>
+<button class="flex items-center gap-4 p-4 bg-surface-container-lowest rounded-2xl hover:bg-white transition-all shadow-sm group">
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-secondary group-hover:bg-primary-container group-hover:text-white transition-colors">
+<span class="material-symbols-outlined text-xl" data-icon="lock">lock</span>
+</div>
+<div class="text-left">
+<p class="font-bold text-on-surface text-sm">Privacy &amp; Security</p>
+<p class="text-secondary text-[11px]">Password and visibility controls</p>
+</div>
+<span class="material-symbols-outlined ml-auto text-surface-container-highest" data-icon="chevron_right">chevron_right</span>
+</button>
+<button class="flex items-center gap-4 p-4 bg-surface-container-lowest rounded-2xl hover:bg-white transition-all shadow-sm group">
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-secondary group-hover:bg-primary-container group-hover:text-white transition-colors">
+<span class="material-symbols-outlined text-xl" data-icon="help">help</span>
+</div>
+<div class="text-left">
+<p class="font-bold text-on-surface text-sm">Support Center</p>
+<p class="text-secondary text-[11px]">FAQs and contact options</p>
+</div>
+<span class="material-symbols-outlined ml-auto text-surface-container-highest" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+<div class="pt-4 border-t border-outline-variant/10">
+<button class="w-full py-4 text-error font-headline font-bold text-sm tracking-wider uppercase hover:bg-error/5 rounded-xl transition-colors">Log Out</button>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 right-0 z-50">
+<div class="flex justify-around items-center h-20 w-auto px-4 bg-[#ffffff] floating pill mx-6 mb-6 rounded-[2rem] overflow-hidden shadow-[0_12px_32px_rgba(25,28,29,0.08)]">
+<a class="flex flex-col items-center justify-center text-[#485f83] opacity-70 px-4 py-1.5 hover:opacity-100 hover:scale-105 active:scale-90 transition-all duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+<span class="font-['Lexend'] font-medium text-[10px] uppercase tracking-wider mt-1">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#485f83] opacity-70 px-4 py-1.5 hover:opacity-100 hover:scale-105 active:scale-90 transition-all duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="emoji_events">emoji_events</span>
+<span class="font-['Lexend'] font-medium text-[10px] uppercase tracking-wider mt-1">Tournaments</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#485f83] opacity-70 px-4 py-1.5 hover:opacity-100 hover:scale-105 active:scale-90 transition-all duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span class="font-['Lexend'] font-medium text-[10px] uppercase tracking-wider mt-1">Players</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-[#FF6B2B] text-white rounded-full px-4 py-1.5 transition-all active:scale-90 duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="font-['Lexend'] font-medium text-[10px] uppercase tracking-wider mt-1">Profile</span>
+</a>
+</div>
+</nav>
+</body></html>

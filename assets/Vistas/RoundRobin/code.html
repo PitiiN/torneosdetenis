@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#ec5b13",
+                        "background-light": "#f8f6f6",
+                        "background-dark": "#221610",
+                    },
+                    fontFamily: {
+                        "display": ["Public Sans", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 min-h-screen flex flex-col">
+<!-- Header -->
+<header class="sticky top-0 z-50 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-primary/10">
+<div class="flex items-center p-4 justify-between max-w-2xl mx-auto w-full">
+<button class="text-slate-900 dark:text-slate-100 flex size-10 shrink-0 items-center justify-center hover:bg-primary/10 rounded-full transition-colors">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="text-slate-900 dark:text-slate-100 text-lg font-bold leading-tight tracking-tight flex-1 text-center">Torneo Round Robin - Grupos</h1>
+<div class="size-10"></div> <!-- Spacer for balance -->
+</div>
+</header>
+<main class="flex-1 max-w-2xl mx-auto w-full">
+<!-- Tournament Summary Card -->
+<div class="p-4 @container">
+<div class="flex flex-col items-stretch justify-start rounded-xl @xl:flex-row @xl:items-start shadow-sm bg-white dark:bg-primary/5 border border-primary/10 overflow-hidden">
+<div class="w-full bg-center bg-no-repeat aspect-video bg-cover" data-alt="Close up of a yellow tennis ball on a clay court" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBY1uoIVAE5fI4ClzJNTZMWnKh2KC4-A-yEkR5DRnqDRslfL99tu64PkKeM35bHYKLCrtMLCGJGSrH1XBa8KuORCa4Wcd5HZtgrxiTLt53YamA9m_BHeHvj-ZvyZqrZb52aM6xl7PJ-FZTPQTyT_pE7Pyoeznla-W-ZibpFUDrtDJZBzGzu7ge5BrX3_XT1BS0mgMWpNapLvsR-e_bEq0iDu0RI4mT7gB9hUnyeq1zHO6UaxuigJQ2qCGf5kDT4U9aD2NAM0dd35xc");'></div>
+<div class="flex w-full min-w-72 grow flex-col items-stretch justify-center gap-1 p-5">
+<div class="flex items-center gap-2 mb-1">
+<span class="bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">Oficial</span>
+<p class="text-slate-900 dark:text-slate-100 text-xl font-bold leading-tight">Categoría B | Singles</p>
+</div>
+<div class="flex items-center gap-3 justify-between">
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium">6 Jugadores | Mejor de 3 sets</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Group Tabs -->
+<div class="px-4 sticky top-[72px] bg-background-light dark:bg-background-dark z-40">
+<div class="flex border-b border-primary/20 justify-between">
+<button class="flex flex-col items-center justify-center border-b-[3px] border-primary text-primary pb-3 pt-4 flex-1 font-bold text-sm">
+                    Grupo A
+                </button>
+<button class="flex flex-col items-center justify-center border-b-[3px] border-transparent text-slate-400 dark:text-slate-500 pb-3 pt-4 flex-1 font-bold text-sm hover:text-primary/70">
+                    Grupo B
+                </button>
+</div>
+</div>
+<!-- Standings Table -->
+<div class="p-4">
+<div class="flex items-center justify-between mb-3">
+<h3 class="text-slate-900 dark:text-slate-100 text-lg font-bold">Tabla General - Grupo A</h3>
+<span class="text-primary text-xs font-bold bg-primary/10 px-2 py-1 rounded">VIVO</span>
+</div>
+<div class="overflow-x-auto rounded-xl border border-primary/10 bg-white dark:bg-primary/5">
+<table class="w-full text-left text-sm border-collapse">
+<thead>
+<tr class="bg-primary/5 text-slate-500 dark:text-slate-400 uppercase text-[10px] font-bold tracking-widest border-b border-primary/10">
+<th class="px-4 py-3">Jugador</th>
+<th class="px-2 py-3 text-center">PJ</th>
+<th class="px-2 py-3 text-center">PG</th>
+<th class="px-2 py-3 text-center">PP</th>
+<th class="px-2 py-3 text-center">+/-</th>
+<th class="px-4 py-3 text-center">PTS</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-primary/5">
+<tr class="hover:bg-primary/5 transition-colors">
+<td class="px-4 py-4 font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-green-500"></div>
+                                Carlos Ruiz
+                            </td>
+<td class="px-2 py-4 text-center font-medium">0</td>
+<td class="px-2 py-4 text-center font-medium">0</td>
+<td class="px-2 py-4 text-center font-medium">0</td>
+<td class="px-2 py-4 text-center font-medium">0</td>
+<td class="px-4 py-4 text-center font-bold text-primary">0</td>
+</tr>
+<tr class="hover:bg-primary/5 transition-colors">
+<td class="px-4 py-4 font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-700"></div>
+                                Ana Méndez
+                            </td>
+<td class="px-2 py-4 text-center font-medium">0</td>
+<td class="px-2 py-4 text-center font-medium">0</td>
+<td class="px-2 py-4 text-center font-medium">0</td>
+<td class="px-2 py-4 text-center font-medium">0</td>
+<td class="px-4 py-4 text-center font-bold text-primary">0</td>
+</tr>
+<tr class="hover:bg-primary/5 transition-colors">
+<td class="px-4 py-4 font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-700"></div>
+                                Diego Solis
+                            </td>
+<td class="px-2 py-4 text-center font-medium">0</td>
+<td class="px-2 py-4 text-center font-medium">0</td>
+<td class="px-2 py-4 text-center font-medium">0</td>
+<td class="px-2 py-4 text-center font-medium">0</td>
+<td class="px-4 py-4 text-center font-bold text-primary">0</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- Next Matches -->
+<div class="p-4">
+<h3 class="text-slate-900 dark:text-slate-100 text-lg font-bold mb-3">Próximos Partidos - R1</h3>
+<div class="space-y-3">
+<div class="bg-white dark:bg-primary/5 border border-primary/10 rounded-xl p-4 flex items-center justify-between shadow-sm">
+<div class="flex-1 flex flex-col items-center gap-1">
+<div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold">CR</div>
+<p class="text-xs font-bold text-center mt-1">Carlos Ruiz</p>
+</div>
+<div class="px-4 flex flex-col items-center gap-1">
+<span class="text-[10px] font-bold text-slate-400 dark:text-slate-500">VS</span>
+<div class="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded font-bold">14:00</div>
+</div>
+<div class="flex-1 flex flex-col items-center gap-1">
+<div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold">AM</div>
+<p class="text-xs font-bold text-center mt-1">Ana Méndez</p>
+</div>
+</div>
+<div class="bg-white dark:bg-primary/5 border border-primary/10 rounded-xl p-4 flex items-center justify-center shadow-sm opacity-60">
+<p class="text-xs font-medium text-slate-500 italic">Diego Solis - Descansa esta ronda</p>
+</div>
+</div>
+</div>
+<!-- Group B Preview Section -->
+<div class="p-4 mt-4 opacity-50">
+<div class="flex items-center justify-between mb-3">
+<h3 class="text-slate-900 dark:text-slate-100 text-lg font-bold">Grupo B (Vista previa)</h3>
+</div>
+<div class="bg-white dark:bg-primary/5 border border-primary/10 rounded-xl p-4 space-y-2">
+<div class="flex justify-between items-center text-sm font-medium">
+<span>Elena Pardo</span>
+<span class="text-primary font-bold">0 pts</span>
+</div>
+<div class="flex justify-between items-center text-sm font-medium">
+<span>Jorge Vera</span>
+<span class="text-primary font-bold">0 pts</span>
+</div>
+<div class="flex justify-between items-center text-sm font-medium">
+<span>Lucía Fer</span>
+<span class="text-primary font-bold">0 pts</span>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Navigation Bar -->
+<style>
+        .fill-1 { font-variation-settings: 'FILL' 1; }
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+    </style>
+</body></html>

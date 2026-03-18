@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Tournaments - MatchPoint Pro</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800;900&amp;family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "error-container": "#ffdad6",
+                        "surface-variant": "#e1e3e4",
+                        "on-tertiary": "#ffffff",
+                        "tertiary-container": "#88a26b",
+                        "surface-tint": "#a83900",
+                        "primary-fixed": "#ffdbce",
+                        "on-primary-fixed": "#380d00",
+                        "surface-bright": "#f8f9fa",
+                        "error": "#ba1a1a",
+                        "tertiary": "#4e6535",
+                        "on-secondary-fixed-variant": "#30486a",
+                        "on-error": "#ffffff",
+                        "outline": "#8d7167",
+                        "on-primary": "#ffffff",
+                        "secondary-container": "#bed6ff",
+                        "on-secondary-fixed": "#001c3b",
+                        "on-error-container": "#93000a",
+                        "background": "#f8f9fa",
+                        "surface-container-low": "#f3f4f5",
+                        "on-tertiary-fixed": "#0e2000",
+                        "on-surface-variant": "#594138",
+                        "secondary": "#485f83",
+                        "tertiary-fixed-dim": "#b4cf95",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-fixed-dim": "#ffb59a",
+                        "on-background": "#191c1d",
+                        "inverse-surface": "#2e3132",
+                        "primary-container": "#ff6b2b",
+                        "surface-container-high": "#e7e8e9",
+                        "outline-variant": "#e2bfb3",
+                        "on-tertiary-container": "#22370c",
+                        "on-primary-fixed-variant": "#802a00",
+                        "primary": "#a83900",
+                        "tertiary-fixed": "#d0ecaf",
+                        "on-tertiary-fixed-variant": "#374d20",
+                        "on-secondary": "#ffffff",
+                        "surface-dim": "#d9dadb",
+                        "secondary-fixed-dim": "#b0c8f0",
+                        "on-surface": "#191c1d",
+                        "surface": "#f8f9fa",
+                        "inverse-on-surface": "#f0f1f2",
+                        "surface-container": "#edeeef",
+                        "inverse-primary": "#ffb59a",
+                        "on-primary-container": "#5c1c00",
+                        "secondary-fixed": "#d5e3ff",
+                        "on-secondary-container": "#455c80",
+                        "surface-container-highest": "#e1e3e4"
+                    },
+                    fontFamily: {
+                        "headline": ["Lexend"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-header {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+        }
+        .kinetic-shadow {
+            box-shadow: 0 12px 32px rgba(25, 28, 29, 0.06);
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background font-body text-on-background min-h-screen pb-32">
+<!-- TopAppBar -->
+<header class="docked full-width top-0 sticky backdrop-blur-md glass-header z-50">
+<div class="flex justify-between items-center w-full px-6 max-w-screen-xl mx-auto h-16">
+<div class="flex items-center gap-4">
+<button class="active:scale-95 duration-150 hover:bg-surface-container-high p-2 rounded-full transition-colors">
+<span class="material-symbols-outlined text-on-surface">menu</span>
+</button>
+<h1 class="font-headline tracking-tight font-bold text-on-surface text-xl">Tournaments</h1>
+</div>
+<div class="flex items-center gap-2">
+<button class="active:scale-95 duration-150 hover:bg-surface-container-high p-2 rounded-full transition-colors">
+<span class="material-symbols-outlined text-on-surface">search</span>
+</button>
+</div>
+</div>
+</header>
+<main class="max-w-screen-xl mx-auto px-6 pt-6">
+<!-- Search & Filter Section -->
+<section class="mb-8 space-y-4">
+<div class="relative group">
+<div class="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-outline text-lg">search</span>
+</div>
+<input class="w-full h-12 pl-12 pr-4 bg-surface-container-low border-none rounded-xl focus:ring-2 focus:ring-primary-container text-body-md transition-all" placeholder="Search tournaments..." type="text"/>
+</div>
+<div class="flex gap-3 overflow-x-auto hide-scrollbar py-1">
+<button class="bg-primary-container text-on-primary-container px-5 py-2 rounded-full font-label text-sm font-semibold whitespace-nowrap kinetic-shadow">All</button>
+<button class="bg-surface-container-high text-secondary px-5 py-2 rounded-full font-label text-sm font-semibold whitespace-nowrap hover:bg-surface-dim transition-colors">My Tournaments</button>
+<button class="bg-surface-container-high text-secondary px-5 py-2 rounded-full font-label text-sm font-semibold whitespace-nowrap hover:bg-surface-dim transition-colors">Open Registration</button>
+</div>
+</section>
+<!-- Active Tournaments (Asymmetric Bento Style) -->
+<section class="mb-12">
+<div class="flex items-end justify-between mb-6">
+<div>
+<span class="text-primary font-bold font-label tracking-widest text-xs uppercase">Live Action</span>
+<h2 class="font-headline text-3xl font-extrabold tracking-tight">Active Tournaments</h2>
+</div>
+<button class="text-primary font-bold text-sm hover:underline">View All</button>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+<!-- Large Feature Card -->
+<div class="md:col-span-8 bg-surface-container-lowest rounded-3xl p-6 kinetic-shadow relative overflow-hidden group border border-outline-variant/10">
+<div class="absolute top-0 right-0 p-4">
+<span class="bg-tertiary-container text-on-tertiary-container px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-tighter">In Progress</span>
+</div>
+<div class="flex flex-col h-full justify-between gap-8">
+<div>
+<h3 class="font-headline text-2xl md:text-4xl font-black mb-2 leading-tight">Winter Slam 2026</h3>
+<div class="flex items-center gap-4 text-secondary">
+<span class="flex items-center gap-1 font-label text-sm font-medium">
+<span class="material-symbols-outlined text-lg">grid_view</span> Hard Court
+                                </span>
+<span class="flex items-center gap-1 font-label text-sm font-medium">
+<span class="material-symbols-outlined text-lg">group</span> 24/32 Players
+                                </span>
+</div>
+</div>
+<div class="space-y-4">
+<div class="flex justify-between items-end">
+<span class="font-label text-xs font-bold text-outline uppercase tracking-widest">Quarter-Finals Reach</span>
+<span class="font-headline font-bold text-primary">75% Complete</span>
+</div>
+<div class="w-full h-3 bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-gradient-to-r from-primary to-primary-container w-[75%] rounded-full"></div>
+</div>
+</div>
+</div>
+<!-- Decorative Tennis Ball Element -->
+<div class="absolute -bottom-8 -right-8 w-32 h-32 bg-[#ccff00] rounded-full blur-3xl opacity-20 pointer-events-none"></div>
+</div>
+<!-- Small Info Card -->
+<div class="md:col-span-4 bg-surface-container-high rounded-3xl p-6 flex flex-col justify-between border border-outline-variant/5">
+<div class="bg-surface-container-lowest p-4 rounded-2xl w-fit mb-4">
+<span class="material-symbols-outlined text-primary text-3xl" style="font-variation-settings: 'FILL' 1;">emoji_events</span>
+</div>
+<div>
+<h4 class="font-headline text-xl font-bold leading-none mb-2">Club Championship</h4>
+<p class="text-secondary text-sm font-medium mb-4">Registration ending soon.</p>
+<div class="flex -space-x-2">
+<img class="w-8 h-8 rounded-full border-2 border-surface-container-high" data-alt="User avatar profile portrait" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBkyQ-jVSQLBAqjxxk5i7R4nE6Aqwg-ponr7GiulDkNncpShrT_WfVZVhX3qPRywZ4Mpb8p3CojqFzwhhUKbwXwfb5-DOX_HJqeIQ04cecEgqa31Vvzb363GfSdt80wVwLRZ7zLGpM5S4z4B8XwXIGzBmdr_G9qm7MNNdLYV5A7WKtB0LcdDv6LzUwooHM8uiUnOizsJej4jNJYoYELavvUxbYJ5jY1S_6XaWvRRKWdGXihvYTbA3fkYSsXB36eOBjwEVeu8MKcJ2Y"/>
+<img class="w-8 h-8 rounded-full border-2 border-surface-container-high" data-alt="User avatar profile portrait female" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAWnSThB7HeFEBynOmk6YSTcKCbzhvmh3KOewe8vDWApp5_7_YWj4Ih8lyxDg93GErrrtfW7qAJBh22o1CqrAblFI1EDlQBzf9Wegz3kheIdHYYXHOlQY9T7x4foqR5VfvVelCxpE60nd08r1TqnLxEu8QBSWgHQgKmzQaUhLuDTfMS1lnUmrrGYX8e_ij_kXp_JTzGOtPbPBQrz8Cronw1mIZitDu063VzcW4Z9OozJYEKpuzT_fJ3JHTKVz-mncLAZ_OBK49oVys"/>
+<img class="w-8 h-8 rounded-full border-2 border-surface-container-high" data-alt="User avatar profile portrait male" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBKsBf4PDP-uZ8uNLtAkruSaZFgJIOA8BkJHCaRIC_KHKzhs1tjTFdjSYW91fnKk5DakjzSw4ku7Byfr6_aYP-GkepYL0RrqniftYT8bVTXUTU0pvXC-3x5oFG4l5kc-fXQqQdMrRs0GFEppyFw4kXeMcAGOc85qTZNLOYnQdtnAnH-0Uf7dgNzODOkpkJFYl3OKPPRssFu_RdngXvVIwotCdk8fnn20dM87FNNMf_THgMyprSzFyy1Y7E_Fs048ySkJwgsm0kEjjw"/>
+<div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center text-[10px] font-bold text-on-primary-container border-2 border-surface-container-high">+12</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Upcoming Events (Editorial Row) -->
+<section class="mb-12">
+<h2 class="font-headline text-2xl font-extrabold tracking-tight mb-6">Upcoming Events</h2>
+<div class="space-y-4">
+<!-- Event Row 1 -->
+<div class="group flex items-center justify-between p-5 bg-surface rounded-2xl hover:bg-surface-container-low transition-all duration-300">
+<div class="flex items-center gap-6">
+<div class="flex flex-col items-center justify-center w-14 h-14 bg-surface-container-highest rounded-xl text-on-surface">
+<span class="font-headline font-bold text-lg leading-none">12</span>
+<span class="font-label text-[10px] font-bold uppercase tracking-tighter">MAY</span>
+</div>
+<div>
+<h3 class="font-headline font-bold text-lg group-hover:text-primary transition-colors">Spring Clay Open</h3>
+<div class="flex gap-3 mt-1">
+<span class="bg-secondary-container text-on-secondary-container px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest">Clay</span>
+<span class="text-outline text-xs font-medium">8:00 AM • Central Courts</span>
+</div>
+</div>
+</div>
+<button class="bg-surface-container-lowest text-on-surface border border-outline-variant/20 px-4 py-2 rounded-xl text-sm font-bold active:scale-95 transition-all">Register</button>
+</div>
+<!-- Event Row 2 -->
+<div class="group flex items-center justify-between p-5 bg-surface-container-low rounded-2xl hover:bg-surface-container-high transition-all duration-300">
+<div class="flex items-center gap-6">
+<div class="flex flex-col items-center justify-center w-14 h-14 bg-surface-container-highest rounded-xl text-on-surface">
+<span class="font-headline font-bold text-lg leading-none">28</span>
+<span class="font-label text-[10px] font-bold uppercase tracking-tighter">JUN</span>
+</div>
+<div>
+<h3 class="font-headline font-bold text-lg group-hover:text-primary transition-colors">Grass Masters Invitational</h3>
+<div class="flex gap-3 mt-1">
+<span class="bg-tertiary-container/20 text-tertiary px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest">Grass</span>
+<span class="text-outline text-xs font-medium">10:30 AM • Elite Turf</span>
+</div>
+</div>
+</div>
+<button class="bg-primary text-on-primary px-4 py-2 rounded-xl text-sm font-bold active:scale-95 transition-all">Register</button>
+</div>
+</div>
+</section>
+</main>
+<!-- Floating Action Button -->
+<button class="fixed bottom-24 right-6 w-16 h-16 bg-primary-container text-on-primary-container rounded-2xl kinetic-shadow flex items-center justify-center active:scale-90 transition-transform z-40">
+<span class="material-symbols-outlined text-3xl" style="font-variation-settings: 'FILL' 1;">add</span>
+</button>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 right-0 bg-[#f8f9fa] rounded-t-3xl pb-4 pt-2 z-50 kinetic-shadow">
+<div class="flex justify-around items-center w-full px-4">
+<a class="flex flex-col items-center justify-center text-secondary px-5 py-1.5 tap-highlight-transparent active:scale-90 transition-transform hover:bg-surface-container-low rounded-2xl" href="#">
+<span class="material-symbols-outlined mb-1">home</span>
+<span class="font-inter text-[11px] font-medium uppercase tracking-wider">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-2xl px-5 py-1.5 tap-highlight-transparent active:scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 1;">emoji_events</span>
+<span class="font-inter text-[11px] font-medium uppercase tracking-wider">Tournaments</span>
+</a>
+<a class="flex flex-col items-center justify-center text-secondary px-5 py-1.5 tap-highlight-transparent active:scale-90 transition-transform hover:bg-surface-container-low rounded-2xl" href="#">
+<span class="material-symbols-outlined mb-1">groups</span>
+<span class="font-inter text-[11px] font-medium uppercase tracking-wider">Players</span>
+</a>
+<a class="flex flex-col items-center justify-center text-secondary px-5 py-1.5 tap-highlight-transparent active:scale-90 transition-transform hover:bg-surface-container-low rounded-2xl" href="#">
+<span class="material-symbols-outlined mb-1">person</span>
+<span class="font-inter text-[11px] font-medium uppercase tracking-wider">Profile</span>
+</a>
+</div>
+</nav>
+</body></html>

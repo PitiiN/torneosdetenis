@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#ec5b13", // Clay Orange
+                        "tennis-green": "#a3ce33", // Tennis Ball Green
+                        "court-green": "#2d5a27", // Grass court green
+                        "background-light": "#f8f6f6",
+                        "background-dark": "#221610",
+                    },
+                    fontFamily: {
+                        "display": ["Public Sans", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #ec5b1333;
+            border-radius: 10px;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="font-display bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 antialiased">
+<div class="relative flex min-h-screen w-full max-w-[480px] mx-auto flex-col bg-background-light dark:bg-background-dark shadow-2xl overflow-x-hidden">
+<!-- Header -->
+<header class="sticky top-0 z-10 flex items-center bg-white dark:bg-slate-900 p-4 border-b border-slate-200 dark:border-slate-800 justify-between">
+<button class="text-slate-900 dark:text-slate-100 flex size-10 items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="text-slate-900 dark:text-slate-100 text-lg font-bold leading-tight tracking-tight flex-1 text-center">Nuevo Torneo</h1>
+<div class="size-10"></div> <!-- Spacer for balance -->
+</header>
+<!-- Main Content -->
+<main class="flex-1 overflow-y-auto">
+<!-- Hero Visual Area -->
+<div class="px-4 py-6">
+<div class="relative w-full h-32 rounded-xl overflow-hidden bg-court-green flex items-center justify-center">
+<div class="absolute inset-0 opacity-20" style="background-image: radial-gradient(circle at 2px 2px, white 1px, transparent 0); background-size: 24px 24px;"></div>
+<div class="relative z-10 flex flex-col items-center">
+<span class="material-symbols-outlined text-tennis-green text-5xl mb-1">sports_tennis</span>
+<span class="text-white/80 text-xs font-semibold uppercase tracking-widest">Configuración de Cuadro</span>
+</div>
+<img class="absolute inset-0 w-full h-full object-cover opacity-30" data-alt="Close up of a tennis ball on a green court" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBmtTjQEnHmrKiYtJ5gR6SWylQsBO80vtw3SKvbOFM9A6kffzEZyOoalH00aLEYyWzgaTfcGylCDe5FvplJF7H4MFdU8eAWLo-CEm6sdNWH1D2vlRWtJ_OktlWaRGAtrm-u5VMp4cicFfHZnhFhjk-73O3vN9lsAH8_KT-PT3vHoAJOP3F26rnyaufODN29tZECPrNivL9idfAm5Lniao7_wuojFddB_suomUQPlyCL-K91J4aoFX4i26wdeLLykruohJkH_41QzIs"/>
+</div>
+</div>
+<!-- Form Section -->
+<div class="space-y-4 px-4">
+<!-- Players Count -->
+<div class="flex flex-col gap-2">
+<label class="text-slate-700 dark:text-slate-300 text-sm font-semibold flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-lg">groups</span>
+                        Número de Jugadores
+                    </label>
+<div class="relative">
+<input class="w-full h-14 rounded-xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-primary focus:border-primary px-4 text-base font-medium" placeholder="Ej. 16" type="number" value="8"/>
+</div>
+</div>
+<!-- Tournament Format -->
+<div class="flex flex-col gap-2">
+<label class="text-slate-700 dark:text-slate-300 text-sm font-semibold flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-lg">groups_2</span>
+                        Modalidad
+                    </label>
+<select class="w-full h-14 rounded-xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-primary focus:border-primary px-4 text-base font-medium appearance-none">
+<option value="singles">Singles</option>
+<option value="dobles">Dobles</option>
+</select>
+</div><div class="flex flex-col gap-2">
+<label class="text-slate-700 dark:text-slate-300 text-sm font-semibold flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-lg">social_leaderboard</span>
+                        Categoría
+                    </label>
+<select class="w-full h-14 rounded-xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-primary focus:border-primary px-4 text-base font-medium appearance-none">
+<option value="cat-a">Categoría A</option>
+<option value="cat-b">Categoría B</option>
+<option value="cat-c">Categoría C</option>
+<option value="open">Open</option>
+</select>
+</div><div class="flex flex-col gap-2">
+<label class="text-slate-700 dark:text-slate-300 text-sm font-semibold flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-lg">account_tree</span>
+                        Formato del Torneo
+                    </label>
+<select class="w-full h-14 rounded-xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-primary focus:border-primary px-4 text-base font-medium appearance-none">
+<option value="eliminacion">Eliminación Directa</option>
+<option value="round-robin">Round Robin (Todos contra todos)</option>
+<option value="consolacion">Consolación (Cuadro B)</option>
+</select>
+</div>
+<!-- Set Type -->
+<div class="flex flex-col gap-2">
+<label class="text-slate-700 dark:text-slate-300 text-sm font-semibold flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-lg">timer</span>
+                        Tipo de Sets
+                    </label>
+<select class="w-full h-14 rounded-xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-primary focus:border-primary px-4 text-base font-medium appearance-none">
+<option value="best3">Al mejor de 3 sets</option>
+<option value="short4">Set corto a 4 juegos</option>
+<option value="tb10">Tie-break match a 10 ptos</option>
+</select>
+</div>
+<!-- Players List Section -->
+<div class="mt-8">
+<div class="flex items-center justify-between mb-4">
+<h3 class="text-slate-900 dark:text-slate-100 text-base font-bold flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">person_add</span>
+                            Lista de Jugadores
+                        </h3>
+<span class="bg-primary/10 text-primary text-xs font-bold px-2 py-1 rounded-full">8 / 16</span>
+</div>
+<div class="space-y-2 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
+<!-- Player Row 1 -->
+<div class="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700 shadow-sm">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-court-green flex items-center justify-center text-white text-xs font-bold">1</div>
+<span class="text-slate-900 dark:text-slate-100 font-medium">Carlos Alcaraz</span>
+</div>
+<button class="text-slate-400 hover:text-red-500 transition-colors">
+<span class="material-symbols-outlined text-lg">close</span>
+</button>
+</div>
+<!-- Player Row 2 -->
+<div class="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700 shadow-sm">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-court-green flex items-center justify-center text-white text-xs font-bold">2</div>
+<span class="text-slate-900 dark:text-slate-100 font-medium">Jannik Sinner</span>
+</div>
+<button class="text-slate-400 hover:text-red-500 transition-colors">
+<span class="material-symbols-outlined text-lg">close</span>
+</button>
+</div>
+<!-- Player Row 3 -->
+<div class="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700 shadow-sm">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-court-green flex items-center justify-center text-white text-xs font-bold">3</div>
+<span class="text-slate-900 dark:text-slate-100 font-medium">Novak Djokovic</span>
+</div>
+<button class="text-slate-400 hover:text-red-500 transition-colors">
+<span class="material-symbols-outlined text-lg">close</span>
+</button>
+</div>
+<!-- Player Row 4 (Dummy) -->
+<div class="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700 shadow-sm opacity-60 italic">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500 text-xs font-bold">4</div>
+<span class="text-slate-500">Esperando Jugador 4...</span>
+</div>
+<button class="text-primary hover:text-primary/80 transition-colors">
+<span class="material-symbols-outlined text-lg">add_circle</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Fixed Action Button Section -->
+<div class="fixed bottom-0 left-0 right-0 max-w-[480px] mx-auto p-4 bg-gradient-to-t from-background-light dark:from-background-dark via-background-light/95 dark:via-background-dark/95 to-transparent">
+<button class="w-full bg-primary hover:bg-primary/90 text-white font-bold py-4 rounded-xl shadow-lg shadow-primary/25 transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined">grid_view</span>
+                Generar Cuadro
+            </button>
+</div>
+<!-- Bottom Navigation (Component based) -->
+</div>
+</body></html>
