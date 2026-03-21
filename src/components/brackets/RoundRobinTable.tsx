@@ -151,6 +151,8 @@ const getStyles = (colors: any) => StyleSheet.create({
         color: colors.text,
         fontWeight: '700',
         fontSize: 14,
+        flexShrink: 1,
+        flexWrap: 'wrap',
     },
     ptsValue: {
         color: colors.primary[500],

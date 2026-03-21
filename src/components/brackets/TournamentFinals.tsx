@@ -4,8 +4,8 @@ import { useTheme, spacing, borderRadius } from '@/theme';
 
 interface FinalMatch {
     title: string;
-    player1: { name: string; group: string; image: string };
-    player2: { name: string; group: string; image: string };
+    player1: { name: string; group: string; image?: string | null };
+    player2: { name: string; group: string; image?: string | null };
     time: string;
     isGrandFinal?: boolean;
 }
@@ -13,7 +13,9 @@ interface FinalMatch {
 interface TournamentFinalsProps {
     summary: {
         groupALeader: string;
+        groupALeaderImage?: string | null;
         groupBLeader: string;
+        groupBLeaderImage?: string | null;
     };
     matches: FinalMatch[];
 }
@@ -22,43 +24,64 @@ export const TournamentFinals = ({ summary, matches }: TournamentFinalsProps) =>
     const { colors } = useTheme();
     const styles = getStyles(colors);
 
+    const getInitials = (name: string) => {
+        const chunks = String(name || '')
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean);
+        if (chunks.length === 0) return 'PP';
+        if (chunks.length === 1) return chunks[0].slice(0, 2).toUpperCase();
+        return `${chunks[0][0] || ''}${chunks[1][0] || ''}`.toUpperCase();
+    };
+
+    const renderAvatar = (name: string, image?: string | null, size = 60) => {
+        if (image) {
+            return <Image source={{ uri: image, cache: 'force-cache' }} style={{ width: size, height: size, borderRadius: size / 2 }} />;
+        }
+
+        return (
+            <View style={[styles.fallbackAvatar, { width: size, height: size, borderRadius: size / 2 }]}>
+                <Text style={[styles.fallbackAvatarText, { fontSize: Math.max(9, Math.floor(size * 0.32)) }]}>
+                    {getInitials(name)}
+                </Text>
+            </View>
+        );
+    };
+
     return (
         <View style={styles.container}>
-            {/* Summary */}
             <View style={styles.summaryGrid}>
                 <View style={styles.summaryCard}>
-                    <Text style={styles.summaryLabel}>LÍDER GRUPO A</Text>
+                    <Text style={styles.summaryLabel}>LIDER GRUPO A</Text>
                     <View style={styles.summaryRow}>
-                        <Image source={{ uri: 'https://i.pravatar.cc/100?u=a' }} style={styles.miniAvatar} />
+                        {renderAvatar(summary.groupALeader, summary.groupALeaderImage, 24)}
                         <Text style={styles.summaryName}>{summary.groupALeader}</Text>
                     </View>
                 </View>
                 <View style={styles.summaryCard}>
-                    <Text style={styles.summaryLabel}>LÍDER GRUPO B</Text>
+                    <Text style={styles.summaryLabel}>LIDER GRUPO B</Text>
                     <View style={styles.summaryRow}>
-                        <Image source={{ uri: 'https://i.pravatar.cc/100?u=b' }} style={styles.miniAvatar} />
+                        {renderAvatar(summary.groupBLeader, summary.groupBLeaderImage, 24)}
                         <Text style={styles.summaryName}>{summary.groupBLeader}</Text>
                     </View>
                 </View>
             </View>
 
-            {/* Matches */}
             <Text style={styles.sectionTitle}>Partidos de Definición</Text>
             <View style={styles.matchesList}>
                 {matches.map((match, idx) => (
-                    <View 
-                        key={idx} 
+                    <View
+                        key={idx}
                         style={[
-                            styles.matchCard, 
+                            styles.matchCard,
                             match.isGrandFinal && styles.grandFinalCard
                         ]}
                     >
-                        {match.isGrandFinal && (
+                        {match.isGrandFinal ? (
                             <View style={styles.grandFinalBadge}>
                                 <Text style={styles.grandFinalText}>{match.title.toUpperCase()}</Text>
                             </View>
-                        )}
-                        {!match.isGrandFinal && (
+                        ) : (
                             <View style={styles.regularFinalBadge}>
                                 <Text style={styles.regularFinalText}>{match.title.toUpperCase()}</Text>
                             </View>
@@ -66,7 +89,7 @@ export const TournamentFinals = ({ summary, matches }: TournamentFinalsProps) =>
 
                         <View style={styles.matchContent}>
                             <View style={styles.playerWrapper}>
-                                <Image source={{ uri: match.player1.image }} style={styles.matchAvatar} />
+                                {renderAvatar(match.player1.name, match.player1.image, 60)}
                                 <Text style={styles.matchPlayerName}>{match.player1.name}</Text>
                                 <Text style={styles.matchPlayerGroup}>{match.player1.group}</Text>
                             </View>
@@ -79,7 +102,7 @@ export const TournamentFinals = ({ summary, matches }: TournamentFinalsProps) =>
                             </View>
 
                             <View style={styles.playerWrapper}>
-                                <Image source={{ uri: match.player2.image }} style={styles.matchAvatar} />
+                                {renderAvatar(match.player2.name, match.player2.image, 60)}
                                 <Text style={styles.matchPlayerName}>{match.player2.name}</Text>
                                 <Text style={styles.matchPlayerGroup}>{match.player2.group}</Text>
                             </View>
@@ -120,12 +143,6 @@ const getStyles = (colors: any) => StyleSheet.create({
         alignItems: 'center',
         gap: 8,
     },
-    miniAvatar: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        backgroundColor: colors.surfaceSecondary,
-    },
     summaryName: {
         fontSize: 14,
         fontWeight: '700',
@@ -162,7 +179,7 @@ const getStyles = (colors: any) => StyleSheet.create({
         letterSpacing: 1,
     },
     regularFinalBadge: {
-        backgroundColor: colors.text + '0D', // 0D is ~5% opacity
+        backgroundColor: colors.text + '0D',
         paddingVertical: 4,
     },
     regularFinalText: {
@@ -183,13 +200,6 @@ const getStyles = (colors: any) => StyleSheet.create({
         alignItems: 'center',
         gap: 4,
     },
-    matchAvatar: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
-        backgroundColor: colors.surfaceSecondary,
-        marginBottom: 4,
-    },
     matchPlayerName: {
         color: colors.text,
         fontSize: 14,
@@ -199,6 +209,16 @@ const getStyles = (colors: any) => StyleSheet.create({
     matchPlayerGroup: {
         color: colors.primary[500],
         fontSize: 10,
+        fontWeight: '800',
+    },
+    fallbackAvatar: {
+        backgroundColor: colors.primary[500] + '20',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+    },
+    fallbackAvatarText: {
+        color: colors.primary[500],
         fontWeight: '800',
     },
     vsWrapper: {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, ActivityIndicator, Alert, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -8,6 +8,8 @@ import { supabase } from '@/services/supabase';
 import { DateField } from '@/components/DateField';
 import { buildTournamentDescription, buildTournamentFormatLabel, createInitialMatches, getRoundRobinGroupCount, normalizeTournamentFormat } from '@/services/tournamentStructure';
 import { TOURNAMENT_CATEGORIES, CHILEAN_COMUNAS, TOURNAMENT_SURFACES, TOURNAMENT_SET_TYPES } from '@/constants/tournamentOptions';
+import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
+import { TennisSpinner } from '@/components/TennisSpinner';
 
 export default function EditTournamentScreen() {
     const { id } = useLocalSearchParams();
@@ -63,12 +65,22 @@ export default function EditTournamentScreen() {
 
     const loadTournament = async () => {
         try {
+            const access = await getCurrentUserAccessContext();
+            if (!access) {
+                router.replace('/(auth)/login');
+                return;
+            }
+
             const { data, error } = await supabase
                 .from('tournaments')
-                .select('*')
+                .select('id, organization_id, name, status, level, surface, max_players, format, set_type, description, start_date, end_date, registration_fee, address, comuna')
                 .eq('id', id)
                 .single();
             if (error) throw error;
+            if (!canManageOrganization(access, data.organization_id)) {
+                router.replace('/(tabs)/tournaments');
+                return;
+            }
 
             setTournamentData(data);
             setTournamentName(data.name || '');
@@ -85,7 +97,6 @@ export default function EditTournamentScreen() {
             setAddress(data.address || '');
             setComuna(data.comuna || '');
         } catch (error) {
-            console.error('Error loading tournament:', error);
             Alert.alert('Error', 'No se pudo cargar el torneo');
             router.back();
         } finally {
@@ -106,6 +117,12 @@ export default function EditTournamentScreen() {
 
         setIsSubmitting(true);
         try {
+            const access = await getCurrentUserAccessContext();
+            if (!access || !canManageOrganization(access, tournamentData?.organization_id)) {
+                Alert.alert('Error', 'No tienes permisos para editar este torneo.');
+                return;
+            }
+
             const maxPlayersValue = parseInt(maxPlayers) || 8;
             const tournamentFormat = buildTournamentFormatLabel(format, { groupCount: parseInt(groupCount) || 2 });
             const tournamentDescription = buildTournamentDescription(parseInt(groupCount) || 2, tournamentData?.description);
@@ -166,7 +183,6 @@ export default function EditTournamentScreen() {
 
             router.back();
         } catch (error) {
-            console.error('Error updating tournament:', error);
             Alert.alert('Error', 'No se pudo actualizar el torneo');
         } finally {
             setIsSubmitting(false);
@@ -176,7 +192,7 @@ export default function EditTournamentScreen() {
     if (isLoading) {
         return (
             <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-                <ActivityIndicator size="large" color={colors.primary[500]} />
+                <TennisSpinner size={34} />
             </View>
         );
     }
@@ -357,7 +373,7 @@ export default function EditTournamentScreen() {
                     disabled={isSubmitting}
                 >
                     {isSubmitting ? (
-                        <ActivityIndicator color="#fff" />
+                        <TennisSpinner size={18} color="#fff" />
                     ) : (
                         <>
                             <Ionicons name="save" size={20} color="#fff" />

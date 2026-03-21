@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert, Image, BackHandler } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
@@ -8,12 +8,15 @@ import { SingleEliminationBracket } from '@/components/brackets/SingleEliminatio
 import { RoundRobinTable } from '@/components/brackets/RoundRobinTable';
 import { TournamentFinals } from '@/components/brackets/TournamentFinals';
 import { supabase } from '@/services/supabase';
-import { createInitialMatches, getRoundRobinGroupNames, getRoundRobinSlots, hasConsolationBracket, isRoundRobinFormat } from '@/services/tournamentStructure';
+import { getRoundRobinGroupNames, getRoundRobinSlots, hasConsolationBracket, isRoundRobinFormat } from '@/services/tournamentStructure';
+import { TennisSpinner } from '@/components/TennisSpinner';
+import { resolveStorageAssetUrl } from '@/services/storage';
 
 const { width } = Dimensions.get('window');
 
 export default function TournamentDetailScreen() {
     const { id } = useLocalSearchParams();
+    const tournamentId = Array.isArray(id) ? id[0] : id;
     const insets = useSafeAreaInsets();
     const { colors } = useTheme();
     const styles = getStyles(colors);
@@ -21,13 +24,21 @@ export default function TournamentDetailScreen() {
     const [activeTab, setActiveTab] = useState('principal');
     const [tournament, setTournament] = useState<any>(null);
     const [matches, setMatches] = useState<any[]>([]);
+    const [isRegistered, setIsRegistered] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        if (id) {
+        if (tournamentId) {
             loadTournamentData();
         }
-    }, [id]);
+
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+            router.back();
+            return true;
+        });
+
+        return () => backHandler.remove();
+    }, [tournamentId]);
 
     const loadTournamentData = async () => {
         setIsLoading(true);
@@ -35,60 +46,102 @@ export default function TournamentDetailScreen() {
             // Fetch Tournament
             const { data: tourData, error: tourErr } = await supabase
                 .from('tournaments')
-                .select('*')
-                .eq('id', id)
+                .select('id, name, status, format, level, set_type, surface, start_date, address, comuna, registration_fee, max_players, description, modality')
+                .eq('id', tournamentId)
                 .single();
             
             if (tourErr) throw tourErr;
             setTournament(tourData);
 
-            // Fetch Matches with player names
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user?.id) {
+                const { count } = await supabase
+                    .from('registrations')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('tournament_id', tournamentId)
+                    .eq('player_id', session.user.id);
+                setIsRegistered(Boolean(count && count > 0));
+            } else {
+                setIsRegistered(false);
+            }
+
+            // Fetch Matches
             const { data: matchData, error: matchErr } = await supabase
                 .from('matches')
                 .select(`
-                    *,
-                    player_a:profiles!player_a_id(name),
-                    player_b:profiles!player_b_id(name)
+                    id,
+                    tournament_id,
+                    player_a_id,
+                    player_a2_id,
+                    player_b_id,
+                    player_b2_id,
+                    round,
+                    round_number,
+                    match_order,
+                    status,
+                    score,
+                    scheduled_at,
+                    court,
+                    winner_id,
+                    winner_2_id
                 `)
-                .eq('tournament_id', id)
+                .eq('tournament_id', tournamentId)
                 .order('match_order', { ascending: true });
             
             if (matchErr) throw matchErr;
 
             const loadedMatches = matchData || [];
-            if (loadedMatches.length === 0) {
-                const scaffoldMatches = createInitialMatches({
-                    tournamentId: String(id),
-                    format: tourData.format,
-                    description: tourData.description,
-                    maxPlayers: tourData.max_players || 2,
-                });
+            const playerIds = [...new Set(
+                loadedMatches
+                    .flatMap((match: any) => [match.player_a_id, match.player_a2_id, match.player_b_id, match.player_b2_id])
+                    .filter(Boolean)
+            )];
 
-                if (scaffoldMatches.length > 0) {
-                    const { error: scaffoldError } = await supabase.from('matches').insert(scaffoldMatches);
-                    if (scaffoldError) throw scaffoldError;
+            let playerNameMap: Record<string, string> = {};
+            let playerAvatarMap: Record<string, string | null> = {};
+            if (playerIds.length > 0) {
+                const { data: playerRows, error: playerErr } = await supabase
+                    .from('public_profiles')
+                    .select('id, name, avatar_url')
+                    .in('id', playerIds);
 
-                    const { data: regeneratedMatches, error: regeneratedError } = await supabase
-                        .from('matches')
-                        .select(`
-                            *,
-                            player_a:profiles!player_a_id(name),
-                            player_b:profiles!player_b_id(name)
-                        `)
-                        .eq('tournament_id', id)
-                        .order('match_order', { ascending: true });
+                if (playerErr) throw playerErr;
 
-                    if (regeneratedError) throw regeneratedError;
-                    setMatches(regeneratedMatches || []);
-                } else {
-                    setMatches([]);
-                }
-            } else {
-                setMatches(loadedMatches);
+                const avatarPaths = [...new Set(
+                    (playerRows || [])
+                        .map((row: any) => String(row?.avatar_url || '').trim())
+                        .filter(Boolean)
+                )];
+                const signedAvatarByPath = new Map<string, string | null>();
+                await Promise.all(
+                    avatarPaths.map(async (path) => {
+                        const signedUrl = await resolveStorageAssetUrl(path);
+                        signedAvatarByPath.set(path, signedUrl || null);
+                    })
+                );
+
+                playerNameMap = (playerRows || []).reduce((acc: Record<string, string>, currentRow: any) => {
+                    acc[currentRow.id] = currentRow.name || 'TBD';
+                    return acc;
+                }, {});
+                playerAvatarMap = (playerRows || []).reduce((acc: Record<string, string | null>, currentRow: any) => {
+                    const avatarPath = String(currentRow?.avatar_url || '').trim();
+                    acc[currentRow.id] = avatarPath ? (signedAvatarByPath.get(avatarPath) || null) : null;
+                    return acc;
+                }, {});
             }
 
+            setMatches(
+                loadedMatches.map((match: any) => ({
+                    ...match,
+                    player_a: { name: playerNameMap[match.player_a_id] || 'TBD', avatar_url: playerAvatarMap[match.player_a_id] || null },
+                    player_a2: { name: playerNameMap[match.player_a2_id] || 'TBD', avatar_url: playerAvatarMap[match.player_a2_id] || null },
+                    player_b: { name: playerNameMap[match.player_b_id] || 'TBD', avatar_url: playerAvatarMap[match.player_b_id] || null },
+                    player_b2: { name: playerNameMap[match.player_b2_id] || 'TBD', avatar_url: playerAvatarMap[match.player_b2_id] || null },
+                }))
+            );
+
         } catch (error) {
-            console.error('Error loading tournament:', error);
             Alert.alert('Error', 'No se pudo cargar la información del torneo.');
         } finally {
             setIsLoading(false);
@@ -135,11 +188,13 @@ export default function TournamentDetailScreen() {
                 id: m.id,
                 player1: { 
                     name: m.player_a?.name || 'TBD', 
+                    avatarUrl: m.player_a?.avatar_url || null,
                     scores: setScores.map((s: string[]) => s[0]).filter((s: string | undefined) => s !== undefined),
                     isWinner: m.winner_id === m.player_a_id && !!m.player_a_id 
                 },
                 player2: { 
                     name: m.player_b?.name || 'TBD', 
+                    avatarUrl: m.player_b?.avatar_url || null,
                     scores: setScores.map((s: string[]) => s[1]).filter((s: string | undefined) => s !== undefined),
                     isWinner: m.winner_id === m.player_b_id && !!m.player_b_id 
                 },
@@ -156,25 +211,31 @@ export default function TournamentDetailScreen() {
 
     const handleJoin = async () => {
         try {
+            if (!tournamentId) {
+                Alert.alert('Error', 'No se encontro el torneo.');
+                return;
+            }
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) {
                 Alert.alert('Sesión requerida', 'Debes iniciar sesión para inscribirte.');
                 return;
             }
 
+            if (tournament?.status !== 'open') {
+                Alert.alert('Aviso', 'Este torneo ya no acepta inscripciones.');
+                return;
+            }
+
             const { error: regError } = await supabase
                 .from('registrations')
                 .insert({
-                    tournament_id: id,
-                    player_id: session.user.id,
-                    status: 'confirmed',
-                    fee_amount: tournament?.registration_fee || 0,
-                    is_paid: false
+                    tournament_id: tournamentId,
                 });
 
             if (regError) {
                 if (regError.code === '23505') {
                     Alert.alert('Aviso', 'Ya estás inscrito en este torneo.');
+                    setIsRegistered(true);
                 } else {
                     throw regError;
                 }
@@ -182,9 +243,9 @@ export default function TournamentDetailScreen() {
             }
 
             Alert.alert('¡Éxito!', 'Te has inscrito correctamente en el torneo.');
+            setIsRegistered(true);
             loadTournamentData();
         } catch (error) {
-            console.error('Error joining tournament:', error);
             Alert.alert('Error', 'No se pudo realizar la inscripción.');
         }
     };
@@ -211,12 +272,18 @@ export default function TournamentDetailScreen() {
         return fallbackSlots.map((slot, index) => {
             const playerIds = [...new Set(groupMatches.flatMap(match => [match.player_a_id, match.player_b_id]).filter(Boolean))];
             const playerId = playerIds[index];
-            const profile =
-                groupMatches.find(match => match.player_a_id === playerId)?.player_a ||
-                groupMatches.find(match => match.player_b_id === playerId)?.player_b;
+            const matchA = groupMatches.find(match => match.player_a_id === playerId);
+            const matchB = groupMatches.find(match => match.player_b_id === playerId);
+            const profile = matchA?.player_a || matchB?.player_b;
+            const profile2 = matchA?.player_a2 || matchB?.player_b2;
+            
+            let displayName = profile?.name || slot.name;
+            if (tournament?.modality === 'dobles' && profile2?.name) {
+                displayName += ` / ${profile2.name}`;
+            }
 
             return {
-                name: profile?.name || slot.name,
+                name: displayName,
                 pj: 0,
                 pg: 0,
                 pp: 0,
@@ -226,6 +293,26 @@ export default function TournamentDetailScreen() {
             };
         });
     };
+
+    const getInitials = (name: string) => {
+        const chunks = String(name || '')
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean);
+        if (chunks.length === 0) return 'PP';
+        if (chunks.length === 1) return chunks[0].slice(0, 2).toUpperCase();
+        return `${chunks[0][0] || ''}${chunks[1][0] || ''}`.toUpperCase();
+    };
+
+    const renderPlayerAvatar = (name: string, avatarUrl: string | null, size = 28) => (
+        <View style={[styles.groupMatchAvatar, { width: size, height: size, borderRadius: size / 2 }]}>
+            {avatarUrl ? (
+                <Image source={{ uri: avatarUrl, cache: 'force-cache' }} style={{ width: size, height: size, borderRadius: size / 2 }} />
+            ) : (
+                <Text style={[styles.groupMatchInitials, { fontSize: Math.max(9, Math.floor(size * 0.36)) }]}>{getInitials(name)}</Text>
+            )}
+        </View>
+    );
 
     const standingsByGroup = useMemo(
         () =>
@@ -239,7 +326,7 @@ export default function TournamentDetailScreen() {
     if (isLoading) {
         return (
             <View style={[styles.container, styles.centerAll, { paddingTop: insets.top }]}>
-                <ActivityIndicator size="large" color={colors.primary[500]} />
+                <TennisSpinner size={34} />
             </View>
         );
     }
@@ -330,6 +417,9 @@ export default function TournamentDetailScreen() {
                         Formato: {tournament.format} | {tournament.level} | {tournament.set_type}
                     </Text>
                     <Text style={styles.infoSubtitle}>
+                        Modalidad: {tournament.modality === 'dobles' ? 'Dobles' : 'Singles'}
+                    </Text>
+                    <Text style={styles.infoSubtitle}>
                         Superficie: {tournament.surface} | Inicio: {new Date(tournament.start_date).toLocaleDateString()}
                     </Text>
                     {(tournament.address || tournament.comuna) && (
@@ -360,12 +450,12 @@ export default function TournamentDetailScreen() {
                                 player1: {
                                     name: match.player_a?.name || 'Por definir',
                                     group: 'CLASIFICADO',
-                                    image: `https://i.pravatar.cc/100?u=${match.id}-a`,
+                                    image: match.player_a?.avatar_url || null,
                                 },
                                 player2: {
                                     name: match.player_b?.name || 'Por definir',
                                     group: 'CLASIFICADO',
-                                    image: `https://i.pravatar.cc/100?u=${match.id}-b`,
+                                    image: match.player_b?.avatar_url || null,
                                 },
                                 time: match.score || 'Por definir',
                                 isGrandFinal: String(match.round || '').includes('Gran Final'),
@@ -384,9 +474,15 @@ export default function TournamentDetailScreen() {
                                 {(groupMatchesByName[currentGroupName] || []).map(match => (
                                     <View key={match.id} style={{ gap: 4 }}>
                                         <View style={styles.groupMatchRow}>
-                                            <Text style={styles.groupMatchName}>{match.player_a?.name || 'Por definir'}</Text>
+                                            <View style={styles.groupMatchPlayer}>
+                                                {renderPlayerAvatar(match.player_a?.name || 'Por definir', match.player_a?.avatar_url || null)}
+                                                <Text style={styles.groupMatchName} numberOfLines={1}>{match.player_a?.name || 'Por definir'}</Text>
+                                            </View>
                                             <Text style={styles.groupMatchScore}>{match.score || 'VS'}</Text>
-                                            <Text style={styles.groupMatchName}>{match.player_b?.name || 'Por definir'}</Text>
+                                            <View style={[styles.groupMatchPlayer, { justifyContent: 'flex-end' }]}>
+                                                <Text style={[styles.groupMatchName, { textAlign: 'right' }]} numberOfLines={1}>{match.player_b?.name || 'Por definir'}</Text>
+                                                {renderPlayerAvatar(match.player_b?.name || 'Por definir', match.player_b?.avatar_url || null)}
+                                            </View>
                                         </View>
                                         {(match.scheduled_at || match.court) && (
                                             <View style={{ flexDirection: 'row', justifyContent: 'center', gap: spacing.lg, marginBottom: spacing.sm }}>
@@ -420,9 +516,13 @@ export default function TournamentDetailScreen() {
 
             {tournament.status === 'open' && (
                 <View style={[styles.footerActions, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
-                    <TouchableOpacity style={styles.joinButton} onPress={handleJoin}>
-                        <Text style={styles.joinButtonText}>Inscribirse al Torneo</Text>
-                        <Ionicons name="enter-outline" size={20} color="#fff" />
+                    <TouchableOpacity
+                        style={[styles.joinButton, isRegistered && { opacity: 0.88 }]}
+                        onPress={isRegistered ? undefined : handleJoin}
+                        disabled={isRegistered}
+                    >
+                        <Text style={styles.joinButtonText}>{isRegistered ? '¡Estás inscrito! Ver detalles' : 'Inscribirse al Torneo'}</Text>
+                        <Ionicons name={isRegistered ? 'checkmark-circle-outline' : 'enter-outline'} size={20} color="#fff" />
                     </TouchableOpacity>
                 </View>
             )}
@@ -545,17 +645,33 @@ const getStyles = (colors: any) => StyleSheet.create({
     groupMatchRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
         gap: spacing.sm,
         paddingVertical: spacing.sm,
         borderTopWidth: 1,
         borderTopColor: colors.border,
     },
-    groupMatchName: {
+    groupMatchPlayer: {
         flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        minWidth: 0,
+    },
+    groupMatchAvatar: {
+        backgroundColor: colors.primary[500] + '20',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+    },
+    groupMatchInitials: {
+        color: colors.primary[500],
+        fontWeight: '800',
+    },
+    groupMatchName: {
         color: colors.text,
         fontSize: 13,
         fontWeight: '700',
+        flexShrink: 1,
     },
     groupMatchScore: {
         color: colors.primary[500],
@@ -602,3 +718,4 @@ const getStyles = (colors: any) => StyleSheet.create({
         fontSize: 16,
     },
 });
+

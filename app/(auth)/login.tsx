@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ImageBackground, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ImageBackground, KeyboardAvoidingView, Platform, Alert, ScrollView, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { supabase } from '@/services/supabase';
 import { colors, spacing, borderRadius, typography } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
+import { getSafeAuthErrorMessage } from '@/services/errorMessages';
+import { TennisSpinner } from '@/components/TennisSpinner';
 
 import { useRouter } from 'expo-router';
 
@@ -14,16 +16,34 @@ export default function LoginScreen() {
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
+    const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+    useEffect(() => {
+        const showSubscription = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+        const hideSubscription = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+
+        return () => {
+            showSubscription.remove();
+            hideSubscription.remove();
+        };
+    }, []);
 
     async function signInWithEmail() {
+        const normalizedEmail = email.trim().toLowerCase();
+        const normalizedPassword = password;
+        if (!normalizedEmail || !normalizedPassword) {
+            Alert.alert('Error', 'Ingresa correo y contraseña.');
+            return;
+        }
+
         setLoading(true);
         const { error } = await supabase.auth.signInWithPassword({
-            email,
-            password,
+            email: normalizedEmail,
+            password: normalizedPassword,
         });
 
         if (error) {
-            Alert.alert('Error', error.message);
+            Alert.alert('Error', getSafeAuthErrorMessage(error, 'login'));
         }
         setLoading(false);
     }
@@ -38,76 +58,88 @@ export default function LoginScreen() {
                 blurRadius={2}
             >
                 <View style={styles.overlay}>
-                    <KeyboardAvoidingView 
-                        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                        style={styles.keyboardView}
-                    >
-                        <View style={styles.header}>
-                            <View style={styles.logoContainer}>
-                                <Ionicons name="tennisball" size={60} color={colors.primary[500]} />
-                            </View>
-                            <Text style={styles.title}>SweetSpot</Text>
-                            <Text style={styles.subtitle}>Tu próximo torneo comienza aquí</Text>
-                        </View>
-
-                        <BlurView intensity={20} tint="dark" style={styles.formContainer}>
-                            <Text style={styles.formTitle}>Bienvenido</Text>
-                            
-                            <View style={styles.inputGroup}>
-                                <Text style={styles.label}>Correo Electrónico</Text>
-                                <View style={styles.inputWrapper}>
-                                    <Ionicons name="mail-outline" size={20} color={colors.textTertiary} style={styles.inputIcon} />
-                                    <TextInput
-                                        style={styles.input}
-                                        placeholder="ejemplo@correo.com"
-                                        placeholderTextColor={colors.textTertiary}
-                                        value={email}
-                                        onChangeText={setEmail}
-                                        autoCapitalize="none"
-                                        keyboardType="email-address"
-                                    />
+                    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+                        <KeyboardAvoidingView 
+                            behavior={Platform.OS === 'ios' ? 'padding' : 'position'}
+                            keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 32}
+                            style={styles.keyboardView}
+                        >
+                            <ScrollView
+                                contentContainerStyle={[
+                                    styles.keyboardScrollContent,
+                                    keyboardVisible && styles.keyboardScrollContentWithKeyboard,
+                                ]}
+                                keyboardShouldPersistTaps="handled"
+                                showsVerticalScrollIndicator={false}
+                            >
+                                <View style={styles.header}>
+                                    <View style={styles.logoContainer}>
+                                        <Ionicons name="tennisball" size={60} color={colors.primary[500]} />
+                                    </View>
+                                    <Text style={styles.title}>SweetSpot</Text>
+                                    <Text style={styles.subtitle}>Tu próximo torneo comienza aquí</Text>
                                 </View>
-                            </View>
 
-                            <View style={styles.inputGroup}>
-                                <Text style={styles.label}>Contraseña</Text>
-                                <View style={styles.inputWrapper}>
-                                    <Ionicons name="lock-closed-outline" size={20} color={colors.textTertiary} style={styles.inputIcon} />
-                                    <TextInput
-                                        style={styles.input}
-                                        placeholder="••••••••"
-                                        placeholderTextColor={colors.textTertiary}
-                                        value={password}
-                                        onChangeText={setPassword}
-                                        secureTextEntry={!showPassword}
-                                    />
-                                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                                        <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.textTertiary} />
+                                <BlurView intensity={20} tint="dark" style={styles.formContainer}>
+                                    <Text style={styles.formTitle}>Bienvenido</Text>
+                                    
+                                    <View style={styles.inputGroup}>
+                                        <Text style={styles.label}>Correo Electrónico</Text>
+                                        <View style={styles.inputWrapper}>
+                                            <Ionicons name="mail-outline" size={20} color={colors.textTertiary} style={styles.inputIcon} />
+                                            <TextInput
+                                                style={styles.input}
+                                                placeholder="ejemplo@correo.com"
+                                                placeholderTextColor={colors.textTertiary}
+                                                value={email}
+                                                onChangeText={setEmail}
+                                                autoCapitalize="none"
+                                                keyboardType="email-address"
+                                            />
+                                        </View>
+                                    </View>
+
+                                    <View style={styles.inputGroup}>
+                                        <Text style={styles.label}>Contraseña</Text>
+                                        <View style={styles.inputWrapper}>
+                                            <Ionicons name="lock-closed-outline" size={20} color={colors.textTertiary} style={styles.inputIcon} />
+                                            <TextInput
+                                                style={styles.input}
+                                                placeholder="********"
+                                                placeholderTextColor={colors.textTertiary}
+                                                value={password}
+                                                onChangeText={setPassword}
+                                                secureTextEntry={!showPassword}
+                                            />
+                                            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                                                <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.textTertiary} />
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+
+                                    <TouchableOpacity 
+                                        style={styles.loginButton} 
+                                        onPress={signInWithEmail}
+                                        disabled={loading}
+                                    >
+                                        {loading ? (
+                                            <TennisSpinner size={16} color="#fff" />
+                                        ) : (
+                                            <Text style={styles.loginButtonText}>Iniciar Sesión</Text>
+                                        )}
                                     </TouchableOpacity>
-                                </View>
-                            </View>
 
-                            <TouchableOpacity 
-                                style={styles.loginButton} 
-                                onPress={signInWithEmail}
-                                disabled={loading}
-                            >
-                                {loading ? (
-                                    <ActivityIndicator color="#fff" />
-                                ) : (
-                                    <Text style={styles.loginButtonText}>Iniciar Sesión</Text>
-                                )}
-                            </TouchableOpacity>
-
-                            <TouchableOpacity 
-                                style={styles.registerButton} 
-                                onPress={() => router.push('/(auth)/register')}
-                                disabled={loading}
-                            >
-                                <Text style={styles.registerButtonText}>Crear una cuenta</Text>
-                            </TouchableOpacity>
-                        </BlurView>
-                    </KeyboardAvoidingView>
+                                    <TouchableOpacity 
+                                        style={styles.registerButton} 
+                                        onPress={() => router.push('/(auth)/register')}
+                                        disabled={loading}
+                                    >
+                                        <Text style={styles.registerButtonText}>Crear una cuenta</Text>
+                                    </TouchableOpacity>
+                                </BlurView>
+                            </ScrollView>
+                        </KeyboardAvoidingView>
+                    </TouchableWithoutFeedback>
                 </View>
             </ImageBackground>
         </View>
@@ -131,7 +163,16 @@ const styles = StyleSheet.create({
     },
     keyboardView: {
         flex: 1,
+    },
+    keyboardScrollContent: {
+        flexGrow: 1,
         justifyContent: 'center',
+        paddingBottom: spacing.xl,
+    },
+    keyboardScrollContentWithKeyboard: {
+        justifyContent: 'flex-start',
+        paddingTop: spacing['3xl'],
+        paddingBottom: spacing['4xl'],
     },
     header: {
         alignItems: 'center',

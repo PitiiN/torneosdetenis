@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ImageBackground, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ImageBackground, KeyboardAvoidingView, Platform, Alert, ScrollView } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { supabase } from '@/services/supabase';
 import { colors, spacing, borderRadius } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
+import { getSafeAuthErrorMessage } from '@/services/errorMessages';
+import { TennisSpinner } from '@/components/TennisSpinner';
 
 export default function RegisterScreen() {
     const router = useRouter();
@@ -22,10 +24,17 @@ export default function RegisterScreen() {
             return;
         }
 
+        if (password.length < 8) {
+            Alert.alert('Error', 'La contrasena debe tener al menos 8 caracteres.');
+            return;
+        }
+
         setLoading(true);
         try {
+            const normalizedEmail = email.trim().toLowerCase();
+            const fullName = `${firstName.trim()} ${lastName.trim()}`.replace(/\s+/g, ' ').slice(0, 80);
             const { data, error } = await supabase.auth.signUp({
-                email,
+                email: normalizedEmail,
                 password,
             });
 
@@ -33,17 +42,15 @@ export default function RegisterScreen() {
 
             if (data.user) {
                 // Update profile with name and surname
-                const fullName = `${firstName.trim()} ${lastName.trim()}`;
                 const { error: profileError } = await supabase
                     .from('profiles')
                     .update({ 
                         name: fullName,
-                        email: email.toLowerCase().trim()
                     })
                     .eq('id', data.user.id);
 
                 if (profileError) {
-                    console.error('Error updating profile:', profileError);
+                    Alert.alert('Aviso', 'Cuenta creada, pero no pudimos guardar el nombre de perfil.');
                 }
 
                 Alert.alert(
@@ -53,7 +60,7 @@ export default function RegisterScreen() {
                 );
             }
         } catch (error: any) {
-            Alert.alert('Error', error.message);
+            Alert.alert('Error', getSafeAuthErrorMessage(error, 'register'));
         } finally {
             setLoading(false);
         }
@@ -132,7 +139,7 @@ export default function RegisterScreen() {
                                         <Ionicons name="lock-closed-outline" size={20} color={colors.textTertiary} style={styles.inputIcon} />
                                         <TextInput
                                             style={styles.input}
-                                            placeholder="••••••••"
+                                            placeholder="********"
                                             placeholderTextColor={colors.textTertiary}
                                             value={password}
                                             onChangeText={setPassword}
@@ -150,7 +157,7 @@ export default function RegisterScreen() {
                                     disabled={loading}
                                 >
                                     {loading ? (
-                                        <ActivityIndicator color="#fff" />
+                                        <TennisSpinner size={16} color="#fff" />
                                     ) : (
                                         <Text style={styles.registerButtonText}>Registrarme</Text>
                                     )}

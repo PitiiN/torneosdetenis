@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Modal, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, TextInput, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,9 +8,18 @@ import { useTheme, spacing, borderRadius } from '@/theme';
 import { FlatList, KeyboardAvoidingView, Platform } from 'react-native';
 import { createInitialMatches, getRoundRobinGroupNames, getRoundRobinSlots, getSetsToShow, hasConsolationBracket, isRoundRobinFormat } from '@/services/tournamentStructure';
 import { DateField } from '@/components/DateField';
+import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
+import ViewShot from 'react-native-view-shot';
+import * as MediaLibrary from 'expo-media-library';
+import { TennisSpinner } from '@/components/TennisSpinner';
+import { resolveStorageAssetUrl } from '@/services/storage';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const COURT_OPTIONS = Array.from({ length: 20 }, (_current, index) => `Cancha ${index + 1}`);
 
 export default function AdminTournamentDetailScreen() {
-    const { id } = useLocalSearchParams();
+    const { id: rawId } = useLocalSearchParams();
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const { colors } = useTheme();
@@ -19,7 +28,10 @@ export default function AdminTournamentDetailScreen() {
     const [tournament, setTournament] = useState<any>(null);
     const [players, setPlayers] = useState<any[]>([]);
     const [matches, setMatches] = useState<any[]>([]);
+    const [playerAvatarById, setPlayerAvatarById] = useState<Record<string, string | null>>({});
     const [isLoading, setIsLoading] = useState(true);
+    const bracketCaptureRef = useRef<ViewShot | null>(null);
+    const [isExportingBracket, setIsExportingBracket] = useState(false);
 
     const [activeTab, setActiveTab] = useState('main');
 
@@ -41,7 +53,7 @@ export default function AdminTournamentDetailScreen() {
     // Player Selection Modal
     const [isPlayerModalVisible, setIsPlayerModalVisible] = useState(false);
     const [selectedSlot, setSelectedSlot] = useState<{ matchId: string, slot: 1 | 2 | 3 | 4 } | null>(null);
-    const [selectedGroupSlot, setSelectedGroupSlot] = useState<{ groupName: string, slotIndex: number } | null>(null);
+    const [selectedGroupSlot, setSelectedGroupSlot] = useState<{ groupName: string, slotIndex: number, member: 1 | 2 } | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<any[]>([]);
     const [isSearching, setIsSearching] = useState(false);
@@ -56,7 +68,155 @@ export default function AdminTournamentDetailScreen() {
         time: '',
         court: ''
     });
+    const [isCourtPickerVisible, setIsCourtPickerVisible] = useState(false);
     const [savingSchedule, setSavingSchedule] = useState(false);
+
+    const padTwo = (value: number) => String(value).padStart(2, '0');
+    const formatScheduleDate = (scheduledAt?: string | null) => {
+        if (!scheduledAt) return null;
+        const date = new Date(scheduledAt);
+        if (Number.isNaN(date.getTime())) return null;
+        return date.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    };
+    const formatScheduleTime = (scheduledAt?: string | null) => {
+        if (!scheduledAt) return null;
+        const date = new Date(scheduledAt);
+        if (Number.isNaN(date.getTime())) return null;
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+
+    const exportBracketImage = async () => {
+        if (!bracketCaptureRef.current) {
+            Alert.alert('Error', 'No se pudo preparar la imagen del cuadro.');
+            return;
+        }
+
+        setIsExportingBracket(true);
+        try {
+            const permissions = await MediaLibrary.requestPermissionsAsync(true);
+            if (permissions.status !== 'granted') {
+                Alert.alert('Permiso requerido', 'Debes habilitar acceso a la galería para guardar la imagen.');
+                return;
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, 120));
+            const captureUri = await bracketCaptureRef.current.capture?.();
+            if (!captureUri) {
+                throw new Error('capture-failed');
+            }
+
+            try {
+                await MediaLibrary.saveToLibraryAsync(captureUri);
+            } catch {
+                await MediaLibrary.createAssetAsync(captureUri);
+            }
+
+            Alert.alert('Éxito', 'El cuadro se guardó en tu galería.');
+        } catch (error) {
+            Alert.alert('Error', 'No se pudo exportar el cuadro. Revisa permisos de galería o prueba en un development build.');
+        } finally {
+            setIsExportingBracket(false);
+        }
+    };
+
+    const collectPlayerIds = (registrations: any[], tournamentMatches: any[]) => {
+        const ids = new Set<string>();
+
+        (registrations || []).forEach((registration: any) => {
+            const playerId = String(registration?.player_id || '');
+            if (UUID_PATTERN.test(playerId)) {
+                ids.add(playerId);
+            }
+        });
+
+        (tournamentMatches || []).forEach((match: any) => {
+            [match?.player_a_id, match?.player_a2_id, match?.player_b_id, match?.player_b2_id].forEach((playerId) => {
+                if (typeof playerId === 'string' && UUID_PATTERN.test(playerId)) {
+                    ids.add(playerId);
+                }
+            });
+        });
+
+        return [...ids];
+    };
+
+    const fetchPublicProfileMap = async (playerIds: string[]) => {
+        if (playerIds.length === 0) {
+            return {} as Record<string, { name: string; avatarUrl: string | null }>;
+        }
+
+        const { data: publicProfiles, error: publicProfilesError } = await supabase
+            .from('public_profiles')
+            .select('id, name, avatar_url')
+            .in('id', playerIds);
+
+        if (publicProfilesError) throw publicProfilesError;
+
+        const avatarPathById = (publicProfiles || []).reduce((acc: Record<string, string>, profile: any) => {
+            const avatarPath = String(profile?.avatar_url || '').trim();
+            if (avatarPath) acc[profile.id] = avatarPath;
+            return acc;
+        }, {});
+
+        const signedAvatarByPath = new Map<string, string | null>();
+        await Promise.all(
+            Object.values(avatarPathById).map(async (path) => {
+                if (signedAvatarByPath.has(path)) return;
+                const signedAvatar = await resolveStorageAssetUrl(path);
+                signedAvatarByPath.set(path, signedAvatar || null);
+            })
+        );
+
+        return (publicProfiles || []).reduce((acc: Record<string, { name: string; avatarUrl: string | null }>, profile: any) => {
+            const avatarPath = String(profile?.avatar_url || '').trim();
+            acc[profile.id] = {
+                name: profile.name || 'Jugador',
+                avatarUrl: avatarPath ? (signedAvatarByPath.get(avatarPath) || null) : null,
+            };
+            return acc;
+        }, {});
+    };
+
+    const resolveHydratedProfile = (
+        playerId: string | null | undefined,
+        profileMapById: Record<string, { name: string; avatarUrl: string | null }>
+    ) => {
+        if (!playerId) return null;
+        if (playerId === 'BYE') return { id: playerId, name: 'BYE' };
+        const profile = profileMapById[playerId];
+        return {
+            id: playerId,
+            name: profile?.name || 'Desconocido',
+            avatar_url: profile?.avatarUrl || null,
+        };
+    };
+
+    const hydrateRegistrations = (
+        registrations: any[],
+        profileMapById: Record<string, { name: string; avatarUrl: string | null }>
+    ) =>
+        (registrations || []).map((registration: any) => ({
+            ...registration,
+            profiles: registration.player_id
+                ? {
+                    id: registration.player_id,
+                    name: profileMapById[registration.player_id]?.name || 'Desconocido',
+                    avatar_url: profileMapById[registration.player_id]?.avatarUrl || null,
+                }
+                : null,
+        }));
+
+    const hydrateMatches = (
+        tournamentMatches: any[],
+        profileMapById: Record<string, { name: string; avatarUrl: string | null }>
+    ) =>
+        (tournamentMatches || []).map((match: any) => ({
+            ...match,
+            player_a: resolveHydratedProfile(match.player_a_id, profileMapById),
+            player_b: resolveHydratedProfile(match.player_b_id, profileMapById),
+            player_a2: resolveHydratedProfile(match.player_a2_id, profileMapById),
+            player_b2: resolveHydratedProfile(match.player_b2_id, profileMapById),
+        }));
 
     const parseManualAssignments = (description?: string | null) => {
         const match = (description || '').match(/\[MANUAL_ASSIGNMENTS:([^\]]+)\]/);
@@ -127,19 +287,30 @@ export default function AdminTournamentDetailScreen() {
     const loadTournamentData = async () => {
         setIsLoading(true);
         try {
+            const access = await getCurrentUserAccessContext();
+            if (!access) {
+                router.replace('/(auth)/login');
+                return;
+            }
+
             // Load Tournament
             const { data: tourData, error: tourErr } = await supabase
                 .from('tournaments')
-                .select('*')
+                .select('id, organization_id, name, level, format, status, description, set_type, surface, start_date, end_date, registration_fee, max_players, modality')
                 .eq('id', id)
                 .single();
             if (tourErr) throw tourErr;
+            if (!canManageOrganization(access, tourData.organization_id)) {
+                router.replace('/(tabs)/tournaments');
+                return;
+            }
             setTournament(tourData);
 
             if (isRoundRobinFormat(tourData.format)) {
                 const availableGroups = getRoundRobinGroupNames(tourData.format, tourData.description);
                 setActiveTab(currentTab => {
                     if (currentTab === 'finales') return currentTab;
+                    if (currentTab === 'participantes') return currentTab;
                     if (currentTab.startsWith('group:')) {
                         const currentGroup = currentTab.replace('group:', '');
                         if (availableGroups.includes(currentGroup)) return currentTab;
@@ -148,31 +319,31 @@ export default function AdminTournamentDetailScreen() {
                 });
             }
 
-            // Load Players & Profiles
-            const { data: playersData, error: plyErr } = await supabase
+            // Load Players
+            const { data: playersDataRaw, error: plyErr } = await supabase
                 .from('registrations')
-                .select('*, profiles(name)')
+                .select('id, tournament_id, player_id, status, fee_amount, is_paid')
                 .eq('tournament_id', id);
             if (plyErr) throw plyErr;
-            setPlayers(playersData || []);
+            const playersData = (playersDataRaw || []) as any[];
 
             // Load Matches
-            const { data: matchData, error: matchErr } = await supabase
+            const { data: matchDataRaw, error: matchErr } = await supabase
                 .from('matches')
-                .select('*, player_a:profiles!player_a_id(*), player_b:profiles!player_b_id(*), player_a2:profiles!player_a2_id(*), player_b2:profiles!player_b2_id(*)')
+                .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, round, round_number, match_order, status, score, winner_id, winner_2_id, scheduled_at, court')
                 .eq('tournament_id', id)
                 .order('match_order', { ascending: true });
 
             if (matchErr) throw matchErr;
 
-            const loadedMatches = (matchData || []) as any[];
+            let loadedMatches = (matchDataRaw || []) as any[];
             if (loadedMatches.length === 0) {
                 const scaffoldMatches = createInitialMatches({
                     tournamentId: String(id),
                     format: tourData.format,
                     description: tourData.description,
                     maxPlayers: tourData.max_players || 2,
-                    participants: (playersData || []).map((registration: any) => ({ id: registration.player_id })),
+                    participants: [],
                     modality: tourData.modality
                 });
 
@@ -180,26 +351,34 @@ export default function AdminTournamentDetailScreen() {
                     const { error: scaffoldError } = await supabase.from('matches').insert(scaffoldMatches);
                     if (scaffoldError) throw scaffoldError;
 
-                    const { data: regeneratedMatches, error: regeneratedError } = await supabase
+                    const { data: regeneratedMatchesRaw, error: regeneratedError } = await supabase
                         .from('matches')
-                        .select('*, player_a:profiles!player_a_id(*), player_b:profiles!player_b_id(*), player_a2:profiles!player_a2_id(*), player_b2:profiles!player_b2_id(*)')
+                        .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, round, round_number, match_order, status, score, winner_id, winner_2_id, scheduled_at, court')
                         .eq('tournament_id', id)
                         .order('match_order', { ascending: true });
 
                     if (regeneratedError) throw regeneratedError;
-                    setMatches(regeneratedMatches || []);
-                } else {
-                    setMatches([]);
+                    loadedMatches = (regeneratedMatchesRaw || []) as any[];
                 }
-            } else {
-                setMatches(loadedMatches);
             }
 
+            const playerIds = collectPlayerIds(playersData, loadedMatches);
+            const profileMapById = await fetchPublicProfileMap(playerIds);
+            const hydratedPlayers = hydrateRegistrations(playersData, profileMapById);
+            const hydratedMatches = hydrateMatches(loadedMatches, profileMapById);
+            const nextAvatarMap = Object.entries(profileMapById).reduce((acc: Record<string, string | null>, [playerId, profile]) => {
+                acc[playerId] = profile.avatarUrl || null;
+                return acc;
+            }, {});
+
+            setPlayers(hydratedPlayers);
+            setMatches(hydratedMatches);
+            setPlayerAvatarById(nextAvatarMap);
+
             // check and move byes
-            await checkAndProcessByes(loadedMatches);
+            await checkAndProcessByes(hydratedMatches);
 
         } catch (error) {
-            console.error('Error loading tournament details:', error);
             Alert.alert('Error', 'No se pudo cargar la información del torneo.');
         } finally {
             setIsLoading(false);
@@ -233,13 +412,18 @@ export default function AdminTournamentDetailScreen() {
         let initialTime = '';
         if (match.scheduled_at) {
             const d = new Date(match.scheduled_at);
-            initialDate = d.toISOString().split('T')[0];
-            initialTime = d.toTimeString().split(' ')[0].substring(0, 5);
+            if (!Number.isNaN(d.getTime())) {
+                initialDate = `${d.getFullYear()}-${padTwo(d.getMonth() + 1)}-${padTwo(d.getDate())}`;
+                initialTime = `${padTwo(d.getHours())}:${padTwo(d.getMinutes())}`;
+            }
         }
+        const normalizedCourt = COURT_OPTIONS.includes(String(match.court || ''))
+            ? String(match.court || '')
+            : '';
         setScheduleData({
             date: initialDate,
             time: initialTime,
-            court: match.court || ''
+            court: normalizedCourt
         });
         setIsScheduleModalVisible(true);
     };
@@ -249,16 +433,38 @@ export default function AdminTournamentDetailScreen() {
         setSavingSchedule(true);
 
         try {
-            let scheduledAt = null;
-            if (scheduleData.date && scheduleData.time) {
-                scheduledAt = `${scheduleData.date}T${scheduleData.time}:00Z`;
+            const normalizedDate = String(scheduleData.date || '').trim();
+            const normalizedTime = String(scheduleData.time || '').trim();
+            const normalizedCourt = COURT_OPTIONS.includes(String(scheduleData.court || '').trim())
+                ? String(scheduleData.court || '').trim()
+                : '';
+            let scheduledAt: string | null = null;
+
+            if (!normalizedDate && normalizedTime) {
+                Alert.alert('Error', 'Para guardar la hora primero debes seleccionar una fecha.');
+                return;
+            }
+
+            if (normalizedDate) {
+                const validTime = /^([01]\d|2[0-3]):([0-5]\d)$/.test(normalizedTime);
+                if (!validTime) {
+                    Alert.alert('Error', 'Ingresa una hora válida en formato HH:MM.');
+                    return;
+                }
+
+                const localDateTime = new Date(`${normalizedDate}T${normalizedTime}:00`);
+                if (Number.isNaN(localDateTime.getTime())) {
+                    Alert.alert('Error', 'La fecha u hora ingresada no es válida.');
+                    return;
+                }
+                scheduledAt = localDateTime.toISOString();
             }
 
             const { error } = await supabase
                 .from('matches')
                 .update({
                     scheduled_at: scheduledAt,
-                    court: scheduleData.court
+                    court: normalizedCourt
                 })
                 .eq('id', selectedMatch.id);
 
@@ -268,7 +474,6 @@ export default function AdminTournamentDetailScreen() {
             setIsScheduleModalVisible(false);
             Alert.alert('Éxito', 'Horario y cancha guardados.');
         } catch (error) {
-            console.error('Error saving schedule:', error);
             Alert.alert('Error', 'No se pudo guardar la programación.');
         } finally {
             setSavingSchedule(false);
@@ -426,7 +631,6 @@ export default function AdminTournamentDetailScreen() {
             await loadTournamentData();
             setIsEditModalVisible(false);
         } catch (error) {
-            console.error('Error saving score:', error);
             Alert.alert('Error', 'No se pudo guardar el resultado.');
         } finally {
             setSavingMatch(false);
@@ -442,6 +646,11 @@ export default function AdminTournamentDetailScreen() {
         if (!pId) return 'Por definir';
         const player = players.find(p => p.player_id === pId);
         return player ? (player.profiles?.name || 'Desconocido') : 'Por definir';
+    };
+
+    const getPlayerAvatar = (playerId: string | null | undefined) => {
+        if (!playerId || playerId === 'BYE') return null;
+        return playerAvatarById[playerId] || null;
     };
 
     const removeParticipant = async (pId: string) => {
@@ -503,10 +712,10 @@ export default function AdminTournamentDetailScreen() {
     const getAssignedNameForGroupSlot = (groupName: string, slotIndex: number) =>
         manualAssignments.rrSlots?.[groupName]?.[String(slotIndex)]?.name || null;
 
-    const getAssignedNameForMatchSlot = (matchId: string, slot: 1 | 2) =>
-        manualAssignments.matchSlots?.[matchId]?.[slot === 1 ? 'player_a' : 'player_b']?.name || null;
+    const getAssignedNameForMatchSlot = (matchId: string, slot: 'player_a' | 'player_b') =>
+        manualAssignments.matchSlots?.[matchId]?.[slot]?.name || null;
 
-    const handlePlayerPress = (matchId: string, slot: 1 | 2) => {
+    const handlePlayerPress = (matchId: string, slot: 1 | 2 | 3 | 4) => {
         setSelectedSlot({ matchId, slot });
         setSelectedGroupSlot(null);
         setSearchQuery('');
@@ -515,8 +724,8 @@ export default function AdminTournamentDetailScreen() {
         setIsPlayerModalVisible(true);
     };
 
-    const handleGroupSlotPress = (groupName: string, slotIndex: number) => {
-        setSelectedGroupSlot({ groupName, slotIndex });
+    const handleGroupSlotPress = (groupName: string, slotIndex: number, member: 1 | 2 = 1) => {
+        setSelectedGroupSlot({ groupName, slotIndex, member });
         setSelectedSlot(null);
         setSearchQuery('');
         setSearchResults([]);
@@ -539,16 +748,18 @@ export default function AdminTournamentDetailScreen() {
     const searchUsers = async () => {
         setIsSearching(true);
         try {
-            const { data, error } = await supabase
-                .from('profiles')
+            const query = supabase
+                .from('public_profiles')
                 .select('id, name')
                 .ilike('name', `%${searchQuery}%`)
                 .limit(10);
 
+            const { data, error } = await query;
+
             if (error) throw error;
             setSearchResults(data || []);
         } catch (error) {
-            console.error('Error searching users:', error);
+            setSearchResults([]);
         } finally {
             setIsSearching(false);
         }
@@ -589,17 +800,21 @@ export default function AdminTournamentDetailScreen() {
                 is_paid: false
             });
 
-        if (error) throw error;
+        if (error) {
+            if (error.code !== '23505') throw error;
+        }
     };
 
     const assignPlayerToSelectedSlot = async (profileId: string) => {
         await ensureRegisteredPlayer(profileId);
         if (selectedGroupSlot) {
-            const { groupName, slotIndex } = selectedGroupSlot;
+            const { groupName, slotIndex, member } = selectedGroupSlot;
             const groupMatches = [...(roundRobinMatchesByGroup[groupName] || [])].sort(
                 (a, b) => (a.match_order || 0) - (b.match_order || 0)
             );
-            const pairings = getRoundRobinPairings(currentGroupRows.length);
+            const assignPartnerSlot = IS_DOUBLES && member === 2;
+            const slotCount = getRoundRobinSlots(tournamentMaxPlayers, groupName, tournamentFormat, tournament?.description).length;
+            const pairings = getRoundRobinPairings(slotCount);
 
             for (let index = 0; index < groupMatches.length; index++) {
                 const match = groupMatches[index];
@@ -607,8 +822,14 @@ export default function AdminTournamentDetailScreen() {
                 if (!pairing) continue;
 
                 const updateData: any = {};
-                if (pairing[0] === slotIndex) updateData.player_a_id = profileId;
-                if (pairing[1] === slotIndex) updateData.player_b_id = profileId;
+                if (pairing[0] === slotIndex) {
+                    if (assignPartnerSlot) updateData.player_a2_id = profileId;
+                    else updateData.player_a_id = profileId;
+                }
+                if (pairing[1] === slotIndex) {
+                    if (assignPartnerSlot) updateData.player_b2_id = profileId;
+                    else updateData.player_b_id = profileId;
+                }
                 if (Object.keys(updateData).length === 0) continue;
 
                 const { error } = await supabase
@@ -707,7 +928,6 @@ export default function AdminTournamentDetailScreen() {
             setSearchResults([]);
             setIsPlayerModalVisible(false);
         } catch (error) {
-            console.error('Error creating manual player:', error);
             Alert.alert('Error', 'No se pudo crear el jugador manual.');
         }
     };
@@ -727,7 +947,6 @@ export default function AdminTournamentDetailScreen() {
             setSearchResults([]);
             setIsPlayerModalVisible(false);
         } catch (error) {
-            console.error('Error updating match player:', error);
             Alert.alert('Error', 'No se pudo asignar el jugador.');
         }
     };
@@ -739,7 +958,8 @@ export default function AdminTournamentDetailScreen() {
                 const groupMatches = [...(roundRobinMatchesByGroup[groupName] || [])].sort(
                     (a, b) => (a.match_order || 0) - (b.match_order || 0)
                 );
-                const pairings = getRoundRobinPairings(currentGroupRows.length);
+                const groupRows = getGroupRows(groupName);
+                const pairings = getRoundRobinPairings(groupRows.length);
 
                 for (let index = 0; index < groupMatches.length; index++) {
                     const match = groupMatches[index];
@@ -747,8 +967,14 @@ export default function AdminTournamentDetailScreen() {
                     if (!pairing) continue;
 
                     const updateData: any = {};
-                    if (pairing[0] === slotIndex) updateData.player_a_id = null;
-                    if (pairing[1] === slotIndex) updateData.player_b_id = null;
+                    if (pairing[0] === slotIndex) {
+                        updateData.player_a_id = null;
+                        if (IS_DOUBLES) updateData.player_a2_id = null;
+                    }
+                    if (pairing[1] === slotIndex) {
+                        updateData.player_b_id = null;
+                        if (IS_DOUBLES) updateData.player_b2_id = null;
+                    }
                     if (Object.keys(updateData).length === 0) continue;
 
                     const { error } = await supabase
@@ -809,7 +1035,6 @@ export default function AdminTournamentDetailScreen() {
                 setIsPlayerModalVisible(false);
             }
         } catch (error) {
-            console.error('Error removing player:', error);
             Alert.alert('Error', 'No se pudo quitar el jugador.');
         }
     };
@@ -842,7 +1067,6 @@ export default function AdminTournamentDetailScreen() {
                                 params: { orgId: tournament?.organization_id }
                             } as any);
                         } catch (error) {
-                            console.error('Error deleting tournament:', error);
                             Alert.alert('Error', 'Hubo un problema al eliminar el torneo.');
                         }
                     }
@@ -912,7 +1136,6 @@ export default function AdminTournamentDetailScreen() {
             await loadTournamentData();
             Alert.alert('Éxito', 'Las llaves finales fueron generadas. Puedes ajustar cualquier cruce manualmente.');
         } catch (error) {
-            console.error('Error generating round robin finals:', error);
             Alert.alert('Error', 'No se pudieron generar las llaves finales.');
         }
     };
@@ -973,11 +1196,13 @@ export default function AdminTournamentDetailScreen() {
         return fallbackSlots.map((slot, index) => {
             const pair = playerPairs[index];
             const p1Name = pair?.p1 ? getPlayerName(pair.p1) : (getAssignedNameForGroupSlot(groupName, index) || slot.name);
-            const p2Name = pair?.p2 ? getPlayerName(pair.p2) : null;
+            const p2Name = pair?.p2 ? getPlayerName(pair.p2) : (IS_DOUBLES ? `${slot.name} (P2)` : null);
             
             return {
                 id: pair?.p1 || slot.id,
                 name: p2Name ? `${p1Name} / ${p2Name}` : p1Name,
+                p1Name,
+                p2Name,
                 p1Id: pair?.p1,
                 p2Id: pair?.p2,
                 slotIndex: index,
@@ -1058,12 +1283,15 @@ export default function AdminTournamentDetailScreen() {
         });
     };
 
+    const getPlayerIdBySlot = (match: any, slot: 1 | 2 | 3 | 4) => {
+        if (slot === 1) return match.player_a_id;
+        if (slot === 2) return match.player_a2_id;
+        if (slot === 3) return match.player_b_id;
+        return match.player_b2_id;
+    };
+
     const getDisplayName = (match: any, slot: 1 | 2 | 3 | 4) => {
-        let playerId = null;
-        if (slot === 1) playerId = match.player_a_id;
-        else if (slot === 2) playerId = match.player_a2_id;
-        else if (slot === 3) playerId = match.player_b_id;
-        else if (slot === 4) playerId = match.player_b2_id;
+        const playerId = getPlayerIdBySlot(match, slot);
         if (playerId) return getPlayerName(playerId);
 
         if (String(match.round || '').startsWith('Grupo ')) {
@@ -1078,11 +1306,48 @@ export default function AdminTournamentDetailScreen() {
         }
 
         const matchSlotKey = (slot === 1 || slot === 2) ? 'player_a' : 'player_b';
-        const assignedName = getAssignedNameForMatchSlot(match.id, matchSlotKey as any);
+        const assignedName = getAssignedNameForMatchSlot(match.id, matchSlotKey);
         if (assignedName) return assignedName;
 
         return 'Por definir';
     };
+
+    const getDisplayAvatar = (match: any, slot: 1 | 2 | 3 | 4) => {
+        const playerId = getPlayerIdBySlot(match, slot);
+        return getPlayerAvatar(playerId);
+    };
+
+    const getInitials = (name: string) => {
+        const normalized = String(name || '')
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean);
+        if (normalized.length === 0) return 'PP';
+        if (normalized.length === 1) return normalized[0].slice(0, 2).toUpperCase();
+        return `${normalized[0][0] || ''}${normalized[1][0] || ''}`.toUpperCase();
+    };
+
+    const renderPlayerAvatar = (name: string, avatarUrl: string | null, size = 40) => (
+        <View
+            style={{
+                width: size,
+                height: size,
+                borderRadius: size / 2,
+                backgroundColor: colors.primary[500] + '20',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+            }}
+        >
+            {avatarUrl ? (
+                <Image source={{ uri: avatarUrl, cache: 'force-cache' }} style={{ width: size, height: size }} />
+            ) : (
+                <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: Math.max(10, size * 0.35) }}>
+                    {getInitials(name)}
+                </Text>
+            )}
+        </View>
+    );
 
     const currentGroupRows = useMemo(() => getGroupRows(currentGroupName), [currentGroupName, roundRobinMatchesByGroup, players, tournamentMaxPlayers, tournamentFormat, tournament?.description]);
     const currentGroupStandings = useMemo(() => getStandingsForGroup(currentGroupName), [currentGroupName, currentGroupRows, roundRobinMatchesByGroup]);
@@ -1090,7 +1355,7 @@ export default function AdminTournamentDetailScreen() {
     if (isLoading) {
         return (
             <View style={[styles.container, styles.centerAll, { paddingTop: insets.top }]}>
-                <ActivityIndicator size="large" color={colors.primary[500]} />
+                <TennisSpinner size={34} />
             </View>
         );
     }
@@ -1115,6 +1380,15 @@ export default function AdminTournamentDetailScreen() {
                 </TouchableOpacity>
                 <Text style={styles.headerTitle} numberOfLines={1}>{tournament.name}</Text>
                 <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                    {matches.length > 0 && (
+                        <TouchableOpacity style={[styles.actionButton, { padding: 4 }]} onPress={exportBracketImage} disabled={isExportingBracket}>
+                            {isExportingBracket ? (
+                                <TennisSpinner size={18} />
+                            ) : (
+                                <Ionicons name="download-outline" size={22} color={colors.textSecondary} />
+                            )}
+                        </TouchableOpacity>
+                    )}
                     <TouchableOpacity style={[styles.actionButton, { padding: 4 }]} onPress={() => router.push(`/(admin)/tournaments/edit/${id}` as any)}>
                         <Ionicons name="pencil" size={22} color={colors.textSecondary} />
                     </TouchableOpacity>
@@ -1130,61 +1404,74 @@ export default function AdminTournamentDetailScreen() {
                     <>
                         {roundRobinGroupNames.map(groupName => (
                             <TouchableOpacity key={groupName} style={[styles.tab, activeTab === `group:${groupName}` && styles.activeTab]} onPress={() => setActiveTab(`group:${groupName}`)}>
-                                <Text style={[styles.tabText, activeTab === `group:${groupName}` && styles.activeTabText]}>{`Grupo ${groupName}`}</Text>
+                                <Text numberOfLines={1} style={[styles.tabText, activeTab === `group:${groupName}` && styles.activeTabText]}>{`Grupo ${groupName}`}</Text>
                             </TouchableOpacity>
                         ))}
                         <TouchableOpacity style={[styles.tab, activeTab === 'finales' && styles.activeTab]} onPress={() => setActiveTab('finales')}>
-                            <Text style={[styles.tabText, activeTab === 'finales' && styles.activeTabText]}>Finales</Text>
+                            <Text numberOfLines={1} style={[styles.tabText, activeTab === 'finales' && styles.activeTabText]}>Finales</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={[styles.tab, activeTab === 'participantes' && styles.activeTab]} onPress={() => setActiveTab('participantes')}>
-                            <Text style={[styles.tabText, activeTab === 'participantes' && styles.activeTabText]}>Participantes</Text>
+                            <Text
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.75}
+                                style={[styles.tabText, activeTab === 'participantes' && styles.activeTabText]}
+                            >
+                                Participantes
+                            </Text>
                         </TouchableOpacity>
                     </>
                 ) : (
                     <>
                         <TouchableOpacity style={[styles.tab, activeTab === 'main' && styles.activeTab]} onPress={() => setActiveTab('main')}>
-                            <Text style={[styles.tabText, activeTab === 'main' && styles.activeTabText]}>Cuadro Principal</Text>
+                            <Text numberOfLines={1} style={[styles.tabText, activeTab === 'main' && styles.activeTabText]}>Cuadro Principal</Text>
                         </TouchableOpacity>
                         {hasConsolation && (
                             <TouchableOpacity style={[styles.tab, activeTab === 'consolacion' && styles.activeTab]} onPress={() => setActiveTab('consolacion')}>
-                                <Text style={[styles.tabText, activeTab === 'consolacion' && styles.activeTabText]}>Consolación</Text>
+                                <Text numberOfLines={1} style={[styles.tabText, activeTab === 'consolacion' && styles.activeTabText]}>Consolación</Text>
                             </TouchableOpacity>
                         )}
                         <TouchableOpacity style={[styles.tab, activeTab === 'participantes' && styles.activeTab]} onPress={() => setActiveTab('participantes')}>
-                            <Text style={[styles.tabText, activeTab === 'participantes' && styles.activeTabText]}>Participantes</Text>
+                            <Text
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.75}
+                                style={[styles.tabText, activeTab === 'participantes' && styles.activeTabText]}
+                            >
+                                Participantes
+                            </Text>
                         </TouchableOpacity>
                     </>
                 )}
             </View>
 
+            <ViewShot ref={bracketCaptureRef} options={{ format: 'jpg', quality: 1, snapshotContentContainer: true }} style={{ flex: 1 }}>
             <ScrollView contentContainerStyle={styles.scrollContent}>
 
                 {/* Summary Info Card */}
                 <View style={[styles.summaryCard, { paddingVertical: spacing.lg }]}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'nowrap' }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1, marginRight: spacing.sm }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 }}>
                             <Ionicons name="podium" size={20} color={colors.primary[500]} />
-                            <Text style={[styles.summaryText, { flex: 1 }]} numberOfLines={1} ellipsizeMode="tail">
+                            <Text style={[styles.summaryText, { flex: 1 }]} numberOfLines={2}>
                                 Nivel {tournament.level?.toUpperCase().replace('-', ' ')} | {tournament.surface?.toUpperCase()}
                             </Text>
                         </View>
-                        <View style={{ flexShrink: 0 }}>
-                            {tournament.status !== 'finished' && tournament.status !== 'completed' && (
-                                <TouchableOpacity 
-                                    style={{ backgroundColor: colors.primary[500], paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.sm }}
-                                    onPress={finalizeTournament}
-                                >
-                                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Finalizar Torneo</Text>
-                                </TouchableOpacity>
-                            )}
-                            {(tournament.status === 'finished' || tournament.status === 'completed') && (
-                                <View style={{ backgroundColor: colors.success + '20', paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.sm, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                                    <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-                                    <Text style={{ color: colors.success, fontSize: 11, fontWeight: '800' }}>FINALIZADO</Text>
-                                </View>
-                            )}
-                        </View>
                     </View>
+                    {tournament.status !== 'finished' && tournament.status !== 'completed' && (
+                        <TouchableOpacity 
+                            style={{ alignSelf: 'flex-start', backgroundColor: colors.primary[500], paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.sm, marginTop: spacing.sm }}
+                            onPress={finalizeTournament}
+                        >
+                            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Finalizar Torneo</Text>
+                        </TouchableOpacity>
+                    )}
+                    {(tournament.status === 'finished' || tournament.status === 'completed') && (
+                        <View style={{ alignSelf: 'flex-start', backgroundColor: colors.success + '20', paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.sm, flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.sm }}>
+                            <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                            <Text style={{ color: colors.success, fontSize: 11, fontWeight: '800' }}>FINALIZADO</Text>
+                        </View>
+                    )}
                     <Text style={[styles.summaryTextSecondary, { marginTop: spacing.xs }]}>{players.length} Jugadores | {tournament.format} | {tournament.modality === 'dobles' ? 'Dobles' : 'Singles'} | Máx: {tournament.max_players}</Text>
                 </View>
 
@@ -1251,16 +1538,12 @@ export default function AdminTournamentDetailScreen() {
                                     {/* Team A */}
                                     <View style={{ flex: 1, gap: spacing.sm }}>
                                         <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 1)}>
-                                            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
-                                                <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 1).substring(0, 2).toUpperCase()}</Text>
-                                            </View>
+                                            {renderPlayerAvatar(getDisplayName(m, 1), getDisplayAvatar(m, 1))}
                                             <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 1)}</Text>
                                         </TouchableOpacity>
                                         {IS_DOUBLES && (
                                             <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 2)}>
-                                                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
-                                                    <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 2).substring(0, 2).toUpperCase()}</Text>
-                                                </View>
+                                                {renderPlayerAvatar(getDisplayName(m, 2), getDisplayAvatar(m, 2))}
                                                 <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 2)}</Text>
                                             </TouchableOpacity>
                                         )}
@@ -1276,16 +1559,12 @@ export default function AdminTournamentDetailScreen() {
                                     {/* Team B */}
                                     <View style={{ flex: 1, gap: spacing.sm }}>
                                         <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 3)}>
-                                            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
-                                                <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 3).substring(0, 2).toUpperCase()}</Text>
-                                            </View>
+                                            {renderPlayerAvatar(getDisplayName(m, 3), getDisplayAvatar(m, 3))}
                                             <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 3)}</Text>
                                         </TouchableOpacity>
                                         {IS_DOUBLES && (
                                             <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 4)}>
-                                                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
-                                                    <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 4).substring(0, 2).toUpperCase()}</Text>
-                                                </View>
+                                                {renderPlayerAvatar(getDisplayName(m, 4), getDisplayAvatar(m, 4))}
                                                 <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 4)}</Text>
                                             </TouchableOpacity>
                                         )}
@@ -1295,10 +1574,16 @@ export default function AdminTournamentDetailScreen() {
                                     <View style={{ marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <View style={{ flexDirection: 'row', gap: spacing.md }}>
                                             {m.scheduled_at && (
-                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                                                    <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
-                                                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>{new Date(m.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                                                </View>
+                                                <>
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                        <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
+                                                        <Text style={{ fontSize: 12, color: colors.textSecondary }}>{formatScheduleDate(m.scheduled_at)}</Text>
+                                                    </View>
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                        <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                                                        <Text style={{ fontSize: 12, color: colors.textSecondary }}>{formatScheduleTime(m.scheduled_at)}</Text>
+                                                    </View>
+                                                </>
                                             )}
                                             {m.court && (
                                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -1344,10 +1629,33 @@ export default function AdminTournamentDetailScreen() {
                             </View>
 
                             {currentGroupStandings.length > 0 ? currentGroupStandings.map((playerRow: any, idx: number) => (
-                                    <TouchableOpacity key={playerRow.id} onPress={() => handleGroupSlotPress(currentGroupName, playerRow.slotIndex)} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: spacing.md, paddingHorizontal: spacing.md }}>
+                                    <TouchableOpacity
+                                        key={playerRow.id}
+                                        onPress={() => {
+                                            if (IS_DOUBLES) {
+                                                Alert.alert(
+                                                    'Asignar Jugador',
+                                                    '¿Qué jugador deseas asignar?',
+                                                    [
+                                                        { text: 'Jugador 1', onPress: () => handleGroupSlotPress(currentGroupName, playerRow.slotIndex, 1) },
+                                                        { text: 'Jugador 2', onPress: () => handleGroupSlotPress(currentGroupName, playerRow.slotIndex, 2) },
+                                                        { text: 'Cancelar', style: 'cancel' }
+                                                    ]
+                                                );
+                                            } else {
+                                                handleGroupSlotPress(currentGroupName, playerRow.slotIndex, 1);
+                                            }
+                                        }}
+                                        style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: spacing.md, paddingHorizontal: spacing.md }}
+                                    >
                                         <View style={{ flex: 3, flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
                                             <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: idx === 0 ? colors.success : colors.textTertiary }} />
-                                            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }} numberOfLines={1}>{playerRow.name}</Text>
+                                            <View style={{ flex: 1, minWidth: 0 }}>
+                                                <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: '700', color: colors.text }}>{playerRow.p1Name || playerRow.name}</Text>
+                                                {IS_DOUBLES && (
+                                                    <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: '700', color: colors.text }}>{playerRow.p2Name || 'Jugador 2 por definir'}</Text>
+                                                )}
+                                            </View>
                                         </View>
                                         <Text style={{ flex: 1, fontSize: 13, fontWeight: '500', color: colors.textSecondary, textAlign: 'center' }}>{playerRow.played}</Text>
                                         <Text style={{ flex: 1, fontSize: 13, fontWeight: '500', color: colors.textSecondary, textAlign: 'center' }}>{playerRow.won}</Text>
@@ -1373,16 +1681,12 @@ export default function AdminTournamentDetailScreen() {
                                                 {/* Team A */}
                                                 <View style={{ flex: 1, gap: spacing.sm }}>
                                                     <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 1)}>
-                                                        <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
-                                                            <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 1).substring(0, 2).toUpperCase()}</Text>
-                                                        </View>
+                                                        {renderPlayerAvatar(getDisplayName(m, 1), getDisplayAvatar(m, 1))}
                                                         <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 1)}</Text>
                                                     </TouchableOpacity>
                                                     {IS_DOUBLES && (
                                                         <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 2)}>
-                                                            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
-                                                                <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 2).substring(0, 2).toUpperCase()}</Text>
-                                                            </View>
+                                                            {renderPlayerAvatar(getDisplayName(m, 2), getDisplayAvatar(m, 2))}
                                                             <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 2)}</Text>
                                                         </TouchableOpacity>
                                                     )}
@@ -1398,16 +1702,12 @@ export default function AdminTournamentDetailScreen() {
                                                 {/* Team B */}
                                                 <View style={{ flex: 1, gap: spacing.sm }}>
                                                     <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 3)}>
-                                                        <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
-                                                            <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 3).substring(0, 2).toUpperCase()}</Text>
-                                                        </View>
+                                                        {renderPlayerAvatar(getDisplayName(m, 3), getDisplayAvatar(m, 3))}
                                                         <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 3)}</Text>
                                                     </TouchableOpacity>
                                                     {IS_DOUBLES && (
                                                         <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 4)}>
-                                                            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary[500] + '20', alignItems: 'center', justifyContent: 'center' }}>
-                                                                <Text style={{ color: colors.primary[500], fontWeight: '700', fontSize: 14 }}>{getDisplayName(m, 4).substring(0, 2).toUpperCase()}</Text>
-                                                            </View>
+                                                            {renderPlayerAvatar(getDisplayName(m, 4), getDisplayAvatar(m, 4))}
                                                             <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 4)}</Text>
                                                         </TouchableOpacity>
                                                     )}
@@ -1417,10 +1717,16 @@ export default function AdminTournamentDetailScreen() {
                                                 <View style={{ marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                                                     <View style={{ flexDirection: 'row', gap: spacing.md }}>
                                                         {m.scheduled_at && (
-                                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                                                                <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
-                                                                <Text style={{ fontSize: 12, color: colors.textSecondary }}>{new Date(m.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                                                            </View>
+                                                            <>
+                                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                                    <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
+                                                                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>{formatScheduleDate(m.scheduled_at)}</Text>
+                                                                </View>
+                                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                                    <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                                                                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>{formatScheduleTime(m.scheduled_at)}</Text>
+                                                                </View>
+                                                            </>
                                                         )}
                                                         {m.court && (
                                                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -1502,14 +1808,20 @@ export default function AdminTournamentDetailScreen() {
                                                                             style={{ paddingHorizontal: spacing.md, paddingVertical: IS_DOUBLES ? 4 : spacing.md, justifyContent: 'center' }}
                                                                             onPress={() => handlePlayerPress(m.id, 1)}
                                                                         >
-                                                                            <Text style={{ fontSize: IS_DOUBLES ? 11 : 13, fontWeight: m.winner_id === m.player_a_id ? '800' : (isTBD ? '400' : '600'), color: isTBD ? colors.textTertiary : colors.text }} numberOfLines={1}>{getDisplayName(m, 1)}</Text>
+                                                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                                                                {renderPlayerAvatar(getDisplayName(m, 1), getDisplayAvatar(m, 1), 22)}
+                                                                                <Text style={{ flex: 1, fontSize: IS_DOUBLES ? 11 : 13, fontWeight: m.winner_id === m.player_a_id ? '800' : (isTBD ? '400' : '600'), color: isTBD ? colors.textTertiary : colors.text }} numberOfLines={1}>{getDisplayName(m, 1)}</Text>
+                                                                            </View>
                                                                         </TouchableOpacity>
                                                                         {IS_DOUBLES && (
                                                                             <TouchableOpacity
                                                                                 style={{ paddingHorizontal: spacing.md, paddingVertical: 4, justifyContent: 'center' }}
                                                                                 onPress={() => handlePlayerPress(m.id, 2)}
                                                                             >
-                                                                                <Text style={{ fontSize: 11, fontWeight: m.winner_2_id === m.player_a2_id ? '800' : (isTBD ? '400' : '600'), color: isTBD ? colors.textTertiary : colors.text }} numberOfLines={1}>{getDisplayName(m, 2)}</Text>
+                                                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                                                                    {renderPlayerAvatar(getDisplayName(m, 2), getDisplayAvatar(m, 2), 22)}
+                                                                                    <Text style={{ flex: 1, fontSize: 11, fontWeight: m.winner_2_id === m.player_a2_id ? '800' : (isTBD ? '400' : '600'), color: isTBD ? colors.textTertiary : colors.text }} numberOfLines={1}>{getDisplayName(m, 2)}</Text>
+                                                                                </View>
                                                                             </TouchableOpacity>
                                                                         )}
                                                                     </View>
@@ -1535,14 +1847,20 @@ export default function AdminTournamentDetailScreen() {
                                                                             style={{ paddingHorizontal: spacing.md, paddingVertical: IS_DOUBLES ? 4 : spacing.md, justifyContent: 'center' }}
                                                                             onPress={() => handlePlayerPress(m.id, 3)}
                                                                         >
-                                                                            <Text style={{ fontSize: IS_DOUBLES ? 11 : 13, fontWeight: m.winner_id === m.player_b_id ? '800' : (isTBD ? '400' : '500'), color: isTBD ? colors.textTertiary : colors.text }} numberOfLines={1}>{getDisplayName(m, 3)}</Text>
+                                                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                                                                {renderPlayerAvatar(getDisplayName(m, 3), getDisplayAvatar(m, 3), 22)}
+                                                                                <Text style={{ flex: 1, fontSize: IS_DOUBLES ? 11 : 13, fontWeight: m.winner_id === m.player_b_id ? '800' : (isTBD ? '400' : '500'), color: isTBD ? colors.textTertiary : colors.text }} numberOfLines={1}>{getDisplayName(m, 3)}</Text>
+                                                                            </View>
                                                                         </TouchableOpacity>
                                                                         {IS_DOUBLES && (
                                                                             <TouchableOpacity
                                                                                 style={{ paddingHorizontal: spacing.md, paddingVertical: 4, justifyContent: 'center' }}
                                                                                 onPress={() => handlePlayerPress(m.id, 4)}
                                                                             >
-                                                                                <Text style={{ fontSize: 11, fontWeight: m.winner_2_id === m.player_b2_id ? '800' : (isTBD ? '400' : '500'), color: isTBD ? colors.textTertiary : colors.text }} numberOfLines={1}>{getDisplayName(m, 4)}</Text>
+                                                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                                                                    {renderPlayerAvatar(getDisplayName(m, 4), getDisplayAvatar(m, 4), 22)}
+                                                                                    <Text style={{ flex: 1, fontSize: 11, fontWeight: m.winner_2_id === m.player_b2_id ? '800' : (isTBD ? '400' : '500'), color: isTBD ? colors.textTertiary : colors.text }} numberOfLines={1}>{getDisplayName(m, 4)}</Text>
+                                                                                </View>
                                                                             </TouchableOpacity>
                                                                         )}
                                                                     </View>
@@ -1563,9 +1881,14 @@ export default function AdminTournamentDetailScreen() {
                                                             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 4, backgroundColor: colors.background + '50' }}>
                                                                 <View style={{ flexDirection: 'row', gap: spacing.sm }}>
                                                                     {m.scheduled_at && (
-                                                                        <Text style={{ fontSize: 9, color: colors.textTertiary, fontWeight: '600' }}>
-                                                                            {new Date(m.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                                        </Text>
+                                                                        <>
+                                                                            <Text style={{ fontSize: 9, color: colors.textTertiary, fontWeight: '600' }}>
+                                                                                {formatScheduleDate(m.scheduled_at)}
+                                                                            </Text>
+                                                                            <Text style={{ fontSize: 9, color: colors.textTertiary, fontWeight: '600' }}>
+                                                                                {formatScheduleTime(m.scheduled_at)}
+                                                                            </Text>
+                                                                        </>
                                                                     )}
                                                                     {m.court && (
                                                                         <Text style={{ fontSize: 9, color: colors.textTertiary, fontWeight: '600' }}>
@@ -1594,6 +1917,7 @@ export default function AdminTournamentDetailScreen() {
                     </ScrollView>
                 )}
             </ScrollView>
+            </ViewShot>
 
             {/* Edit Match Score Modal */}
             <Modal visible={isEditModalVisible} transparent animationType="fade">
@@ -1657,7 +1981,7 @@ export default function AdminTournamentDetailScreen() {
                                 <Text style={styles.modalBtnCancelText}>Cancelar</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={saveMatchScore} disabled={savingMatch}>
-                                {savingMatch ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalBtnSaveText}>Guardar</Text>}
+                                {savingMatch ? <TennisSpinner size={18} color="#fff" /> : <Text style={styles.modalBtnSaveText}>Guardar</Text>}
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -1736,7 +2060,7 @@ export default function AdminTournamentDetailScreen() {
                     </View>
 
                     {isSearching ? (
-                        <ActivityIndicator size="small" color={colors.primary[500]} style={{ marginTop: spacing.md }} />
+                        <TennisSpinner size={18} style={{ marginTop: spacing.md }} />
                     ) : (
                         <ScrollView style={{ maxHeight: 200 }}>
                             {searchResults.map((user) => (
@@ -1813,13 +2137,14 @@ export default function AdminTournamentDetailScreen() {
 
                             <View>
                                 <Text style={[styles.modalDividerText, { textAlign: 'left', marginBottom: 4 }]}>Cancha</Text>
-                                <TextInput
-                                    style={[styles.scoreInput, { color: colors.text, textAlign: 'left' }]}
-                                    placeholder="Ej: Cancha 1"
-                                    placeholderTextColor={colors.textTertiary}
-                                    value={scheduleData.court}
-                                    onChangeText={(court) => setScheduleData({ ...scheduleData, court })}
-                                />
+                                <TouchableOpacity
+                                    style={[styles.scoreInput, { justifyContent: 'center' }]}
+                                    onPress={() => setIsCourtPickerVisible(true)}
+                                >
+                                    <Text style={{ color: scheduleData.court ? colors.text : colors.textTertiary, fontSize: 15, fontWeight: '600' }}>
+                                        {scheduleData.court || 'Seleccionar cancha'}
+                                    </Text>
+                                </TouchableOpacity>
                             </View>
                         </View>
 
@@ -1828,9 +2153,37 @@ export default function AdminTournamentDetailScreen() {
                                 <Text style={styles.modalBtnCancelText}>Cancelar</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={saveMatchSchedule} disabled={savingSchedule}>
-                                {savingSchedule ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalBtnSaveText}>Guardar</Text>}
+                                {savingSchedule ? <TennisSpinner size={18} color="#fff" /> : <Text style={styles.modalBtnSaveText}>Guardar</Text>}
                             </TouchableOpacity>
                         </View>
+                    </View>
+                </View>
+            </Modal>
+
+            <Modal visible={isCourtPickerVisible} transparent animationType="fade" onRequestClose={() => setIsCourtPickerVisible(false)}>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Seleccionar Cancha</Text>
+                        <ScrollView style={{ maxHeight: 340 }}>
+                            {COURT_OPTIONS.map((courtName) => (
+                                <TouchableOpacity
+                                    key={courtName}
+                                    style={styles.playerSearchItem}
+                                    onPress={() => {
+                                        setScheduleData((current) => ({ ...current, court: courtName }));
+                                        setIsCourtPickerVisible(false);
+                                    }}
+                                >
+                                    <Text style={styles.playerSearchName}>{courtName}</Text>
+                                    {scheduleData.court === courtName && (
+                                        <Ionicons name="checkmark-circle" size={18} color={colors.primary[500]} />
+                                    )}
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                        <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsCourtPickerVisible(false)}>
+                            <Text style={styles.modalBtnCancelText}>Cerrar</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
             </Modal>
@@ -1845,14 +2198,23 @@ function getStyles(colors: any) {
         errorText: { fontSize: 16, color: colors.error },
 
         header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.xl, paddingVertical: spacing.md, backgroundColor: colors.surface },
-        backButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'flex-start' },
+        backButton: {
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            backgroundColor: colors.surfaceSecondary,
+            borderWidth: 1,
+            borderColor: colors.border,
+            justifyContent: 'center',
+            alignItems: 'center'
+        },
         actionButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'flex-end' },
         headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: colors.text, textAlign: 'center' },
 
         tabsContainer: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.surface },
-        tab: { flex: 1, paddingVertical: spacing.md, alignItems: 'center', borderBottomWidth: 3, borderBottomColor: 'transparent' },
+        tab: { flex: 1, paddingVertical: spacing.md, paddingHorizontal: spacing.xs, alignItems: 'center', borderBottomWidth: 3, borderBottomColor: 'transparent' },
         activeTab: { borderBottomColor: colors.primary[500] },
-        tabText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
+        tabText: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
         activeTabText: { color: colors.primary[500] },
 
         scrollContent: { padding: spacing.xl, paddingBottom: 100 },
@@ -1902,7 +2264,16 @@ function getStyles(colors: any) {
         // Player Selection Modal Styles
         modalContainer: { flex: 1, backgroundColor: colors.background },
         modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.xl, borderBottomWidth: 1, borderBottomColor: colors.border },
-        modalCloseBtn: { padding: spacing.xs },
+        modalCloseBtn: {
+            width: 32,
+            height: 32,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.surfaceSecondary,
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
         searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, marginHorizontal: spacing.xl, marginBottom: spacing.md, paddingHorizontal: spacing.md, height: 48, borderRadius: borderRadius.lg, borderWidth: 1, borderColor: colors.border },
         searchInput: { flex: 1, marginLeft: spacing.sm, fontSize: 16, color: colors.text },
         modalList: { paddingHorizontal: spacing.xl, paddingBottom: spacing['4xl'] },

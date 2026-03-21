@@ -1,6 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { Platform, Alert } from 'react-native';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import { supabase } from './supabase';
 
 Notifications.setNotificationHandler({
@@ -17,7 +18,6 @@ export const notificationService = {
    */
   registerForPushNotifications: async (userId: string) => {
     if (!Device.isDevice) {
-      console.log('Must use physical device for Push Notifications');
       return null;
     }
 
@@ -31,25 +31,31 @@ export const notificationService = {
       }
 
       if (finalStatus !== 'granted') {
-        console.log('Failed to get push token for push notification!');
+        return null;
+      }
+
+      const projectId =
+        Constants.easConfig?.projectId ||
+        (Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined)?.eas?.projectId ||
+        process.env.EXPO_PUBLIC_EXPO_PROJECT_ID;
+
+      if (!projectId) {
         return null;
       }
 
       const token = (await Notifications.getExpoPushTokenAsync({
-        projectId: 'YOUR_PROJECT_ID', // Replace with your actual Expo project ID
+        projectId,
       })).data;
 
-      console.log('Expo Push Token:', token);
+      if (!token) {
+        return null;
+      }
 
       // Save token to Supabase
-      const { error } = await supabase
+      await supabase
         .from('profiles')
         .update({ expo_push_token: token })
         .eq('id', userId);
-
-      if (error) {
-        console.error('Error saving push token to profile:', error);
-      }
 
       if (Platform.OS === 'android') {
         Notifications.setNotificationChannelAsync('default', {
@@ -62,7 +68,6 @@ export const notificationService = {
 
       return token;
     } catch (error) {
-      console.error('Error in registerForPushNotifications:', error);
       return null;
     }
   },

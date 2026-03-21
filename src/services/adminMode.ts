@@ -1,7 +1,7 @@
 type Mode = 'admin' | 'user';
 type Listener = (mode: Mode) => void;
 
-let currentMode: Mode = 'admin';
+let currentMode: Mode = 'user';
 const listeners: Set<Listener> = new Set();
 
 export const adminModeService = {

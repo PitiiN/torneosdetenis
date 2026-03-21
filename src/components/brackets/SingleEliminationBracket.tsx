@@ -8,8 +8,8 @@ interface SingleEliminationProps {
         title: string;
         matches: {
             id: string;
-            player1: { name: string; scores?: (number | string)[]; isWinner?: boolean };
-            player2: { name: string; scores?: (number | string)[]; isWinner?: boolean };
+            player1: { name: string; avatarUrl?: string | null; scores?: (number | string)[]; isWinner?: boolean };
+            player2: { name: string; avatarUrl?: string | null; scores?: (number | string)[]; isWinner?: boolean };
             status?: string;
             scheduledAt?: string | null;
             court?: string | null;

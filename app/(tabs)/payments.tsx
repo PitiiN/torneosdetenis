@@ -1,10 +1,11 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Dimensions, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { useFocusEffect } from 'expo-router';
+import { TennisSpinner } from '@/components/TennisSpinner';
 
 const { width } = Dimensions.get('window');
 
@@ -69,7 +70,7 @@ export default function PaymentsScreen() {
 
             setPayments(formatted);
         } catch (error) {
-            console.error('Error fetching payments:', error);
+            setPayments([]);
         } finally {
             setLoading(false);
             setRefreshing(false);
@@ -110,7 +111,7 @@ export default function PaymentsScreen() {
                 </View>
 
                 {loading && !refreshing ? (
-                    <ActivityIndicator size="large" color={colors.primary[500]} style={{ marginTop: 40 }} />
+                    <TennisSpinner size={34} style={{ marginTop: 40 }} />
                 ) : payments.length > 0 ? (
                     <View style={styles.list}>
                         {payments.map((p) => (
