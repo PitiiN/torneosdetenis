@@ -12,6 +12,7 @@ import { notificationService } from '@/services/notificationService';
 
 const { width } = Dimensions.get('window');
 const GLOBAL_ADMIN_EMAIL = 'javier.aravena25@gmail.com';
+const BACKHAND_FIELD = 'rev\u00E9s';
 
 export default function ProfileScreen() {
     const insets = useSafeAreaInsets();
@@ -137,64 +138,90 @@ export default function ProfileScreen() {
             // Removing isGlobal restriction so all users fetch organizations for stats filter
             fetchAllOrganizations();
 
-            // Fetch User Contexts (Orgs and Levels)
-            const { data: contexts, error: ctxErr } = await supabase
+            // Avoid ambiguous registrations->tournaments embeds by loading in two steps.
+            const { data: registrationRows, error: registrationError } = await supabase
                 .from('registrations')
-                .select(`
-                    tournament_id,
-                    tournaments:tournaments!inner(
-                        organization_id,
-                        level,
-                        organizations:organizations!inner(name)
-                    )
-                `)
-                .eq('player_id', session.user.id);
+                .select('tournament_id, registered_at')
+                .eq('player_id', session.user.id)
+                .order('registered_at', { ascending: false });
+            if (registrationError) throw registrationError;
 
-            if (!ctxErr && contexts) {
+            const tournamentIds = [...new Set(
+                (registrationRows || [])
+                    .map((row: any) => row?.tournament_id)
+                    .filter(Boolean)
+            )] as string[];
+
+            if (tournamentIds.length === 0) {
+                setUserContexts([]);
+                setRecentTournaments([]);
+            } else {
+                const { data: tournamentsRows, error: tournamentsError } = await supabase
+                    .from('tournaments')
+                    .select('id, name, organization_id, level, status, end_date, format, start_date, modality')
+                    .in('id', tournamentIds);
+                if (tournamentsError) throw tournamentsError;
+
+                const tournamentsById = (tournamentsRows || []).reduce((acc: Record<string, any>, tournament: any) => {
+                    if (tournament?.id) acc[tournament.id] = tournament;
+                    return acc;
+                }, {});
+
+                const orgIds = [...new Set(
+                    (tournamentsRows || [])
+                        .map((tournament: any) => tournament?.organization_id)
+                        .filter(Boolean)
+                )] as string[];
+
+                const orgNameById: Record<string, string> = {};
+                if (orgIds.length > 0) {
+                    const { data: orgRows } = await supabase
+                        .from('organizations_public')
+                        .select('id, name')
+                        .in('id', orgIds);
+
+                    (orgRows || []).forEach((orgRow: any) => {
+                        orgNameById[orgRow.id] = orgRow.name || 'Organizaci\u00F3n';
+                    });
+                }
+
                 const uniqueContexts: any[] = [];
-                const seen = new Set();
-
-                contexts.forEach((c: any) => {
-                    const key = `${c.tournaments.organization_id}|${c.tournaments.level}`;
-                    if (!seen.has(key)) {
-                        seen.add(key);
-                        uniqueContexts.push({
-                            org_id: c.tournaments.organization_id,
-                            org_name: c.tournaments.organizations.name,
-                            level: c.tournaments.level
-                        });
-                    }
+                const seen = new Set<string>();
+                (tournamentsRows || []).forEach((tournament: any) => {
+                    if (!tournament?.organization_id || !tournament?.level) return;
+                    const key = `${tournament.organization_id}|${tournament.level}`;
+                    if (seen.has(key)) return;
+                    seen.add(key);
+                    uniqueContexts.push({
+                        org_id: tournament.organization_id,
+                        org_name: orgNameById[tournament.organization_id] || 'Organizaci\u00F3n',
+                        level: tournament.level,
+                    });
                 });
 
                 setUserContexts(uniqueContexts);
                 if (uniqueContexts.length > 0 && !selectedContext) {
                     setSelectedContext(uniqueContexts[0]);
                 }
-            }
 
-            // Fetch Recent Tournaments
-            const { data: recent, error: recentErr } = await supabase
-                .from('registrations')
-                .select(`
-                    tournament_id,
-                    tournaments:tournaments!inner(
-                        id, name, level, status, end_date, format, start_date, modality
-                    )
-                `)
-                .eq('player_id', session.user.id)
-                .order('registered_at', { ascending: false })
-                .limit(3);
+                const recentTournamentIds = [...new Set(
+                    (registrationRows || [])
+                        .map((row: any) => row?.tournament_id)
+                        .filter(Boolean)
+                )].slice(0, 3) as string[];
 
-            if (!recentErr && recent) {
-                const tourData = await Promise.all(recent.map(async (r: any) => {
-                    const t = r.tournaments;
-                    if (t.status === 'completed' || t.status === 'finalized' || t.status === 'finished') {
-                        const { data: tMatches } = await supabase.from('matches').select('*').eq('tournament_id', t.id);
-                        const placements = getTournamentPlacements(t, tMatches || []);
-                        const myPlacement = placements.find(p => p.playerId === session.user.id || p.playerId2 === session.user.id);
-                        return { ...t, place: myPlacement ? `${myPlacement.place}° LUGAR` : 'FINALIZADO' };
+                const recentTournamentsBase = recentTournamentIds
+                    .map((tournamentId) => tournamentsById[tournamentId])
+                    .filter(Boolean);
+
+                const tourData = await Promise.all(recentTournamentsBase.map(async (tournament: any) => {
+                    if (tournament.status === 'completed' || tournament.status === 'finalized' || tournament.status === 'finished') {
+                        const { data: tMatches } = await supabase.from('matches').select('*').eq('tournament_id', tournament.id);
+                        const placements = getTournamentPlacements(tournament, tMatches || []);
+                        const myPlacement = placements.find((placement: any) => placement.playerId === session.user.id || placement.playerId2 === session.user.id);
+                        return { ...tournament, place: myPlacement ? `${myPlacement.place}\u00B0 LUGAR` : 'FINALIZADO' };
                     }
-                    return { ...t, place: 'EN CURSO' };
+                    return { ...tournament, place: 'EN CURSO' };
                 }));
                 setRecentTournaments(tourData);
             }
@@ -228,36 +255,57 @@ export default function ProfileScreen() {
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) return;
 
-            // Simple date filtering logic
-            const { data, error } = await supabase
+            const { data: registrationRows, error } = await supabase
                 .from('registrations')
-                .select(`
-                    id,
-                    tournament_id,
-                    fee_amount,
-                    is_paid,
-                    status,
-                    tournaments:tournaments!inner(name, end_date, start_date)
-                `)
+                .select('id, tournament_id, fee_amount, is_paid, status, registered_at')
                 .eq('player_id', session.user.id)
                 .order('id', { ascending: false });
 
             if (error) throw error;
 
-            let filtered = (data || []).map((r: any) => ({
-                id: r.id,
-                tournament_id: r.tournament_id,
-                tournament_name: r.tournaments.name,
-                fee_amount: r.fee_amount,
-                is_paid: r.is_paid,
-                date: new Date(r.tournaments.end_date || r.tournaments.start_date || Date.now()),
-                status: r.status
-            }));
+            const tournamentIds = [...new Set(
+                (registrationRows || [])
+                    .map((row: any) => row?.tournament_id)
+                    .filter(Boolean)
+            )] as string[];
+
+            const tournamentsById: Record<string, any> = {};
+            if (tournamentIds.length > 0) {
+                const { data: tournamentRows, error: tournamentsError } = await supabase
+                    .from('tournaments')
+                    .select('id, name, end_date, start_date')
+                    .in('id', tournamentIds);
+                if (tournamentsError) throw tournamentsError;
+
+                (tournamentRows || []).forEach((tournament: any) => {
+                    tournamentsById[tournament.id] = tournament;
+                });
+            }
+
+            let filtered = (registrationRows || []).map((registration: any) => {
+                const tournament = tournamentsById[registration.tournament_id] || null;
+                const paymentDate = new Date(
+                    tournament?.end_date ||
+                    tournament?.start_date ||
+                    registration.registered_at ||
+                    Date.now()
+                );
+
+                return {
+                    id: registration.id,
+                    tournament_id: registration.tournament_id,
+                    tournament_name: tournament?.name || 'Torneo',
+                    fee_amount: registration.fee_amount,
+                    is_paid: registration.is_paid,
+                    date: paymentDate,
+                    status: registration.status,
+                };
+            });
 
             // Filter by selected month and year
-            filtered = filtered.filter(p => 
-                p.date.getMonth() === paymentMonthFilter && 
-                p.date.getFullYear() === paymentYearFilter
+            filtered = filtered.filter(payment =>
+                payment.date.getMonth() === paymentMonthFilter &&
+                payment.date.getFullYear() === paymentYearFilter
             );
 
             setProfilePayments(filtered);
@@ -272,18 +320,44 @@ export default function ProfileScreen() {
         if (!selectedContext || !user) return;
 
         try {
-            const { data: matches, error: matchErr } = await supabase
+            // Load tournaments first to avoid ambiguous matches->tournaments embedding.
+            const { data: scopedTournaments, error: scopedTournamentsError } = await supabase
+                .from('tournaments')
+                .select('id, status, format, description, modality, level, organization_id')
+                .eq('organization_id', selectedContext.org_id)
+                .eq('level', selectedContext.level)
+                .eq('modality', modality);
+
+            if (scopedTournamentsError) throw scopedTournamentsError;
+            const tournamentsForContext = scopedTournaments || [];
+
+            if (tournamentsForContext.length === 0) {
+                setStats({
+                    rank: '-',
+                    trophies: 0,
+                    wins: 0,
+                    winRate: '0%',
+                    totalMatches: 0,
+                    setsWon: 0,
+                    setsLost: 0,
+                    gamesWon: 0,
+                    gamesLost: 0
+                });
+                return;
+            }
+
+            const tournamentIds = tournamentsForContext.map((tournament: any) => tournament.id);
+            const { data: userMatchesRows, error: userMatchesError } = await supabase
                 .from('matches')
-                .select('*, tournaments!inner(organization_id, level, status, modality)')
-                .eq('tournaments.organization_id', selectedContext.org_id)
-                .eq('tournaments.level', selectedContext.level)
-                .eq('tournaments.modality', modality)
+                .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, score, status')
+                .in('tournament_id', tournamentIds)
                 .or(`player_a_id.eq.${user.id},player_a2_id.eq.${user.id},player_b_id.eq.${user.id},player_b2_id.eq.${user.id}`);
 
-            if (matchErr) throw matchErr;
+            if (userMatchesError) throw userMatchesError;
 
-            const totalMatches = matches?.length || 0;
-            const wins = matches?.filter(m => m.winner_id === user.id || m.winner_2_id === user.id).length || 0;
+            const userMatches = userMatchesRows || [];
+            const totalMatches = userMatches.length;
+            const wins = userMatches.filter((match: any) => match.winner_id === user.id || match.winner_2_id === user.id).length;
             const winRate = totalMatches > 0 ? Math.round((wins / totalMatches) * 100) : 0;
 
             let setsWon = 0;
@@ -291,10 +365,10 @@ export default function ProfileScreen() {
             let gamesWon = 0;
             let gamesLost = 0;
 
-            matches?.forEach(m => {
+            userMatches.forEach((m: any) => {
                 const isPlayerA = m.player_a_id === user.id || m.player_a2_id === user.id;
                 if (m.score) {
-                    const sets = m.score.split(/\s*,\s*/);
+                    const sets = String(m.score).split(/\s*,\s*/);
                     sets.forEach((s: string) => {
                         const parts = s.trim().split(/[- ]+/).map(Number);
                         if (parts.length >= 2) {
@@ -317,35 +391,33 @@ export default function ProfileScreen() {
                 }
             });
 
-            const { data: tournaments, error: tourErr } = await supabase
-                .from('tournaments')
-                .select('*')
-                .eq('organization_id', selectedContext.org_id)
-                .eq('level', selectedContext.level)
-                .eq('modality', modality)
-                .in('status', ['completed', 'finalized', 'finished']);
+            const completedTournaments = tournamentsForContext.filter((tournament: any) =>
+                ['completed', 'finalized', 'finished'].includes(String(tournament.status || '').toLowerCase())
+            );
 
             let trophies = 0;
             let allPlayersPoints: Record<string, number> = {};
 
-            if (!tourErr && tournaments) {
-                const tournamentIds = tournaments.map(t => t.id);
-                const { data: allMatches } = await supabase
+            if (completedTournaments.length > 0) {
+                const completedTournamentIds = completedTournaments.map((tournament: any) => tournament.id);
+                const { data: allMatchesRows, error: allMatchesError } = await supabase
                     .from('matches')
-                    .select('*')
-                    .in('tournament_id', tournamentIds);
+                    .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, score, status')
+                    .in('tournament_id', completedTournamentIds);
 
-                const matchesByTour = (allMatches || []).reduce((acc: any, m: any) => {
+                if (allMatchesError) throw allMatchesError;
+
+                const matchesByTour = (allMatchesRows || []).reduce((acc: any, m: any) => {
                     acc[m.tournament_id] = [...(acc[m.tournament_id] || []), m];
                     return acc;
                 }, {});
 
-                tournaments.forEach(t => {
+                completedTournaments.forEach((t: any) => {
                     const placements = getTournamentPlacements(t, matchesByTour[t.id] || []);
-                    placements.forEach(p => {
-                        if ((p.playerId === user.id || p.playerId2 === user.id) && p.place === '1') trophies++;
-                        if (p.playerId) allPlayersPoints[p.playerId] = (allPlayersPoints[p.playerId] || 0) + p.points;
-                        if (p.playerId2) allPlayersPoints[p.playerId2] = (allPlayersPoints[p.playerId2] || 0) + p.points;
+                    placements.forEach((p: any) => {
+                        if ((p.playerId === user.id || p.playerId2 === user.id) && p.place === '1') trophies += 1;
+                        if (p.playerId) allPlayersPoints[p.playerId] = (allPlayersPoints[p.playerId] || 0) + (Number(p.points) || 0);
+                        if (p.playerId2) allPlayersPoints[p.playerId2] = (allPlayersPoints[p.playerId2] || 0) + (Number(p.points) || 0);
                     });
                 });
             }
@@ -400,7 +472,7 @@ export default function ProfileScreen() {
     };
 
     const handleUpdateBackhand = (val: string) => {
-        setUser({ ...user, revés: val });
+        setUser({ ...user, [BACKHAND_FIELD]: val });
     };
 
     const handleUpdateDominantHand = (val: string) => {
@@ -440,7 +512,7 @@ export default function ProfileScreen() {
                     name: user.name,
                     phone: user.phone,
                     location: user.location,
-                    revés: user.revés,
+                    [BACKHAND_FIELD]: user[BACKHAND_FIELD],
                     mano_dominante: user.mano_dominante
                 })
                 .eq('id', user.id);
@@ -652,14 +724,14 @@ export default function ProfileScreen() {
                                     {isEditingBackhand ? (
                                         <TextInput
                                             style={styles.extraFieldInput}
-                                            value={user.revés || ''}
+                                            value={user[BACKHAND_FIELD] || ''}
                                             onChangeText={handleUpdateBackhand}
                                             placeholder="una mano/2 manos"
                                             placeholderTextColor={colors.textTertiary}
                                             autoFocus
                                         />
                                     ) : (
-                                        <Text style={styles.extraFieldText}>{user.revés || 'una mano/2 manos'}</Text>
+                                        <Text style={styles.extraFieldText}>{user[BACKHAND_FIELD] || 'una mano/2 manos'}</Text>
                                     )}
                                 </TouchableOpacity>
 
@@ -1664,3 +1736,5 @@ const getStyles = (colors: any) => StyleSheet.create({
         color: colors.error,
     },
 });
+
+
