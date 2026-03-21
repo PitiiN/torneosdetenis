@@ -1,0 +1,91 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap");
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body{
+  font-family: "Poppins", sans-serif;
+}
+
+div {
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+div h2 {
+  text-align: center;
+}
+
+div p{
+  text-align: center;
+}
+
+div nav{
+  margin-top: 2rem;
+}
+
+div input{
+  margin: 2rem 0;
+}
+
+div button {
+    padding: 1rem;
+    margin-top: 2rem;
+    font-family: "Poppins", sans-serif;
+    background-color: rgb(22, 46, 70);
+    color: white;
+    border: thin rgb(22, 46, 70) solid;
+    cursor: pointer;
+  }
+  
+  div button:hover {
+    background-color: white;
+    color: rgb(22, 46, 70);
+    border: thin rgb(22, 46, 70) solid;
+  }
+  
+  .figure {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  
+  
+  .card{
+    background-color: #222;
+    color: #f7df1e;
+    text-align: center;
+  }
+  
+  .card figcaption{
+    padding: 1rem;
+  }
+  
+  .rotate-45{
+    transform: rotate(45deg);
+  }
+  
+  .rotate-135{
+    transform: rotate(135deg);
+  }
+  
+  .opacity80{
+    opacity: .8;
+  }
+  
+  .sepia{
+    filter: sepia(1)
+  }
+  
+  .figure{
+    border: thin solid #222;
+    padding: 1rem;
+  }
+  

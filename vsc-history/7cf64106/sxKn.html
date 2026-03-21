@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tarea HTML_Formularios de Javier Aravena</title>
+</head>
+
+<body>
+
+    <form action="">
+        <fieldset>
+            <legend>Elige un Idioma</legend>
+            <label for="ingles">
+                <input type="radio" name="idioma" id="ingles" value="idiomaingles">Inglés
+            </label>
+            <label for="aleman">
+                <input type="radio" name="idioma" id="aleman" value="idiomaaleman">Alemán
+            </label>
+            <label for="frances">
+                <input type="radio" name="idioma" id="frances" value="idiomafrancés">Francés
+            </label>
+        </fieldset>
+
+        <fieldset>
+            <legend>Conectores</legend>
+            <select name="conector" id="">
+                <option value="usb">USB</option>
+                <option value="paraleo">Paralelo</option>
+                <option value="ps2">PS2</option>
+            </select>
+        </fieldset>
+
+        <fieldset>
+            <legend>Nombre y Apellidos</legend>
+            <label for="nombre">Nombre
+                <input type="text" id="nombre" name="nombre">
+            </label>
+            <label for="apellidos">Apellidos
+                <input type="text" id="apellidos" name="apellidos">
+            </label>
+        </fieldset>
+
+        <fieldset>
+            <legend>Sexo</legend>
+            <select multiple name="sexo" id="">
+                <option value="hombre">Hombre</option>
+                <option value="mujer">Mujer</option>
+                <option value="otro">Otro</option>
+                <option value="noMenciona">Prefiero no decirlo</option>
+            </select>
+        </fieldset>
+
+        <fieldset>
+            <legend>Sexo 2</legend>
+            <label for="mujer">
+                <input type="checkbox" id="mujer" value="sexomujer">Mujer
+            </label>
+            <label for="hombre">
+                <input type="checkbox" id="hombre" value="sexohombre">Hombre
+            </label>
+            <label for="otro">
+                <input type="checkbox" id="otro" value="otro">Otro
+            </label>
+            <label for="noMenciona">
+                <input type="checkbox" id="noMenciona" value="noMenciona">Prefiero no decirlo
+            </label>
+        </fieldset>
+
+        <fieldset>
+            <legend>Indique la Fecha Actual</legend>
+            <input type="date" value="fechaActual">
+        </fieldset>
+
+    </form>
+
+</body>
+
+</html>

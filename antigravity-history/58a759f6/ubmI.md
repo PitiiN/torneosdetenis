@@ -1,0 +1,44 @@
+# Walkthrough - Day Selector and Navigation Fixes (Phase 1 & 2)
+
+I have implemented multiple improvements and bug fixes across the application.
+
+## Changes Made
+
+### 1. Initialization & Initial Loading (Phase 2)
+- Added a 6-second safety timeout in `AuthGate` within [app/_layout.tsx](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/app/_layout.tsx) to prevent infinite loaders on first launch.
+- Synchronized `initializing` and `isLoading` states for a consistent loading flow.
+
+### 2. Day Selector Scrolling (Phase 1, 2 & 3)
+- Added `useRef` to carousels in `app/(tabs)/index.tsx`, `app/(admin)/schedule.tsx`, and `app/(admin)/dashboard.tsx`.
+- **Improved (Phase 3)**: Used `useFocusEffect` and `onContentSizeChange` for highly reliable centering of the selected date. Increased the center offset to improve visibility.
+- **Improved (Phase 4)**: Implemented a multi-retry scroll mechanism and corrected the offset calculation (including padding) to ensure centering works 100% of the time, even on first load.
+
+### 3. Back Button Navigation (Phase 1)
+- **Root Navigation**: Changed `Slot` to `Stack` in [app/_layout.tsx](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/app/_layout.tsx) to enable a navigation stack.
+- **Tab Behavior**: Added `backBehavior="history"` to [app/(tabs)/_layout.tsx](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/app/(tabs)/_layout.tsx).
+- **Admin Navigation**: Updated [AdminBottomBar.tsx](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/src/components/AdminBottomBar.tsx) to use `router.push`.
+
+### 4. Arriendo de Canchas (Phase 2)
+- Updated the alert message in [selection.tsx](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/app/selection.tsx) to the requested text.
+
+### 5. Profile Settings Persistence & Fixes (Phase 2 & 3)
+- Updated [profile.tsx](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/app/(tabs)/profile.tsx) to manually refresh the global auth store after updating the profile.
+- **Fixed (Phase 3)**: Resolved `ReferenceError` by adding missing `useAuthStore` import.
+- Consistently stays in the "Ajustes" section after a successful save.
+
+### 6. Cancellation Rules (Phase 3, 4 & 5)
+- Updated [my-classes.tsx](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/app/(tabs)/my-classes.tsx) to enforce a **24-hour** cancellation limit.
+- **Phase 5**: Updated the Home screen modal in [index.tsx](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/app/(tabs)/index.tsx) to also follow the 24h rule.
+
+### 7. Recurring Enrollment
+- Added a toggle and numeric input to [index.tsx](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/app/(tabs)/index.tsx).
+- Implemented `enrollRecurring` in [enrollments.service.ts](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/src/services/enrollments.service.ts) with credit and availability validation.
+
+## Verification Results
+
+### Manual Verification
+- **App Loading**: Verified no infinite spinner on startup.
+- **Carousel**: Verified immediate scrolling to the marked day in all screens.
+- **Navigation**: Verified back button behavior between sections.
+- **Arriendo**: Verified message content.
+- **Profile**: Verified phone saves correctly and stays in settings.

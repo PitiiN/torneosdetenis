@@ -1,0 +1,3 @@
+- [ ] Localizar el componente que renderiza el botón "Verificar Pagos" <!-- id: 0 -->
+- [ ] Eliminar el botón del código <!-- id: 1 -->
+- [ ] Verificar que no haya referencias rotas <!-- id: 2 -->

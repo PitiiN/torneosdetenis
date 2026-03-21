@@ -1,0 +1,77 @@
+/* ========== CARD COMPONENT ========== */
+
+.card {
+    border-radius: var(--radius-xl);
+    transition: all var(--transition-base);
+}
+
+/* Variants */
+.card--default {
+    background-color: var(--color-card-light);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.card--dark {
+    background-color: var(--color-surface-dark);
+    color: var(--color-text-primary);
+}
+
+.card--gradient {
+    background: linear-gradient(135deg, var(--color-surface-dark) 0%, var(--color-surface) 100%);
+    color: var(--color-text-primary);
+}
+
+/* Padding */
+.card--padding-none {
+    padding: 0;
+}
+
+.card--padding-sm {
+    padding: var(--spacing-md);
+}
+
+.card--padding-md {
+    padding: var(--spacing-lg);
+}
+
+.card--padding-lg {
+    padding: var(--spacing-xl);
+}
+
+/* States */
+.card--hoverable:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+.card--clickable {
+    cursor: pointer;
+}
+
+.card--clickable:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+/* Sub-components */
+.card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--spacing-md);
+}
+
+.card__body {
+    flex: 1;
+}
+
+.card__footer {
+    margin-top: var(--spacing-md);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.card--dark .card__footer,
+.card--gradient .card__footer {
+    border-top-color: rgba(255, 255, 255, 0.1);
+}

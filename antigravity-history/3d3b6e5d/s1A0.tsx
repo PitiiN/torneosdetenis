@@ -1,0 +1,89 @@
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { useRouter, usePathname } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors, spacing, borderRadius } from '@/theme';
+
+const QUICK_ACTIONS = [
+    { icon: 'shield', label: 'Panel Admin', color: colors.primary[500], route: '/(admin)/dashboard' },
+    { icon: 'people', label: 'Alumnos', color: colors.secondary[500], route: '/(admin)/students' },
+    { icon: 'card', label: 'Pagos', color: colors.accent[500], route: '/(admin)/payments' },
+    { icon: 'trophy', label: 'Torneos', color: colors.error, route: '/(admin)/tournaments' },
+    { icon: 'chatbubbles', label: 'Opiniones', color: colors.warning, route: '/(admin)/reviews' },
+    { icon: 'settings', label: 'Config', color: colors.info, route: '/(admin)/config' },
+];
+
+export default function AdminBottomBar() {
+    const router = useRouter();
+    const pathname = usePathname();
+    const insets = useSafeAreaInsets();
+
+    // Assuming 'tabs' is the new name for QUICK_ACTIONS and 'route' is renamed to 'href'
+    const tabs = QUICK_ACTIONS.map(action => ({
+        icon: action.icon,
+        label: action.label,
+        href: action.route,
+        color: action.color, // Keep color if needed for other styling, though not used in the provided snippet
+    }));
+
+    return (
+        <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+            <View style={styles.content}>
+                {tabs.map((tab) => {
+                    const isActive = pathname === tab.href;
+                    return (
+                        <TouchableOpacity
+                            key={tab.href}
+                            style={[
+                                styles.tab,
+                                isActive && styles.activeTab
+                            ]}
+                            onPress={() => router.replace(tab.href as any)}
+                        >
+                            <Ionicons
+                                name={tab.icon as any}
+                                size={20}
+                                color={isActive ? colors.primary[500] : colors.textTertiary}
+                            />
+                            <Text
+                                style={[
+                                    styles.tabLabel,
+                                    isActive && styles.activeTabLabel
+                                ]}
+                                numberOfLines={1}
+                            >
+                                {tab.label}
+                            </Text>
+                        </TouchableOpacity>
+                    );
+                })}
+            </View>
+        </View>
+    );
+}
+
+const styles = StyleSheet.create({
+    container: {
+        backgroundColor: colors.surface,
+        borderTopWidth: 1, borderTopColor: colors.border,
+        paddingTop: spacing.md,
+    },
+    scroll: {
+        paddingHorizontal: spacing.xl,
+        gap: spacing.lg,
+    },
+    actionBtn: {
+        alignItems: 'center',
+        gap: 4,
+    },
+    iconCircle: {
+        width: 44, height: 44, borderRadius: 22,
+        justifyContent: 'center', alignItems: 'center',
+    },
+    label: {
+        fontSize: 11, color: colors.textSecondary, fontWeight: '500',
+    },
+    labelActive: {
+        color: colors.text, fontWeight: '700',
+    },
+});

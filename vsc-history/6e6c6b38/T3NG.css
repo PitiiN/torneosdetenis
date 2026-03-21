@@ -1,0 +1,94 @@
+p {
+  color: red;
+}
+
+#para1 {
+  color: rgb(149, 255, 0);
+}
+
+.colortext {
+  color: rgb(0, 47, 255);
+}
+
+p,
+h1 {
+  color: rgb(0, 200, 255);
+}
+
+body {
+  background-color: darkmagenta;
+}
+
+h1 {
+  background-color: lightblue;
+}
+
+body {
+  background-image: url(./arbol.jpg);
+  background-repeat: repeat-y;
+  background-position-x: center;
+}
+
+p {
+  border-width: 4px;
+  border-style: dotted;
+  border-color: red;
+}
+
+p {
+  border-color: rgb(195, 0, 255);
+}
+
+h1 {
+  margin-left: 20px;
+}
+
+h1 {
+  margin: 20px 40px;
+}
+
+h1 {
+  margin: 0 auto;
+  text-align: center;
+}
+
+h1 {
+  padding-top: 30px;
+}
+
+h1 {
+  padding: 40px 10px;
+}
+
+h1 {
+  height: 100px;
+}
+
+h1 {
+  width: 50%;
+}
+
+div {
+  width: 200px;
+  border: 2px solid red;
+  padding: 25px;
+  margin: 25px;
+}
+
+.intro {
+  width: 200px;
+  height: 70px;
+  overflow-y: scroll;
+}
+
+.intro2 {
+  width: 200px;
+  height: 70px;
+  overflow-y: hidden;
+}
+
+.intro3 {
+  width: 500px;
+  height: 70px;
+  overflow-x: scroll;
+}

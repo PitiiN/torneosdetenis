@@ -1,0 +1,7 @@
+- [x] Localizar el componente que renderiza el botón "Verificar Pagos" <!-- id: 0 -->
+- [x] Eliminar la tarjeta "Por Verificar" en `admin/page.tsx` <!-- id: 3 -->
+- [x] Ajustar la grilla de tarjetas de 3 columnas a 2 en `admin/page.tsx` <!-- id: 6 -->
+- [x] Eliminar el botón "Verificar Pagos" en `admin/page.tsx` <!-- id: 1 -->
+- [x] Verificar layout visual <!-- id: 7 -->
+- [x] Eliminar el archivo `src/app/(dashboard)/admin/bookings/page.tsx` <!-- id: 8 -->
+- [ ] Localizar y eliminar el overlay de depuración en la vista de disponibilidad <!-- id: 9 -->

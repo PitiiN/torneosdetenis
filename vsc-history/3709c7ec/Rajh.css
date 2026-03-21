@@ -1,0 +1,8 @@
+.heroBanner {
+    background-image: url(./pexels-pixabay-163036.jpg);
+    background-size: cover;
+    background-repeat: no-repeat;
+    width: 100vw;
+    height: 100vh;
+    
+}

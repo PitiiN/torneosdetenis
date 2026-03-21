@@ -1,0 +1,33 @@
+{
+  "cli": {
+    "version": ">= 18.1.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://tbahjhufxmsyldhghhhz.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRiYWhqaHVmeG1zeWxkaGdoaGh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2NjA3MDgsImV4cCI6MjA4ODIzNjcwOH0.iQqHcg7O4DBKJryI0YOihD8ncFCIKK1ifvc8y1x2K78",
+        "EXPO_PUBLIC_SCHOOL_NAME": "Escuela de Tenis",
+        "EXPO_PUBLIC_CURRENCY": "CLP",
+        "EXPO_PUBLIC_TIMEZONE": "America/Santiago",
+        "EXPO_PUBLIC_OPERATING_HOURS_START": "08:00",
+        "EXPO_PUBLIC_OPERATING_HOURS_END": "22:00"
+      }
+    },
+    "production": {
+      "autoIncrement": true
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

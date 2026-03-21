@@ -1,0 +1,27 @@
+p {
+    color: red;
+}
+
+#para1 {
+    color: rgb(149, 255, 0);
+}
+
+.colortext {
+    color: rgb(0, 47, 255);
+}
+
+p, h1 {
+    color: rgb(0, 200, 255);
+}
+
+body {
+    background-color: darkmagenta;
+}
+
+h1 {
+    background-color: lightblue;
+}
+
+body {
+    background-image: url(./arbol.jpg);
+}

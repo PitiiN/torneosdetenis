@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Dimensions, KeyboardAvoidingView, Platform, Modal, ActivityIndicator, Alert } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Dimensions, KeyboardAvoidingView, Platform, Modal, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
@@ -10,8 +10,8 @@ import { DateField } from '@/components/DateField';
 import { buildTournamentDescription, buildTournamentFormatLabel, createInitialMatches, normalizeTournamentFormat } from '@/services/tournamentStructure';
 import { TOURNAMENT_CATEGORIES, CHILEAN_COMUNAS } from '@/constants/tournamentOptions';
 import { buildDescriptionWithRankingPoints, DEFAULT_RANKING_POINTS } from '@/services/ranking';
-import { adminModeService } from '@/services/adminMode';
-import { useEffect } from 'react';
+import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
+import { TennisSpinner } from '@/components/TennisSpinner';
 
 const { width } = Dimensions.get('window');
 
@@ -25,39 +25,50 @@ const STATUS_MAP: { [key: string]: string } = {
     'No Publicado': 'draft'
 };
 
+type RankingPointRow = {
+    id: string;
+    place: string;
+    points: string;
+};
+
 // CHILEAN_COMUNAS is now imported from constants/tournamentOptions
 
 export default function CreateTournamentScreen() {
     const insets = useSafeAreaInsets();
     const router = useRouter();
-    const { orgId } = useLocalSearchParams<{ orgId: string }>();
+    const { orgId } = useLocalSearchParams<{ orgId: string | string[] }>();
+    const routeOrgId = Array.isArray(orgId) ? orgId[0] : orgId;
     const { colors } = useTheme();
     const styles = getStyles(colors);
+    const [activeOrgId, setActiveOrgId] = useState<string | null>(routeOrgId || null);
 
     useEffect(() => {
         const checkAccess = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) {
+            const access = await getCurrentUserAccessContext();
+            if (!access) {
                 router.replace('/(auth)/login');
                 return;
             }
 
-            const isGlobalAdmin = session.user.email === 'javier.aravena25@gmail.com';
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('role, org_id')
-                .eq('id', session.user.id)
-                .single();
+            let resolvedOrgId = routeOrgId || null;
+            if (!resolvedOrgId && !access.isSuperAdmin && access.profile.org_id) {
+                resolvedOrgId = access.profile.org_id;
+            }
 
-            const isOrgAdmin = profile?.role === 'admin' && profile?.org_id === orgId;
-            const viewMode = adminModeService.getMode();
+            if (!resolvedOrgId) {
+                router.replace('/(tabs)/tournaments');
+                return;
+            }
 
-            if (!(isGlobalAdmin || isOrgAdmin) || viewMode !== 'admin') {
+            setActiveOrgId(resolvedOrgId);
+            const canManage = canManageOrganization(access, resolvedOrgId);
+
+            if (!canManage) {
                 router.replace('/(tabs)/tournaments');
             }
         };
         checkAccess();
-    }, [orgId]);
+    }, [routeOrgId]);
 
     const [tournamentName, setTournamentName] = useState('');
     const [numPlayers, setNumPlayers] = useState('');
@@ -73,11 +84,16 @@ export default function CreateTournamentScreen() {
     const [groupCount, setGroupCount] = useState('2');
     const [address, setAddress] = useState('');
     const [comuna, setComuna] = useState('');
-    const [rankingPoints, setRankingPoints] = useState([
-        { place: '1', points: String(DEFAULT_RANKING_POINTS['1']) },
-        { place: '2', points: String(DEFAULT_RANKING_POINTS['2']) },
-        { place: '3', points: String(DEFAULT_RANKING_POINTS['3']) },
-        { place: '4', points: String(DEFAULT_RANKING_POINTS['4']) },
+    const rankingPointRowCounter = useRef(4);
+    const nextRankingPointRowId = () => {
+        rankingPointRowCounter.current += 1;
+        return `ranking-point-${rankingPointRowCounter.current}`;
+    };
+    const [rankingPoints, setRankingPoints] = useState<RankingPointRow[]>([
+        { id: 'ranking-point-1', place: '1', points: String(DEFAULT_RANKING_POINTS['1']) },
+        { id: 'ranking-point-2', place: '2', points: String(DEFAULT_RANKING_POINTS['2']) },
+        { id: 'ranking-point-3', place: '3', points: String(DEFAULT_RANKING_POINTS['3']) },
+        { id: 'ranking-point-4', place: '4', points: String(DEFAULT_RANKING_POINTS['4']) },
     ]);
 
     const [players, setPlayers] = useState<any[]>([]);
@@ -102,13 +118,19 @@ export default function CreateTournamentScreen() {
         }
 
         setIsSearching(true);
-        const { data, error } = await supabase
-            .from('profiles')
+        const queryBuilder = supabase
+            .from('public_profiles')
             .select('id, name')
             .ilike('name', `%${query}%`)
             .limit(10);
 
-        if (data) setSearchResults(data);
+        const { data, error } = await queryBuilder;
+
+        if (error) {
+            setSearchResults([]);
+        } else if (data) {
+            setSearchResults(data);
+        }
         setIsSearching(false);
     };
 
@@ -282,7 +304,7 @@ export default function CreateTournamentScreen() {
     };
 
     const handleCreate = async () => {
-        if (!tournamentName || !orgId || !startDate || !endDate) {
+        if (!tournamentName || !activeOrgId || !startDate || !endDate) {
             Alert.alert('Error', 'Por favor ingresa nombre, fecha de inicio y fecha de fin.');
             return;
         }
@@ -309,7 +331,7 @@ export default function CreateTournamentScreen() {
                 .from('tournaments')
                 .insert({
                     name: tournamentName,
-                    organization_id: orgId,
+                    organization_id: activeOrgId,
                     level: category,
                     format: tournamentFormat,
                     description: tournamentDescription,
@@ -324,7 +346,7 @@ export default function CreateTournamentScreen() {
                     comuna: comuna,
                     modality: modality
                 })
-                .select()
+                .select('id')
                 .single();
 
             if (tError) throw tError;
@@ -352,7 +374,7 @@ export default function CreateTournamentScreen() {
                 format: tournamentFormat,
                 description: tournamentDescription,
                 maxPlayers: parseInt(numPlayers) || 2,
-                participants: players,
+                participants: [],
                 modality: modality
             });
             if (initialMatches.length > 0) {
@@ -363,7 +385,6 @@ export default function CreateTournamentScreen() {
             Alert.alert('Éxito', 'Torneo creado y cuadro generado correctamente.');
             router.replace(`/(admin)/tournaments/${tournament.id}`);
         } catch (error) {
-            console.error('Error creating tournament:', error);
             Alert.alert('Error', 'No se pudo crear el torneo. Revisa la consola para más detalles.');
         } finally {
             setIsGenerating(false);
@@ -376,7 +397,7 @@ export default function CreateTournamentScreen() {
             {/* Header */}
             <View style={[styles.header, { paddingTop: Math.max(insets.top, spacing.md) }]}>
                 <View style={styles.headerContent}>
-                    <TouchableOpacity onPress={() => router.push({ pathname: '/(tabs)/tournaments', params: { orgId } })} style={styles.backButton}>
+                    <TouchableOpacity onPress={() => router.push({ pathname: '/(tabs)/tournaments', params: { orgId: activeOrgId || '' } })} style={styles.backButton}>
                         <Ionicons name="arrow-back" size={24} color={colors.text} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Nuevo Torneo</Text>
@@ -588,7 +609,7 @@ export default function CreateTournamentScreen() {
                             </View>
                             <View style={{ gap: spacing.sm }}>
                                 {rankingPoints.map((item, index) => (
-                                    <View key={`${item.place}-${index}`} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+                                    <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
                                         <TextInput
                                             style={[styles.input, { flex: 1.3 }]}
                                             value={item.place}
@@ -613,7 +634,7 @@ export default function CreateTournamentScreen() {
                                 ))}
                                 <TouchableOpacity
                                     style={[styles.dropdown, { justifyContent: 'center', alignItems: 'center' }]}
-                                    onPress={() => setRankingPoints((current) => [...current, { place: '', points: '' }])}
+                                    onPress={() => setRankingPoints((current) => [...current, { id: nextRankingPointRowId(), place: '', points: '' }])}
                                 >
                                     <Text style={styles.dropdownText}>Agregar tramo manual</Text>
                                 </TouchableOpacity>
@@ -641,7 +662,6 @@ export default function CreateTournamentScreen() {
                                             </View>
                                             <View>
                                                 <Text style={styles.playerName}>{p.name}</Text>
-                                                {p.email && <Text style={styles.playerEmail}>{p.email}</Text>}
                                             </View>
                                         </View>
                                         <TouchableOpacity onPress={() => removePlayer(p.id)}>
@@ -720,8 +740,11 @@ export default function CreateTournamentScreen() {
                     <View style={styles.playerModalContent}>
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>Añadir Jugador</Text>
-                            <TouchableOpacity onPress={() => setShowPlayerModal(false)}>
-                                <Ionicons name="close" size={24} color="#fff" />
+                            <TouchableOpacity
+                                onPress={() => setShowPlayerModal(false)}
+                                style={{ width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary, justifyContent: 'center', alignItems: 'center' }}
+                            >
+                                <Ionicons name="close" size={20} color={colors.text} />
                             </TouchableOpacity>
                         </View>
 
@@ -729,7 +752,7 @@ export default function CreateTournamentScreen() {
                             <Ionicons name="search" size={20} color={colors.textTertiary} />
                             <TextInput
                                 style={styles.searchBar}
-                                placeholder="Buscar por nombre o correo..."
+                                placeholder="Buscar por nombre..."
                                 placeholderTextColor={colors.textTertiary}
                                 value={searchQuery}
                                 onChangeText={searchPlayers}
@@ -738,7 +761,7 @@ export default function CreateTournamentScreen() {
                         </View>
 
                         {isSearching ? (
-                            <ActivityIndicator size="large" color={colors.primary[500]} style={{ marginTop: 20 }} />
+                            <TennisSpinner size={28} style={{ marginTop: 20 }} />
                         ) : (
                             <ScrollView style={styles.resultsList}>
                                 {searchResults.map(p => (
@@ -749,7 +772,6 @@ export default function CreateTournamentScreen() {
                                     >
                                         <View style={styles.resultInfo}>
                                             <Text style={styles.resultName}>{p.name}</Text>
-                                            <Text style={styles.resultEmail}>{p.email}</Text>
                                         </View>
                                         <Ionicons name="add-circle-outline" size={24} color={colors.primary[500]} />
                                     </TouchableOpacity>
@@ -771,7 +793,7 @@ export default function CreateTournamentScreen() {
                     disabled={isGenerating || !tournamentName}
                 >
                     {isGenerating ? (
-                        <ActivityIndicator color="#fff" />
+                        <TennisSpinner size={18} color="#fff" />
                     ) : (
                         <>
                             <Ionicons name="grid" size={20} color="#fff" />
@@ -833,7 +855,9 @@ function getStyles(colors: any) {
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: 'rgba(255,255,255,0.05)',
+        backgroundColor: colors.surfaceSecondary,
+        borderWidth: 1,
+        borderColor: colors.border,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -1135,6 +1159,3 @@ function getStyles(colors: any) {
     }
     });
 }
-
-
-

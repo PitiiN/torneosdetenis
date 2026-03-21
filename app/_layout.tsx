@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Slot, useRouter, useSegments } from 'expo-router';
-import { supabase } from '@/services/supabase';
+import { clearSessionArtifacts, supabase } from '@/services/supabase';
 import { Session } from '@supabase/supabase-js';
-import { View, ActivityIndicator } from 'react-native';
+import { Image, View } from 'react-native';
 import { ThemeProvider, darkTheme } from '@/theme';
+import { TennisSpinner } from '@/components/TennisSpinner';
+
+const MIN_BOOTSTRAP_LOADING_MS = 3000;
 
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null);
@@ -12,18 +15,31 @@ export default function RootLayout() {
   const segments = useSegments();
 
   useEffect(() => {
-    // Check current session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    let isMounted = true;
+
+    const bootstrapSession = async () => {
+      const [{ data: { session } }] = await Promise.all([
+        supabase.auth.getSession(),
+        new Promise((resolve) => setTimeout(resolve, MIN_BOOTSTRAP_LOADING_MS)),
+      ]);
+
+      if (!isMounted) return;
       setSession(session);
       setInitialized(true);
-    });
+    };
+
+    bootstrapSession();
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      if (!session) {
+        clearSessionArtifacts();
+      }
     });
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
     };
   }, []);
@@ -44,8 +60,13 @@ export default function RootLayout() {
 
   if (!initialized) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: darkTheme.background }}>
-        <ActivityIndicator size="large" color={darkTheme.primary[500]} />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF' }}>
+        <Image
+          source={require('../assets/LogoSweetSpot.png')}
+          style={{ width: 440, height: 176, marginBottom: 24 }}
+          resizeMode="contain"
+        />
+        <TennisSpinner size={34} color={darkTheme.primary[500]} />
       </View>
     );
   }

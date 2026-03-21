@@ -1,0 +1,3 @@
+- [x] Corregir spinner infinito al crear torneo e ID mapping.
+- [x] Corregir cuelgue (crash) al abrir detalle de torneo (null player1_id).
+- [x] Refinar robustez de getPlayerName en vistas Admin y Usuario.

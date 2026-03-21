@@ -1,0 +1,5 @@
+- [ ] Localizar y eliminar el botón "Verificar Pagos" en `admin/page.tsx` <!-- id: 1 -->
+- [ ] Localizar y eliminar la tarjeta "Por Verificar" en `admin/page.tsx` <!-- id: 3 -->
+- [ ] Localizar el componente de navegación/sidebar <!-- id: 4 -->
+- [ ] Eliminar el enlace a "Gestión de Arriendos" (/admin/bookings) del sidebar <!-- id: 5 -->
+- [ ] Verificar que no queden enlaces rotos a `/admin/bookings` visibles en el dashboard <!-- id: 2 -->

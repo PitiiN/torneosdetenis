@@ -1,0 +1,27 @@
+/* ========== MAIN LAYOUT ========== */
+
+.main-layout {
+    display: flex;
+    min-height: 100vh;
+    background-color: var(--color-background);
+}
+
+.main-layout__content {
+    flex: 1;
+    margin-left: var(--sidebar-width);
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+    .main-layout__content {
+        margin-left: var(--sidebar-collapsed-width);
+    }
+}
+
+@media (max-width: 768px) {
+    .main-layout__content {
+        margin-left: 0;
+    }
+}

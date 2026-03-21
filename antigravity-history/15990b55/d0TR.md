@@ -1,0 +1,21 @@
+# Task: Supabase Integration for ControlHorario
+
+- [/] Planning & Setup <!-- id: 0 -->
+    - [x] Analyze current data structures (stores) <!-- id: 1 -->
+    - [x] Get Supabase credentials <!-- id: 2 -->
+    - [/] Create implementation plan <!-- id: 3 -->
+- [ ] Database Implementation <!-- id: 4 -->
+    - [ ] Create `profiles` table (linked to auth.users) <!-- id: 5 -->
+    - [ ] Create `time_entries` table <!-- id: 6 -->
+    - [ ] Create `breaks` table <!-- id: 7 -->
+    - [ ] Enable RLS and create policies <!-- id: 8 -->
+- [ ] Frontend Integration <!-- id: 9 -->
+    - [ ] Install `@supabase/supabase-js` <!-- id: 10 -->
+    - [ ] Create Supabase client (`src/lib/supabaseClient.js`) <!-- id: 11 -->
+    - [ ] Configure environment variables (`.env`) <!-- id: 12 -->
+    - [ ] Refactor `authStore.js` to use Supabase Auth <!-- id: 13 -->
+    - [ ] Refactor `timeStore.js` to use Supabase DB <!-- id: 14 -->
+- [ ] Verification <!-- id: 15 -->
+    - [ ] Verify Authentication flow (Login/Register) <!-- id: 16 -->
+    - [ ] Verify Clock In/Out functionality <!-- id: 17 -->
+    - [ ] Verify History & Reporting <!-- id: 18 -->

@@ -1,10 +1,11 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
 
 interface Player {
   name: string;
+  avatarUrl?: string | null;
   scores?: (number | string)[];
   isWinner?: boolean;
 }
@@ -20,6 +21,28 @@ interface MatchCardProps {
 export const MatchCard = ({ player1, player2, status, scheduledAt, court }: MatchCardProps) => {
   const { colors } = useTheme();
   const styles = getStyles(colors);
+
+  const getInitials = (name: string) => {
+    const chunks = String(name || '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    if (chunks.length === 0) return 'PP';
+    if (chunks.length === 1) return chunks[0].slice(0, 2).toUpperCase();
+    return `${chunks[0][0] || ''}${chunks[1][0] || ''}`.toUpperCase();
+  };
+
+  const renderAvatar = (name: string, avatarUrl?: string | null) => {
+    if (avatarUrl) {
+      return <Image source={{ uri: avatarUrl, cache: 'force-cache' }} style={styles.playerAvatar} />;
+    }
+
+    return (
+      <View style={styles.playerAvatar}>
+        <Text style={styles.playerAvatarInitials}>{getInitials(name)}</Text>
+      </View>
+    );
+  };
 
   const renderScores = (player: Player, otherPlayer: Player) => {
     if (!player.scores || player.scores.length === 0) {
@@ -42,18 +65,24 @@ export const MatchCard = ({ player1, player2, status, scheduledAt, court }: Matc
   return (
     <View style={styles.card}>
       <View style={[styles.playerRow, player1.isWinner && styles.winnerRow]}>
-        <Text style={[styles.playerName, !player1.isWinner && player2.isWinner && styles.loserText]} numberOfLines={1}>
-          {player1.name}
-        </Text>
+        <View style={styles.playerInfo}>
+          {renderAvatar(player1.name, player1.avatarUrl)}
+          <Text style={[styles.playerName, !player1.isWinner && player2.isWinner && styles.loserText]} numberOfLines={1}>
+            {player1.name}
+          </Text>
+        </View>
         <View style={styles.scoresRow}>
           {renderScores(player1, player2)}
         </View>
       </View>
       
       <View style={[styles.playerRow, player2.isWinner && styles.winnerRow, styles.bottomRow]}>
-        <Text style={[styles.playerName, !player2.isWinner && player1.isWinner && styles.loserText]} numberOfLines={1}>
-          {player2.name}
-        </Text>
+        <View style={styles.playerInfo}>
+          {renderAvatar(player2.name, player2.avatarUrl)}
+          <Text style={[styles.playerName, !player2.isWinner && player1.isWinner && styles.loserText]} numberOfLines={1}>
+            {player2.name}
+          </Text>
+        </View>
         <View style={styles.scoresRow}>
           {renderScores(player2, player1)}
         </View>
@@ -118,6 +147,27 @@ const getStyles = (colors: any) => StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     flex: 1,
+  },
+  playerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+    minWidth: 0,
+  },
+  playerAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.primary[500] + '20',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  playerAvatarInitials: {
+    color: colors.primary[500],
+    fontSize: 9,
+    fontWeight: '800',
   },
   loserText: {
     color: colors.textTertiary,

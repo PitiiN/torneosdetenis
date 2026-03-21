@@ -1,0 +1,485 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select'
+import {
+    Loader2,
+    DollarSign,
+    TrendingUp,
+    AlertCircle,
+    Users,
+    Calendar,
+    ChevronRight,
+    CheckCircle,
+    Clock,
+    CreditCard,
+    CalendarDays,
+} from 'lucide-react'
+import { format, parseISO, addMonths, subMonths } from 'date-fns'
+import { es } from 'date-fns/locale'
+import { BulkPaymentModal } from '@/components/admin/BulkPaymentModal'
+import { useSearchParams, useRouter } from 'next/navigation'
+import { useMemo } from 'react'
+
+interface FieldStats {
+    fieldId: string
+    fieldName: string
+    totalBookings: number
+    paidBookings: number
+    unpaidBookings: number
+    pendingPayment: number
+    pendingVerification: number
+    totalRevenueCents: number
+    pendingRevenueCents: number
+}
+
+interface Summary {
+    totalBookings: number
+    totalPaid: number
+    totalUnpaid: number
+    totalRevenueCents: number
+    pendingRevenueCents: number
+    period: string
+    startDate: string
+    endDate: string
+}
+
+interface Debtor {
+    userId: string
+    fullName: string
+    email: string | null
+    phone: string | null
+    unpaidBookings: Array<{
+        id: string
+        fieldName: string
+        startAt: string
+        status: string
+        priceTotalCents: number
+    }>
+    totalDebtCents: number
+}
+
+// Reuse getMonthOptions from admin/page.tsx
+function getMonthOptions() {
+    const now = new Date()
+    const futureOptions = []
+
+    // Future + Current
+    futureOptions.push({
+        value: format(now, 'yyyy-MM'),
+        label: format(now, 'MMMM yyyy', { locale: es }) + ' (Actual)',
+    })
+
+    // Past 12 months
+    const historyOptions = []
+    for (let i = 1; i <= 12; i++) {
+        const date = subMonths(now, i)
+        historyOptions.push({
+            value: format(date, 'yyyy-MM'),
+            label: format(date, 'MMMM yyyy', { locale: es }),
+        })
+    }
+
+    return { futureOptions, historyOptions }
+}
+
+export default function FinancialPage() {
+    const router = useRouter()
+    const searchParams = useSearchParams()
+
+    const [loading, setLoading] = useState(true)
+    const [stats, setStats] = useState<FieldStats[]>([])
+    const [summary, setSummary] = useState<Summary | null>(null)
+    const [debtors, setDebtors] = useState<Debtor[]>([])
+    const [totalDebtCents, setTotalDebtCents] = useState(0)
+
+    // Filters
+    const monthFilter = searchParams.get('month') || 'all'
+    const fieldFilter = searchParams.get('fieldId') || 'all'
+    const [fieldsList, setFieldsList] = useState<{ id: string, name: string }[]>([])
+
+    const [selectedDebtor, setSelectedDebtor] = useState<Debtor | null>(null)
+    const [showBulkPayment, setShowBulkPayment] = useState(false)
+
+    // Memoize options
+    const { futureOptions, historyOptions } = useMemo(() => getMonthOptions(), [])
+
+    const updateFilter = (key: 'month' | 'fieldId', value: string) => {
+        const params = new URLSearchParams(searchParams.toString())
+        params.set(key, value)
+        router.push(`/admin/financial?${params.toString()}`, { scroll: false })
+    }
+
+    // Get selected labels
+    const getMonthLabel = () => {
+        if (monthFilter === 'all') return 'Últimos 30 días' // Default fallback text
+
+        // Check both lists
+        const allOpts = [...futureOptions, ...historyOptions]
+        const opt = allOpts.find(o => o.value === monthFilter)
+        return opt ? opt.label : monthFilter
+    }
+
+    const fetchData = async () => {
+        setLoading(true)
+        try {
+            // Fetch available fields for selector
+            const fieldsRes = await fetch('/api/fields') // Use public fields endpoint or admin one?
+            // Actually, we can get fields list from the stats response initially or separate call.
+            // Let's assume we want a separate call or rely on stats. 
+            // Better to use the same logic admin uses. 
+            // For now, let's fetch fields from existing recurring/fields logic or just use what we have.
+            // The financial endpoint returns stats for ALL fields if no fieldId is passed. 
+            // BUT if we filter by fieldId, we won't see other fields to switch TO.
+            // So we need a separate way to get list of fields. 
+            // Let's use the /api/fields which is usually public or simple
+            // OR even better, just fetch the financial endpoint with no filter first... NO that's heavy.
+            // Let's just create a quick client-side fetch for fields names or extract from initial load.
+
+            // let's grab fields list separately if empty
+            if (fieldsList.length === 0) {
+                const fRes = await fetch('/api/admin/financial?period=30d')
+                // This endpoint returns stats for all fields. We can extract names from there.
+                const fData = await fRes.json()
+                if (fData.stats) {
+                    setFieldsList(fData.stats.map((s: any) => ({ id: s.fieldId, name: s.fieldName })))
+                }
+            }
+
+            // Build Query
+            const params = new URLSearchParams()
+            if (monthFilter !== 'all') params.set('month', monthFilter)
+            if (fieldFilter !== 'all') params.set('fieldId', fieldFilter)
+
+            // If internal logic uses period default, we can leave it or set explicit
+            // If no month is selected, maybe we want '30d' default?
+            // The backend handles month vs dates priorities.
+
+            const statsResponse = await fetch(`/api/admin/financial?${params.toString()}`)
+            const statsData = await statsResponse.json()
+            setStats(statsData.stats || [])
+            setSummary(statsData.summary || null)
+
+            // Fetch debtors (global or filtered? usually global but maybe filtered by field?)
+            const debtorsResponse = await fetch('/api/admin/debtors')
+            const debtorsData = await debtorsResponse.json()
+            setDebtors(debtorsData.debtors || [])
+            setTotalDebtCents(debtorsData.totalDebtCents || 0)
+        } catch (error) {
+            console.error('Error fetching financial data:', error)
+        }
+        setLoading(false)
+    }
+
+    useEffect(() => {
+        fetchData()
+    }, [monthFilter, fieldFilter])
+
+    const formatMoney = (cents: number) => {
+        return new Intl.NumberFormat('es-CL', {
+            style: 'currency',
+            currency: 'CLP',
+            minimumFractionDigits: 0,
+        }).format(cents / 100)
+    }
+
+    const handleOpenBulkPayment = (debtor: Debtor) => {
+        setSelectedDebtor(debtor)
+        setShowBulkPayment(true)
+    }
+
+    const handleCloseBulkPayment = () => {
+        setShowBulkPayment(false)
+        setSelectedDebtor(null)
+    }
+
+    const handleBulkPaymentSaved = () => {
+        handleCloseBulkPayment()
+        fetchData()
+    }
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+        )
+    }
+
+    return (
+        <div className="space-y-6">
+            {/* Header */}
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold">Panel Financiero</h1>
+                    <p className="text-muted-foreground">
+                        Resumen: {getMonthLabel()}
+                    </p>
+                </div>
+
+                <div className="flex gap-2">
+                    {/* Field Selector */}
+                    <Select
+                        value={fieldFilter}
+                        onValueChange={(val) => updateFilter('fieldId', val)}
+                    >
+                        <SelectTrigger className="w-[180px]">
+                            <SelectValue placeholder="Todas las canchas" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#1e293b] border-slate-700">
+                            <SelectItem value="all">Todas las canchas</SelectItem>
+                            {fieldsList.map(f => (
+                                <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+
+                    {/* Month Selector */}
+                    <Select
+                        value={monthFilter === 'all' ? 'all' : monthFilter}
+                        onValueChange={(val) => updateFilter('month', val)}
+                    >
+                        <SelectTrigger className="w-[180px]">
+                            <SelectValue placeholder="Periodo" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#1e293b] border-slate-700 h-[300px]">
+                            <SelectItem value="all">Últimos 30 días</SelectItem>
+                            <div className="my-1 border-b border-slate-700" />
+                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                                Mensual
+                            </div>
+                            {futureOptions.map(opt => (
+                                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                            ))}
+                            {historyOptions.map(opt => (
+                                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+            </div>
+
+            {/* Summary Cards */}
+            {summary && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <Card className="bg-gradient-to-br from-green-500/20 to-transparent border-green-500/30">
+                        <CardContent className="p-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-muted-foreground">Ingresos Confirmados</p>
+                                    <p className="text-2xl font-bold text-green-500">
+                                        {formatMoney(summary.totalRevenueCents)}
+                                    </p>
+                                </div>
+                                <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
+                                    <DollarSign className="w-6 h-6 text-green-500" />
+                                </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-2">
+                                {summary.totalPaid} reservas pagadas
+                            </p>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="bg-gradient-to-br from-amber-500/20 to-transparent border-amber-500/30">
+                        <CardContent className="p-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-muted-foreground">Pendiente de Cobro</p>
+                                    <p className="text-2xl font-bold text-amber-500">
+                                        {formatMoney(summary.pendingRevenueCents)}
+                                    </p>
+                                </div>
+                                <div className="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center">
+                                    <Clock className="w-6 h-6 text-amber-500" />
+                                </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-2">
+                                {summary.totalUnpaid} reservas sin pagar
+                            </p>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="bg-gradient-to-br from-blue-500/20 to-transparent border-blue-500/30">
+                        <CardContent className="p-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-muted-foreground">Total Reservas</p>
+                                    <p className="text-2xl font-bold text-blue-500">
+                                        {summary.totalBookings}
+                                    </p>
+                                </div>
+                                <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center">
+                                    <Calendar className="w-6 h-6 text-blue-500" />
+                                </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-2">
+                                <p className="text-xs text-muted-foreground mt-2">
+                                    En el periodo seleccionado
+                                </p>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="bg-gradient-to-br from-red-500/20 to-transparent border-red-500/30">
+                        <CardContent className="p-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-muted-foreground">Deuda Total</p>
+                                    <p className="text-2xl font-bold text-red-500">
+                                        {formatMoney(totalDebtCents)}
+                                    </p>
+                                </div>
+                                <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
+                                    <AlertCircle className="w-6 h-6 text-red-500" />
+                                </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-2">
+                                {debtors.length} usuarios con deuda
+                            </p>
+                        </CardContent>
+                    </Card>
+                </div>
+            )}
+
+            {/* Stats by Field */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <TrendingUp className="w-5 h-5" />
+                        Estado por Cancha
+                    </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <div className="space-y-4">
+                        {stats.map((field) => {
+                            const paidPercentage = field.totalBookings > 0
+                                ? Math.round((field.paidBookings / field.totalBookings) * 100)
+                                : 0
+
+                            return (
+                                <div key={field.fieldId} className="p-4 rounded-lg bg-secondary/50">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div>
+                                            <h4 className="font-semibold">{field.fieldName}</h4>
+                                            <p className="text-sm text-muted-foreground">
+                                                {field.totalBookings} reservas en el período
+                                            </p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="font-semibold text-green-500">
+                                                {formatMoney(field.totalRevenueCents)}
+                                            </p>
+                                            <p className="text-xs text-muted-foreground">confirmado</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Progress bar */}
+                                    <div className="h-2 rounded-full bg-secondary overflow-hidden mb-3">
+                                        <div
+                                            className="h-full bg-green-500 transition-all"
+                                            style={{ width: `${paidPercentage}%` }}
+                                        />
+                                    </div>
+
+                                    {/* Stats row */}
+                                    <div className="flex flex-wrap gap-4 text-sm">
+                                        <div className="flex items-center gap-1">
+                                            <CheckCircle className="w-4 h-4 text-green-500" />
+                                            <span>{field.paidBookings} pagadas</span>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <Clock className="w-4 h-4 text-yellow-500" />
+                                            <span>{field.pendingPayment} pendientes</span>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <AlertCircle className="w-4 h-4 text-blue-500" />
+                                            <span>{field.pendingVerification} en verificación</span>
+                                        </div>
+                                        {field.pendingRevenueCents > 0 && (
+                                            <div className="flex items-center gap-1 text-amber-500">
+                                                <DollarSign className="w-4 h-4" />
+                                                <span>{formatMoney(field.pendingRevenueCents)} por cobrar</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )
+                        })}
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* Debtors List */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <Users className="w-5 h-5" />
+                        Usuarios con Deuda
+                    </CardTitle>
+                    <CardDescription>
+                        Click en un usuario para marcar sus reservas como pagadas
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {debtors.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                            <CheckCircle className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                            <p>No hay usuarios con deudas pendientes</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {debtors.map((debtor) => (
+                                <button
+                                    key={debtor.userId}
+                                    onClick={() => handleOpenBulkPayment(debtor)}
+                                    className="w-full p-4 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors text-left flex items-center justify-between"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
+                                            <Users className="w-5 h-5 text-red-500" />
+                                        </div>
+                                        <div>
+                                            <p className="font-medium">{debtor.fullName}</p>
+                                            <p className="text-sm text-muted-foreground">
+                                                {debtor.email || debtor.phone}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <div className="text-right">
+                                            <p className="font-semibold text-red-500">
+                                                {formatMoney(debtor.totalDebtCents)}
+                                            </p>
+                                            <p className="text-xs text-muted-foreground">
+                                                {debtor.unpaidBookings.length} reservas
+                                            </p>
+                                        </div>
+                                        <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* Bulk Payment Modal */}
+            {showBulkPayment && selectedDebtor && (
+                <BulkPaymentModal
+                    debtor={selectedDebtor}
+                    onClose={handleCloseBulkPayment}
+                    onSave={handleBulkPaymentSaved}
+                />
+            )}
+        </div>
+    )
+}

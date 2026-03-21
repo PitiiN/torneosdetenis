@@ -1,0 +1,39 @@
+import React, { useEffect, useState } from 'react';
+import { Text, StyleSheet, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './src/lib/queryClient';
+import { AuthProvider } from './src/context/AuthContext';
+import { AccessibilityProvider, useAccessibility } from './src/context/AccessibilityContext';
+import RootNavigator from './src/navigation/RootNavigator';
+
+// Wrapper to natively scale the entire app layout engine proportionately
+function AccessibilitySyncer({ children }: { children: React.ReactNode }) {
+  const { fontScale, highContrast } = useAccessibility();
+
+  return (
+    <View style={{ flex: 1, backgroundColor: highContrast ? '#000000' : '#F8FAFC', justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ width: `${100 / fontScale}%`, height: `${100 / fontScale}%`, transform: [{ scale: fontScale }] }}>
+        {children}
+      </View>
+    </View>
+  );
+}
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <AccessibilityProvider>
+            <AccessibilitySyncer>
+              <RootNavigator />
+              <StatusBar style="light" />
+            </AccessibilitySyncer>
+          </AccessibilityProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </SafeAreaProvider>
+  );
+}

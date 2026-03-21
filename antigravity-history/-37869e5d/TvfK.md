@@ -1,0 +1,5 @@
+- [x] [REGRESSION] Fix: Booking/Block Visibility (Timezone cutoff in `availability/week`)
+- [x] [REGRESSION] Fix: Admin Editing (Re-implement range match for multi-hour slots)
+- [/] [REGRESSION] Fix: User Name Missing in Grid (Added logs, waiting for verification)
+- [/] [REGRESSION] Fix: User Search in Modal (Added logs, waiting for verification)
+- [x] [REGRESSION] Fix: Financial Panel Active Users (Enable list for 'All Fields')

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
@@ -9,6 +9,8 @@ import * as SecureStore from 'expo-secure-store';
 import { DateField } from '@/components/DateField';
 import { CHILEAN_COMUNAS } from '@/constants/tournamentOptions';
 import { Modal } from 'react-native';
+import { resolveStorageAssetUrl } from '@/services/storage';
+import { TennisSpinner } from '@/components/TennisSpinner';
 
 const { width } = Dimensions.get('window');
 
@@ -18,6 +20,7 @@ interface Organization {
     slug: string | null;
     created_at: string;
     logo_url: string | null;
+    logo_signed_url?: string | null;
 }
 
 export default function InicioScreen() {
@@ -40,31 +43,54 @@ export default function InicioScreen() {
     async function fetchOrganizations() {
         setLoading(true);
         try {
-            // Fetch organizations with their tournaments to apply filters
-            const { data, error } = await supabase
-                .from('organizations')
-                .select('*, tournaments(*)');
-            
-            if (error) throw error;
+            const { data: orgData, error: orgError } = await supabase
+                .from('organizations_public')
+                .select('id, name, slug, created_at, logo_url');
+            if (orgError) throw orgError;
 
-            let filtered = data || [];
+            const { data: tournamentData, error: tournamentsError } = await supabase
+                .from('tournaments')
+                .select('organization_id, comuna, start_date, status')
+                .eq('status', 'open');
+            if (tournamentsError) throw tournamentsError;
 
+            const tournamentsByOrg = (tournamentData || []).reduce((acc, tournament: any) => {
+                const key = tournament.organization_id;
+                if (!key) return acc;
+                acc[key] = [...(acc[key] || []), tournament];
+                return acc;
+            }, {} as Record<string, Array<{ comuna?: string | null; start_date?: string | null }>>);
+
+            let filtered = (orgData || []) as Organization[];
             if (selectedComuna || selectedDate) {
-                filtered = filtered.filter((org: any) => {
-                    const orgTournaments = org.tournaments || [];
-                    return orgTournaments.some((t: any) => {
-                        const matchComuna = !selectedComuna || t.comuna === selectedComuna;
-                        const matchDate = !selectedDate || t.start_date >= selectedDate;
-                        // For open tournaments only where registration is still possible
-                        const isPublished = t.status === 'open';
-                        return matchComuna && matchDate && isPublished;
+                filtered = filtered.filter((org) => {
+                    const orgTournaments = tournamentsByOrg[org.id] || [];
+                    if (orgTournaments.length === 0) return false;
+                    return orgTournaments.some((tournament) => {
+                        const matchComuna = !selectedComuna || tournament.comuna === selectedComuna;
+                        const matchDate = !selectedDate || String(tournament.start_date || '') >= selectedDate;
+                        return matchComuna && matchDate;
                     });
                 });
             }
 
-            setOrganizations(filtered);
+            const enrichedOrganizations = await Promise.all(
+                filtered.map(async (organization) => ({
+                    ...organization,
+                    logo_signed_url: await resolveStorageAssetUrl(organization.logo_url),
+                }))
+            );
+
+            await Promise.allSettled(
+                enrichedOrganizations
+                    .map((organization) => organization.logo_signed_url)
+                    .filter((url): url is string => Boolean(url))
+                    .map((url) => Image.prefetch(url))
+            );
+
+            setOrganizations(enrichedOrganizations);
         } catch (error) {
-            console.error('Error fetching organizations:', error);
+            setOrganizations([]);
         } finally {
             setLoading(false);
         }
@@ -133,7 +159,7 @@ export default function InicioScreen() {
                 </View>
 
                 {loading ? (
-                    <ActivityIndicator size="large" color={colors.primary[500]} style={{ marginTop: 40 }} />
+                    <TennisSpinner size={34} style={{ marginTop: 40 }} />
                 ) : (
                     <View style={styles.orgGrid}>
                         {organizations.map((org) => (
@@ -150,10 +176,11 @@ export default function InicioScreen() {
                                 }}
                             >
                                 <View style={styles.orgIconContainer}>
-                                    {org.logo_url ? (
+                                    {org.logo_signed_url ? (
                                         <Image 
-                                            source={{ uri: org.logo_url }} 
+                                            source={{ uri: org.logo_signed_url, cache: 'force-cache' }} 
                                             style={styles.orgLogo}
+                                            fadeDuration={0}
                                             resizeMode="contain"
                                         />
                                     ) : (

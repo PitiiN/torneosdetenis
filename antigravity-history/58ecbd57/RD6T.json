@@ -1,0 +1,14 @@
+{
+    "title": "ArriendoCanchas Business Rules and Schedules",
+    "summary": "Specific business requirements, court schedules, and pricing for the ArriendoCanchas application.",
+    "references": [
+        {
+            "type": "conversation_id",
+            "value": "dc1fdd0e-9303-414b-86c0-9c2b13e3ce24"
+        },
+        {
+            "type": "file",
+            "value": "src/app/(dashboard)/availability/page.tsx"
+        }
+    ]
+}

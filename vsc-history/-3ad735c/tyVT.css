@@ -1,0 +1,9 @@
+body {
+    height: 100vh;
+    width: 100%;
+    background-position: left;
+}
+
+.contenedor {
+    background-color: rgba(0, 0, 0, .8);
+}

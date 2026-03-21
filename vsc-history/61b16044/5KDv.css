@@ -1,0 +1,24 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+h1 {
+  color: rgb(220, 220, 220);
+  background-color: #55a;
+}
+
+a {
+  background-color: #55a;
+  color: rgb(220, 220, 220);
+  text-decoration: none;
+  padding: 1rem;
+  flex: block;
+}
+
+div a:nth-child(2) {
+  background-color: #4169e1;
+}
+
+/*# sourceMappingURL=style.css.map */

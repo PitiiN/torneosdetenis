@@ -1,0 +1,14 @@
+{
+    "title": "Supabase and TypeScript Integration Patterns",
+    "summary": "Best practices and solutions for integrating Supabase with TypeScript in Next.js, focusing on resolving type inference issues like 'never' types in query results.",
+    "references": [
+        {
+            "type": "file",
+            "value": "src/app/api/availability/week/route.ts"
+        },
+        {
+            "type": "conversation_id",
+            "value": "dc1fdd0e-9303-414b-86c0-9c2b13e3ce24"
+        }
+    ]
+}

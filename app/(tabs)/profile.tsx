@@ -52,6 +52,12 @@ export default function ProfileScreen() {
     const [orgSearch, setOrgSearch] = useState('');
     const [showOrgSearchModal, setShowOrgSearchModal] = useState(false);
 
+    // Payments Persistence States
+    const [profilePayments, setProfilePayments] = useState<any[]>([]);
+    const [paymentMonthFilter, setPaymentMonthFilter] = useState<number>(new Date().getMonth());
+    const [paymentYearFilter, setPaymentYearFilter] = useState<number>(new Date().getFullYear());
+    const [loadingPayments, setLoadingPayments] = useState(false);
+
     useEffect(() => {
         const backAction = () => {
             if (showContextModal) {
@@ -84,6 +90,12 @@ export default function ProfileScreen() {
             calculateStats();
         }
     }, [selectedContext, user?.id, modality]);
+
+    useEffect(() => {
+        if (user?.id) {
+            fetchProfilePayments();
+        }
+    }, [user?.id, paymentMonthFilter, paymentYearFilter]);
 
     useEffect(() => {
         const unsubscribe = adminModeService.subscribe((m) => {
@@ -122,9 +134,8 @@ export default function ProfileScreen() {
             const isGlobal = session.user.email === GLOBAL_ADMIN_EMAIL;
             setIsGlobalAdmin(isGlobal);
 
-            if (isGlobal) {
-                fetchAllOrganizations();
-            }
+            // Removing isGlobal restriction so all users fetch organizations for stats filter
+            fetchAllOrganizations();
 
             // Fetch User Contexts (Orgs and Levels)
             const { data: contexts, error: ctxErr } = await supabase
@@ -208,6 +219,52 @@ export default function ProfileScreen() {
             .order('name');
         if (data && !error) {
             setAllOrganizations(data);
+        }
+    };
+
+    const fetchProfilePayments = async () => {
+        setLoadingPayments(true);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) return;
+
+            // Simple date filtering logic
+            const { data, error } = await supabase
+                .from('registrations')
+                .select(`
+                    id,
+                    tournament_id,
+                    fee_amount,
+                    is_paid,
+                    status,
+                    tournaments:tournaments!inner(name, end_date, start_date)
+                `)
+                .eq('player_id', session.user.id)
+                .order('id', { ascending: false });
+
+            if (error) throw error;
+
+            let filtered = (data || []).map((r: any) => ({
+                id: r.id,
+                tournament_id: r.tournament_id,
+                tournament_name: r.tournaments.name,
+                fee_amount: r.fee_amount,
+                is_paid: r.is_paid,
+                date: new Date(r.tournaments.end_date || r.tournaments.start_date || Date.now()),
+                status: r.status
+            }));
+
+            // Filter by selected month and year
+            filtered = filtered.filter(p => 
+                p.date.getMonth() === paymentMonthFilter && 
+                p.date.getFullYear() === paymentYearFilter
+            );
+
+            setProfilePayments(filtered);
+        } catch (err) {
+            console.error('Error fetching profile payments:', err);
+        } finally {
+            setLoadingPayments(false);
         }
     };
 
@@ -743,7 +800,11 @@ export default function ProfileScreen() {
 
                 <View style={styles.tournamentList}>
                     {recentTournaments.length > 0 ? recentTournaments.map((t) => (
-                        <View key={t.id} style={styles.historyCard}>
+                        <TouchableOpacity 
+                            key={t.id} 
+                            style={styles.historyCard}
+                            onPress={() => router.push(`/(tabs)/tournaments/${t.id}`)}
+                        >
                             <View style={styles.historyIcon}>
                                 <Ionicons name="shield-checkmark" size={28} color={colors.primary[500]} />
                             </View>
@@ -759,10 +820,68 @@ export default function ProfileScreen() {
                                 </View>
                                 <Text style={styles.historyDate}>{new Date(t.end_date || t.start_date || Date.now()).toLocaleDateString()}</Text>
                             </View>
-                        </View>
+                        </TouchableOpacity>
                     )) : (
                         <View style={styles.emptyCard}>
                             <Text style={styles.emptyText}>No has participado en torneos aún.</Text>
+                        </View>
+                    )}
+                </View>
+
+                {/* Payments History Section */}
+                <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>Historial de Pagos</Text>
+                </View>
+
+                <View style={styles.paymentFilters}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+                        {['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'].map((m, idx) => (
+                            <TouchableOpacity
+                                key={m}
+                                style={[styles.filterChip, paymentMonthFilter === idx && styles.filterChipActive]}
+                                onPress={() => setPaymentMonthFilter(idx)}
+                            >
+                                <Text style={[styles.filterChipText, paymentMonthFilter === idx && styles.filterChipTextActive]}>{m}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                    
+                    <View style={styles.yearRow}>
+                        {[2025, 2026, 2027].map(y => (
+                            <TouchableOpacity
+                                key={y}
+                                style={[styles.yearChip, paymentYearFilter === y && styles.yearChipActive]}
+                                onPress={() => setPaymentYearFilter(y)}
+                            >
+                                <Text style={[styles.yearChipText, paymentYearFilter === y && styles.yearChipTextActive]}>{y}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </View>
+
+                <View style={styles.paymentList}>
+                    {loadingPayments ? (
+                        <ActivityIndicator color={colors.primary[500]} style={{ marginVertical: 20 }} />
+                    ) : profilePayments.length > 0 ? (
+                        profilePayments.map(p => (
+                            <View key={p.id} style={styles.paymentSummaryCard}>
+                                <View style={styles.paymentInfoMain}>
+                                    <Text style={styles.paymentName} numberOfLines={1}>{p.tournament_name}</Text>
+                                    <Text style={styles.paymentDate}>{p.date.toLocaleDateString()}</Text>
+                                </View>
+                                <View style={styles.paymentStatusRow}>
+                                    <Text style={styles.paymentAmount}>${p.fee_amount.toLocaleString()}</Text>
+                                    <View style={[styles.statusTag, p.is_paid ? styles.statusTagPaid : styles.statusTagUnpaid]}>
+                                        <Text style={[styles.statusTagText, p.is_paid ? styles.statusTagTextPaid : styles.statusTagTextUnpaid]}>
+                                            {p.is_paid ? 'PAGADO' : 'PENDIENTE'}
+                                        </Text>
+                                    </View>
+                                </View>
+                            </View>
+                        ))
+                    ) : (
+                        <View style={styles.emptyCard}>
+                            <Text style={styles.emptyText}>No hay registros para este período.</Text>
                         </View>
                     )}
                 </View>
@@ -1434,5 +1553,114 @@ const getStyles = (colors: any) => StyleSheet.create({
         height: 16,
         borderRadius: 8,
         backgroundColor: '#fff',
+    },
+    paymentFilters: {
+        gap: spacing.md,
+    },
+    filterScroll: {
+        gap: spacing.sm,
+        paddingRight: spacing.xl,
+    },
+    filterChip: {
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: borderRadius.full,
+        backgroundColor: colors.surfaceSecondary,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    filterChipActive: {
+        backgroundColor: colors.primary[500],
+        borderColor: colors.primary[500],
+    },
+    filterChipText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: colors.textSecondary,
+    },
+    filterChipTextActive: {
+        color: '#fff',
+    },
+    yearRow: {
+        flexDirection: 'row',
+        gap: spacing.sm,
+    },
+    yearChip: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: borderRadius.lg,
+        backgroundColor: colors.surfaceSecondary,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    yearChipActive: {
+        backgroundColor: colors.primary[500],
+        borderColor: colors.primary[500],
+    },
+    yearChipText: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: colors.textSecondary,
+    },
+    yearChipTextActive: {
+        color: '#fff',
+    },
+    paymentList: {
+        gap: spacing.md,
+        marginTop: spacing.sm,
+    },
+    paymentSummaryCard: {
+        backgroundColor: colors.surface,
+        borderRadius: borderRadius.xl,
+        padding: spacing.lg,
+        borderWidth: 1,
+        borderColor: colors.border,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    paymentInfoMain: {
+        flex: 1,
+        marginRight: spacing.md,
+    },
+    paymentName: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: colors.text,
+        marginBottom: 2,
+    },
+    paymentDate: {
+        fontSize: 11,
+        color: colors.textTertiary,
+    },
+    paymentStatusRow: {
+        alignItems: 'flex-end',
+        gap: 4,
+    },
+    paymentAmount: {
+        fontSize: 15,
+        fontWeight: '800',
+        color: colors.text,
+    },
+    statusTag: {
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: borderRadius.sm,
+    },
+    statusTagPaid: {
+        backgroundColor: colors.success + '1A',
+    },
+    statusTagUnpaid: {
+        backgroundColor: colors.error + '1A',
+    },
+    statusTagText: {
+        fontSize: 9,
+        fontWeight: '900',
+    },
+    statusTagTextPaid: {
+        color: colors.success,
+    },
+    statusTagTextUnpaid: {
+        color: colors.error,
     },
 });

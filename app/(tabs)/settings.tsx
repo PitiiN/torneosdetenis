@@ -1,14 +1,42 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Alert, Image, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Image, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/services/supabase';
 import * as ImagePicker from 'expo-image-picker';
+import { getCurrentUserAccessContext } from '@/services/accessControl';
+import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
+import * as SecureStore from 'expo-secure-store';
+import { TennisSpinner } from '@/components/TennisSpinner';
 
-const GLOBAL_ADMIN_EMAIL = 'javier.aravena25@gmail.com';
+const ROLE_OPTIONS = ['player', 'admin'] as const;
+const PROTECTED_SUPER_ADMIN_ROLE = 'super_admin';
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp']);
+const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+};
 
-const ROLE_OPTIONS = ['player', 'admin'];
+const normalizeAssignableRole = (role: string | null | undefined): (typeof ROLE_OPTIONS)[number] =>
+    role === 'admin' || role === 'organizer' ? 'admin' : 'player';
+
+const isProtectedSuperAdmin = (user: any) =>
+    user?.is_super_admin === true || user?.role === PROTECTED_SUPER_ADMIN_ROLE;
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const WHATSAPP_PATTERN = /^[0-9+\s()-]{0,30}$/;
+const URL_PATTERN = /^https?:\/\/.+/i;
+
+const getExtensionFromUri = (uri: string) => {
+    const sanitized = uri.split('?')[0].trim();
+    const dotIndex = sanitized.lastIndexOf('.');
+    if (dotIndex < 0 || dotIndex === sanitized.length - 1) return '';
+    return sanitized.slice(dotIndex + 1).toLowerCase();
+};
 
 export default function SettingsScreen() {
     const insets = useSafeAreaInsets();
@@ -19,10 +47,14 @@ export default function SettingsScreen() {
     const [savingLogo, setSavingLogo] = useState(false);
     const [organization, setOrganization] = useState<any>(null);
     const [orgName, setOrgName] = useState('');
+    const [logoPath, setLogoPath] = useState('');
     const [logoUrl, setLogoUrl] = useState('');
+    const [contactEmail, setContactEmail] = useState('');
+    const [contactWhatsapp, setContactWhatsapp] = useState('');
+    const [socialLinks, setSocialLinks] = useState('');
+    const [photosDriveUrl, setPhotosDriveUrl] = useState('');
     const [isAdmin, setIsAdmin] = useState(false);
     const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
-    const [userEmail, setUserEmail] = useState('');
 
     // Global Admin States
     const [allOrganizations, setAllOrganizations] = useState<any[]>([]);
@@ -33,6 +65,14 @@ export default function SettingsScreen() {
     const [selectedUser, setSelectedUser] = useState<any>(null);
     const [showUserModal, setShowUserModal] = useState(false);
 
+    // Create Organization States
+    const [showCreateOrgModal, setShowCreateOrgModal] = useState(false);
+    const [newOrgName, setNewOrgName] = useState('');
+    const [newOrgEmail, setNewOrgEmail] = useState('');
+    const [newOrgWhatsapp, setNewOrgWhatsapp] = useState('');
+    const [newOrgSocial, setNewOrgSocial] = useState('');
+    const [newOrgDrive, setNewOrgDrive] = useState('');
+
     useEffect(() => {
         loadInitialData();
     }, []);
@@ -40,39 +80,43 @@ export default function SettingsScreen() {
     const loadInitialData = async () => {
         setLoading(true);
         try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) return;
+            const access = await getCurrentUserAccessContext();
+            if (!access) return;
+            const selectedOrgId = await SecureStore.getItemAsync('selected_org_id');
 
-            setUserEmail(session.user.email || '');
-            const isGlobal = session.user.email === GLOBAL_ADMIN_EMAIL;
-            setIsGlobalAdmin(isGlobal);
+            setIsGlobalAdmin(access.isSuperAdmin);
 
-            // Get user profile
-            const { data: profile, error: profErr } = await supabase
-                .from('profiles')
-                .select('role, org_id')
-                .eq('id', session.user.id)
-                .single();
-
-            if (profErr) throw profErr;
-
-            if (profile.role !== 'admin' && !isGlobal) {
+            if (!access.isAdmin) {
                 setIsAdmin(false);
                 setLoading(false);
                 return;
             }
 
+            const targetOrgId = access.isSuperAdmin
+                ? (selectedOrgId || access.profile.org_id || null)
+                : (access.profile.org_id || null);
+            const hasAdminRole = access.profile.role === 'admin' || access.profile.role === 'organizer';
+            const canManageTargetOrg = access.isSuperAdmin || Boolean(hasAdminRole && access.profile.org_id);
+
+            if (!canManageTargetOrg) {
+                setIsAdmin(true);
+                setOrganization(null);
+                return;
+            }
+
             setIsAdmin(true);
 
-            if (profile.org_id) {
-                fetchOrgDetails(profile.org_id);
+            if (access.isSuperAdmin) {
+                await fetchAllOrganizations();
             }
 
-            if (isGlobal) {
-                fetchAllOrganizations();
+            if (targetOrgId) {
+                await fetchOrgDetails(targetOrgId);
+                if (!access.isSuperAdmin) {
+                    await SecureStore.setItemAsync('selected_org_id', targetOrgId);
+                }
             }
         } catch (error) {
-            console.error('Error loading settings:', error);
             Alert.alert('Error', 'No se pudo cargar la configuración.');
         } finally {
             setLoading(false);
@@ -82,21 +126,49 @@ export default function SettingsScreen() {
     const fetchOrgDetails = async (orgId: string) => {
         const { data: org, error: orgErr } = await supabase
             .from('organizations')
-            .select('*')
+            .select('id, name, logo_url, contact_email, contact_whatsapp, social_links, photos_drive_url')
             .eq('id', orgId)
             .single();
 
-        if (org && !orgErr) {
-            setOrganization(org);
-            setOrgName(org.name || '');
-            setLogoUrl(org.logo_url || '');
+        let resolvedOrg = org;
+
+        if (!resolvedOrg || orgErr) {
+            const { data: publicOrg } = await supabase
+                .from('organizations_public')
+                .select('id, name, logo_url')
+                .eq('id', orgId)
+                .single();
+
+            if (!publicOrg) {
+                setOrganization(null);
+                return;
+            }
+
+            resolvedOrg = {
+                ...publicOrg,
+                contact_email: null,
+                contact_whatsapp: null,
+                social_links: null,
+                photos_drive_url: null,
+            };
         }
+
+        const signedLogoUrl = await resolveStorageAssetUrlWithRetry(resolvedOrg.logo_url, { attempts: 4, baseDelayMs: 350 });
+        setOrganization(resolvedOrg);
+        setOrgName(resolvedOrg.name || '');
+        setLogoPath(resolvedOrg.logo_url || '');
+        setLogoUrl(signedLogoUrl || '');
+        setContactEmail(resolvedOrg.contact_email || '');
+        setContactWhatsapp(resolvedOrg.contact_whatsapp || '');
+        setSocialLinks(resolvedOrg.social_links || '');
+        setPhotosDriveUrl(resolvedOrg.photos_drive_url || '');
+        await SecureStore.setItemAsync('selected_org_name', resolvedOrg.name || '');
     };
 
     const fetchAllOrganizations = async () => {
         const { data, error } = await supabase
             .from('organizations')
-            .select('*')
+            .select('id, name, logo_url')
             .order('name');
         if (data && !error) {
             setAllOrganizations(data);
@@ -126,32 +198,58 @@ export default function SettingsScreen() {
         if (!organization) return;
         setSavingLogo(true);
         try {
-            const fileExt = uri.split('.').pop() || 'png';
-            const fileName = `${organization.id}-${Date.now()}.${fileExt}`;
-            const filePath = `logos/${fileName}`;
+            const response = await fetch(uri);
+            const fileBytes = typeof response.arrayBuffer === 'function'
+                ? await response.arrayBuffer()
+                : await (await response.blob()).arrayBuffer();
+            const fileSize = fileBytes.byteLength;
+            if (!fileSize || fileSize > MAX_IMAGE_BYTES) {
+                Alert.alert('Error', 'La imagen supera el tamaño máximo permitido (5MB).');
+                return;
+            }
 
-            // React Native File-like object for Supabase Storage
-            const file = {
-                uri: uri,
-                name: fileName,
-                type: `image/${fileExt}`
-            } as any;
+            const headerMimeType = (response.headers.get('content-type') || '')
+                .split(';')[0]
+                .trim()
+                .toLowerCase();
+            const extensionFromUri = getExtensionFromUri(uri);
+            const extensionFromMime = headerMimeType.startsWith('image/')
+                ? headerMimeType.replace('image/', '').toLowerCase()
+                : '';
+            const fileExt = ALLOWED_IMAGE_EXTENSIONS.has(extensionFromMime)
+                ? extensionFromMime
+                : (ALLOWED_IMAGE_EXTENSIONS.has(extensionFromUri) ? extensionFromUri : 'jpg');
 
-            const { data, error } = await supabase.storage
+            if (!ALLOWED_IMAGE_EXTENSIONS.has(fileExt)) {
+                Alert.alert('Error', 'Formato de imagen no permitido.');
+                return;
+            }
+
+            const mimeType = IMAGE_MIME_BY_EXTENSION[fileExt] || 'image/jpeg';
+            const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 12)}.${fileExt}`;
+            const filePath = `logos/${organization.id}/${fileName}`;
+
+            const { error } = await supabase.storage
                 .from('organizations')
-                .upload(filePath, file, {
-                    upsert: true
+                .upload(filePath, fileBytes, {
+                    contentType: mimeType,
+                    upsert: false,
                 });
 
             if (error) throw error;
 
-            const { data: { publicUrl } } = supabase.storage
+            const { error: logoUpdateError } = await supabase
                 .from('organizations')
-                .getPublicUrl(filePath);
+                .update({ logo_url: filePath })
+                .eq('id', organization.id);
 
-            setLogoUrl(publicUrl);
+            if (logoUpdateError) throw logoUpdateError;
+
+            const signedLogoUrl = await resolveStorageAssetUrlWithRetry(filePath, { attempts: 4, baseDelayMs: 350 });
+            setLogoPath(filePath);
+            setLogoUrl(signedLogoUrl || uri);
+            setOrganization((current: any) => current ? { ...current, logo_url: filePath } : current);
         } catch (error) {
-            console.error('Error uploading image:', error);
             Alert.alert('Error', 'No se pudo subir la imagen.');
         } finally {
             setSavingLogo(false);
@@ -162,25 +260,114 @@ export default function SettingsScreen() {
         if (!organization) return;
         setSaving(true);
         try {
-            const { error } = await supabase
+            const normalizedName = orgName.trim().slice(0, 80);
+            const normalizedContactEmail = contactEmail.trim().toLowerCase().slice(0, 120);
+            const normalizedWhatsapp = contactWhatsapp.trim().slice(0, 30);
+            const normalizedSocialLinks = socialLinks.trim().slice(0, 500);
+            const normalizedPhotosDriveUrl = photosDriveUrl.trim().slice(0, 500);
+
+            if (normalizedContactEmail && !EMAIL_PATTERN.test(normalizedContactEmail)) {
+                Alert.alert('Error', 'El correo de contacto no tiene un formato válido.');
+                return;
+            }
+
+            if (normalizedWhatsapp && !WHATSAPP_PATTERN.test(normalizedWhatsapp)) {
+                Alert.alert('Error', 'El WhatsApp de contacto solo puede incluir números y símbolos básicos.');
+                return;
+            }
+
+            if (normalizedPhotosDriveUrl && !URL_PATTERN.test(normalizedPhotosDriveUrl)) {
+                Alert.alert('Error', 'El enlace de fotos debe comenzar con http:// o https://');
+                return;
+            }
+
+            const fullPayload = {
+                name: normalizedName,
+                logo_url: logoPath || null,
+                contact_email: normalizedContactEmail || null,
+                contact_whatsapp: normalizedWhatsapp || null,
+                social_links: normalizedSocialLinks || null,
+                photos_drive_url: normalizedPhotosDriveUrl || null,
+            };
+
+            const { error: fullUpdateError } = await supabase
                 .from('organizations')
-                .update({ 
-                    name: orgName,
-                    logo_url: logoUrl 
-                })
+                .update(fullPayload)
                 .eq('id', organization.id);
 
-            if (error) throw error;
+            if (fullUpdateError) {
+                const { error: fallbackError } = await supabase
+                    .from('organizations')
+                    .update({
+                        name: normalizedName,
+                        logo_url: logoPath || null,
+                    })
+                    .eq('id', organization.id);
+                if (fallbackError) throw fallbackError;
+            }
+
+            await SecureStore.setItemAsync('selected_org_name', normalizedName);
+            setOrganization((current: any) => current ? ({
+                ...current,
+                name: normalizedName,
+                logo_url: logoPath || null,
+                contact_email: normalizedContactEmail || null,
+                contact_whatsapp: normalizedWhatsapp || null,
+                social_links: normalizedSocialLinks || null,
+                photos_drive_url: normalizedPhotosDriveUrl || null,
+            }) : current);
             Alert.alert('Éxito', 'Configuración guardada.');
         } catch (error) {
-            console.error('Error saving settings:', error);
             Alert.alert('Error', 'No se pudo guardar la configuración.');
         } finally {
             setSaving(false);
         }
     };
 
-    // Global Admin Handlers
+    const handleCreateOrganization = async () => {
+        if (!newOrgName.trim()) {
+            Alert.alert('Error', 'El nombre de la organización es obligatorio.');
+            return;
+        }
+        setSaving(true);
+        try {
+            const { data, error } = await supabase
+                .from('organizations')
+                .insert([{
+                    name: newOrgName.trim(),
+                    contact_email: newOrgEmail.trim() || null,
+                    contact_whatsapp: newOrgWhatsapp.trim() || null,
+                    social_links: newOrgSocial.trim() || null,
+                    photos_drive_url: newOrgDrive.trim() || null,
+                }])
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            Alert.alert('Éxito', 'Organización creada correctamente.');
+            setShowCreateOrgModal(false);
+            
+            // Reset form
+            setNewOrgName('');
+            setNewOrgEmail('');
+            setNewOrgWhatsapp('');
+            setNewOrgSocial('');
+            setNewOrgDrive('');
+
+            // Refresh list and select the new one
+            await fetchAllOrganizations();
+            if (data) {
+                await fetchOrgDetails(data.id);
+            }
+        } catch (error) {
+            console.error('Error creating organization:', error);
+            Alert.alert('Error', 'No se pudo crear la organización.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const handleSearchUsers = async (query: string) => {
         setUserSearch(query);
         if (query.length < 3) {
@@ -192,27 +379,42 @@ export default function SettingsScreen() {
         try {
             const { data, error } = await supabase
                 .from('profiles')
-                .select('*')
-                .or(`name.ilike.%${query}%,email.ilike.%${query}%`)
+                .select('id, name, role, org_id, is_super_admin')
+                .ilike('name', `%${query}%`)
                 .limit(10);
-            
-            if (data) setUserSearchResults(data);
+
+            if (error) throw error;
+            if (data) {
+                const safeResults = data.map((user: any) => ({
+                    ...user,
+                    role: isProtectedSuperAdmin(user) ? PROTECTED_SUPER_ADMIN_ROLE : normalizeAssignableRole(user.role),
+                }));
+                setUserSearchResults(safeResults);
+            }
         } catch (error) {
-            console.error('Error searching users:', error);
+            setUserSearchResults([]);
         } finally {
             setIsSearchingUsers(false);
         }
     };
 
     const handleUpdateUser = async () => {
-        if (!selectedUser) return;
+        if (!selectedUser || !isGlobalAdmin) return;
+        if (isProtectedSuperAdmin(selectedUser)) {
+            Alert.alert('Aviso', 'El rol super_admin es protegido y no se puede editar desde esta vista.');
+            return;
+        }
+
         setSaving(true);
         try {
+            const normalizedRole = normalizeAssignableRole(selectedUser.role);
+            const normalizedOrgId = normalizedRole === 'admin' ? selectedUser.org_id || null : null;
+
             const { error } = await supabase
                 .from('profiles')
                 .update({
-                    role: selectedUser.role,
-                    org_id: selectedUser.org_id
+                    role: normalizedRole,
+                    org_id: normalizedOrgId
                 })
                 .eq('id', selectedUser.id);
             
@@ -221,7 +423,6 @@ export default function SettingsScreen() {
             setShowUserModal(false);
             handleSearchUsers(userSearch); // Refresh list
         } catch (error) {
-            console.error('Error updating user:', error);
             Alert.alert('Error', 'No se pudo actualizar el usuario.');
         } finally {
             setSaving(false);
@@ -231,7 +432,7 @@ export default function SettingsScreen() {
     if (loading) {
         return (
             <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
-                <ActivityIndicator size="large" color={colors.primary[500]} />
+                <TennisSpinner size={34} />
             </View>
         );
     }
@@ -257,7 +458,16 @@ export default function SettingsScreen() {
                 {/* GLOBAL ADMIN SECTION: Organization Selector */}
                 {isGlobalAdmin && (
                     <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>Contexto de Organización</Text>
+                        <View style={styles.sectionHeaderRow}>
+                            <Text style={styles.sectionTitle}>Contexto de Organización</Text>
+                            <TouchableOpacity 
+                                style={styles.createOrgBtn}
+                                onPress={() => setShowCreateOrgModal(true)}
+                            >
+                                <Ionicons name="add-circle-outline" size={20} color="#fff" />
+                                <Text style={styles.createOrgBtnText}>Nueva</Text>
+                            </TouchableOpacity>
+                        </View>
                         <TextInput
                             style={styles.input}
                             placeholder="Buscar organización..."
@@ -297,7 +507,7 @@ export default function SettingsScreen() {
                                 disabled={savingLogo}
                             >
                                 {savingLogo ? (
-                                    <ActivityIndicator color={colors.primary[500]} />
+                                    <TennisSpinner size={22} />
                                 ) : logoUrl ? (
                                     <Image source={{ uri: logoUrl }} style={styles.logoImage} resizeMode="contain" />
                                 ) : (
@@ -321,12 +531,57 @@ export default function SettingsScreen() {
                             />
                         </View>
 
+                        <View style={styles.inputGroup}>
+                            <Text style={styles.sectionSubtitle}>Contacto y Enlaces</Text>
+
+                            <Text style={styles.label}>Correo de contacto</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={contactEmail}
+                                onChangeText={setContactEmail}
+                                placeholder="contacto@tuorganizacion.cl"
+                                placeholderTextColor={colors.textTertiary}
+                                autoCapitalize="none"
+                                keyboardType="email-address"
+                            />
+
+                            <Text style={styles.label}>WhatsApp de contacto</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={contactWhatsapp}
+                                onChangeText={setContactWhatsapp}
+                                placeholder="+56 9 1234 5678"
+                                placeholderTextColor={colors.textTertiary}
+                                keyboardType="phone-pad"
+                            />
+
+                            <Text style={styles.label}>Redes sociales</Text>
+                            <TextInput
+                                style={[styles.input, styles.textArea]}
+                                value={socialLinks}
+                                onChangeText={setSocialLinks}
+                                placeholder="Ej: Instagram @clubtenis, Facebook /clubtenis"
+                                placeholderTextColor={colors.textTertiary}
+                                multiline
+                            />
+
+                            <Text style={styles.label}>Enlace de fotos (Google Drive)</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={photosDriveUrl}
+                                onChangeText={setPhotosDriveUrl}
+                                placeholder="https://drive.google.com/..."
+                                placeholderTextColor={colors.textTertiary}
+                                autoCapitalize="none"
+                            />
+                        </View>
+
                         <TouchableOpacity 
                             style={[styles.saveButton, saving && styles.saveButtonDisabled]}
                             onPress={handleSaveGeneral}
                             disabled={saving}
                         >
-                            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Guardar Cambios</Text>}
+                            {saving ? <TennisSpinner size={18} color="#fff" /> : <Text style={styles.saveButtonText}>Guardar Cambios</Text>}
                         </TouchableOpacity>
                     </View>
                 ) : (
@@ -346,20 +601,25 @@ export default function SettingsScreen() {
                             value={userSearch}
                             onChangeText={handleSearchUsers}
                         />
-                        {isSearchingUsers && <ActivityIndicator style={{ marginTop: 10 }} color={colors.primary[500]} />}
+                        {isSearchingUsers && <TennisSpinner size={18} style={{ marginTop: 10 }} />}
                         <View style={[styles.userList, { marginTop: spacing.md }]}>
                             {userSearchResults.map(user => (
                                 <TouchableOpacity 
                                     key={user.id} 
                                     style={styles.userCard}
                                     onPress={() => {
-                                        setSelectedUser(user);
+                                        setSelectedUser({
+                                            ...user,
+                                            role: isProtectedSuperAdmin(user)
+                                                ? PROTECTED_SUPER_ADMIN_ROLE
+                                                : normalizeAssignableRole(user.role),
+                                        });
                                         setShowUserModal(true);
                                     }}
                                 >
                                     <View>
                                         <Text style={styles.userNameText}>{user.name || 'Sin nombre'}</Text>
-                                        <Text style={styles.userRoleText}>{user.role.toUpperCase()}</Text>
+                                        <Text style={styles.userRoleText}>{String(user.role || 'player').toUpperCase()}</Text>
                                     </View>
                                     <Ionicons name="create-outline" size={20} color={colors.textSecondary} />
                                 </TouchableOpacity>
@@ -368,6 +628,81 @@ export default function SettingsScreen() {
                     </View>
                 )}
             </ScrollView>
+
+            {/* Create Organization Modal */}
+            <Modal visible={showCreateOrgModal} transparent animationType="slide">
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Nueva Organización</Text>
+                            <TouchableOpacity onPress={() => setShowCreateOrgModal(false)}>
+                                <Ionicons name="close" size={24} color={colors.text} />
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView showsVerticalScrollIndicator={false}>
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>Nombre *</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    value={newOrgName}
+                                    onChangeText={setNewOrgName}
+                                    placeholder="Nombre de la organización"
+                                    placeholderTextColor={colors.textTertiary}
+                                />
+
+                                <Text style={styles.label}>Correo de contacto</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    value={newOrgEmail}
+                                    onChangeText={setNewOrgEmail}
+                                    placeholder="contacto@ejemplo.cl"
+                                    placeholderTextColor={colors.textTertiary}
+                                    autoCapitalize="none"
+                                    keyboardType="email-address"
+                                />
+
+                                <Text style={styles.label}>WhatsApp</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    value={newOrgWhatsapp}
+                                    onChangeText={setNewOrgWhatsapp}
+                                    placeholder="+56 9 ..."
+                                    placeholderTextColor={colors.textTertiary}
+                                    keyboardType="phone-pad"
+                                />
+
+                                <Text style={styles.label}>Redes Sociales</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    value={newOrgSocial}
+                                    onChangeText={setNewOrgSocial}
+                                    placeholder="Instagram, Facebook, etc."
+                                    placeholderTextColor={colors.textTertiary}
+                                />
+
+                                <Text style={styles.label}>Google Drive (Fotos)</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    value={newOrgDrive}
+                                    onChangeText={setNewOrgDrive}
+                                    placeholder="https://drive.google.com/..."
+                                    placeholderTextColor={colors.textTertiary}
+                                    autoCapitalize="none"
+                                />
+                            </View>
+
+                            <TouchableOpacity 
+                                style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+                                onPress={handleCreateOrganization}
+                                disabled={saving}
+                            >
+                                {saving ? <TennisSpinner size={18} color="#fff" /> : <Text style={styles.saveButtonText}>Crear Organización</Text>}
+                            </TouchableOpacity>
+                            <View style={{ height: 40 }} />
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
 
             {/* User Edit Modal */}
             <Modal visible={showUserModal} transparent animationType="slide">
@@ -382,48 +717,58 @@ export default function SettingsScreen() {
 
                         {selectedUser && (
                             <ScrollView>
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.label}>Rol</Text>
-                                    <View style={styles.optionsGrid}>
-                                        {ROLE_OPTIONS.map(role => (
-                                            <TouchableOpacity 
-                                                key={role} 
-                                                style={[styles.optionChip, selectedUser.role === role && styles.optionChipActive]}
-                                                onPress={() => setSelectedUser({...selectedUser, role})}
-                                            >
-                                                <Text style={[styles.optionChipText, selectedUser.role === role && styles.optionChipTextActive]}>{role}</Text>
-                                            </TouchableOpacity>
-                                        ))}
+                                {isProtectedSuperAdmin(selectedUser) ? (
+                                    <View style={styles.protectedNotice}>
+                                        <Text style={styles.protectedNoticeText}>
+                                            Este usuario tiene rol super_admin protegido y no se puede editar desde esta pantalla.
+                                        </Text>
                                     </View>
-                                </View>
+                                ) : (
+                                    <>
+                                        <View style={styles.inputGroup}>
+                                            <Text style={styles.label}>Rol</Text>
+                                            <View style={styles.optionsGrid}>
+                                                {ROLE_OPTIONS.map(role => (
+                                                    <TouchableOpacity 
+                                                        key={role} 
+                                                        style={[styles.optionChip, selectedUser.role === role && styles.optionChipActive]}
+                                                        onPress={() => setSelectedUser({...selectedUser, role})}
+                                                    >
+                                                        <Text style={[styles.optionChipText, selectedUser.role === role && styles.optionChipTextActive]}>{role}</Text>
+                                                    </TouchableOpacity>
+                                                ))}
+                                            </View>
+                                        </View>
 
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.label}>Organización Asignada</Text>
-                                    <ScrollView style={styles.orgSmallList}>
-                                        <TouchableOpacity 
-                                            style={[styles.orgItem, !selectedUser.org_id && styles.orgItemActive]}
-                                            onPress={() => setSelectedUser({...selectedUser, org_id: null})}
-                                        >
-                                            <Text style={[styles.orgItemText, !selectedUser.org_id && styles.orgItemTextActive]}>Ninguna</Text>
-                                        </TouchableOpacity>
-                                        {allOrganizations.map(org => (
-                                            <TouchableOpacity 
-                                                key={org.id} 
-                                                style={[styles.orgItem, selectedUser.org_id === org.id && styles.orgItemActive]}
-                                                onPress={() => setSelectedUser({...selectedUser, org_id: org.id})}
-                                            >
-                                                <Text style={[styles.orgItemText, selectedUser.org_id === org.id && styles.orgItemTextActive]}>{org.name}</Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </ScrollView>
-                                </View>
+                                        <View style={styles.inputGroup}>
+                                            <Text style={styles.label}>Organización Asignada</Text>
+                                            <ScrollView style={styles.orgSmallList}>
+                                                <TouchableOpacity 
+                                                    style={[styles.orgItem, !selectedUser.org_id && styles.orgItemActive]}
+                                                    onPress={() => setSelectedUser({...selectedUser, org_id: null})}
+                                                >
+                                                    <Text style={[styles.orgItemText, !selectedUser.org_id && styles.orgItemTextActive]}>Ninguna</Text>
+                                                </TouchableOpacity>
+                                                {allOrganizations.map(org => (
+                                                    <TouchableOpacity 
+                                                        key={org.id} 
+                                                        style={[styles.orgItem, selectedUser.org_id === org.id && styles.orgItemActive]}
+                                                        onPress={() => setSelectedUser({...selectedUser, org_id: org.id})}
+                                                    >
+                                                        <Text style={[styles.orgItemText, selectedUser.org_id === org.id && styles.orgItemTextActive]}>{org.name}</Text>
+                                                    </TouchableOpacity>
+                                                ))}
+                                            </ScrollView>
+                                        </View>
+                                    </>
+                                )}
 
                                 <TouchableOpacity 
                                     style={[styles.saveButton, { marginTop: spacing.xl }]} 
                                     onPress={handleUpdateUser}
-                                    disabled={saving}
+                                    disabled={saving || isProtectedSuperAdmin(selectedUser)}
                                 >
-                                    {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Actualizar Usuario</Text>}
+                                    {saving ? <TennisSpinner size={18} color="#fff" /> : <Text style={styles.saveButtonText}>Actualizar Usuario</Text>}
                                 </TouchableOpacity>
                             </ScrollView>
                         )}
@@ -488,6 +833,13 @@ const getStyles = (colors: any) => StyleSheet.create({
         fontWeight: '700',
         color: colors.textSecondary,
     },
+    sectionSubtitle: {
+        fontSize: 13,
+        fontWeight: '800',
+        color: colors.primary[500],
+        marginBottom: spacing.xs,
+        textTransform: 'uppercase',
+    },
     input: {
         backgroundColor: colors.background,
         borderRadius: borderRadius.lg,
@@ -496,6 +848,11 @@ const getStyles = (colors: any) => StyleSheet.create({
         padding: spacing.md,
         color: colors.text,
         fontSize: 16,
+    },
+    textArea: {
+        minHeight: 88,
+        textAlignVertical: 'top',
+        paddingTop: spacing.md,
     },
     cardPreviewContainer: {
         alignItems: 'center',
@@ -511,7 +868,7 @@ const getStyles = (colors: any) => StyleSheet.create({
         alignItems: 'center',
         borderWidth: 2,
         borderColor: colors.border,
-        overflow: 'visible', // To show badge
+        overflow: 'visible',
     },
     logoImage: {
         width: '100%',
@@ -658,8 +1015,40 @@ const getStyles = (colors: any) => StyleSheet.create({
     optionChipTextActive: {
         color: '#fff',
     },
+    protectedNotice: {
+        backgroundColor: colors.background,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: borderRadius.lg,
+        padding: spacing.lg,
+    },
+    protectedNoticeText: {
+        color: colors.textSecondary,
+        fontSize: 14,
+        lineHeight: 20,
+    },
     orgSmallList: {
         maxHeight: 200,
         gap: 5,
-    }
+    },
+    sectionHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: spacing.md,
+    },
+    createOrgBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: colors.success,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: borderRadius.md,
+        gap: 4,
+    },
+    createOrgBtnText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '800',
+    },
 });

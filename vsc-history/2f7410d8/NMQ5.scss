@@ -1,0 +1,40 @@
+// @import 'reset';
+// @import 'colores';
+@use 'reset';
+@use 'colores';
+
+
+
+// Variables
+
+$color-primario: #55a;
+$color-secundario: rgb(220, 220, 220);
+$flex: block;
+
+
+
+h1 {
+    color: $color-secundario;
+    background-color: $color-primario;
+}
+
+a {
+    background-color: $color-primario;
+    color: $color-secundario;
+    text-decoration: none;
+    padding: 1rem;
+    #{$flex}: block;
+}
+
+div a:nth-child(2) {
+    background-color: colores.$myBlue;
+}
+
+div {
+    background-color: antiquewhite;
+    width: 100%;
+    height: 50px;
+    ul {
+        background-color: bisque;
+    }
+}

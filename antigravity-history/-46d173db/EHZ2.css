@@ -1,0 +1,187 @@
+/* ========== REGISTER PAGE ========== */
+
+.register-page {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* Left Section */
+.register-page__left {
+    flex: 1;
+    background: linear-gradient(135deg, var(--color-surface-dark) 0%, #0A0A0A 100%);
+    padding: var(--spacing-3xl);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    color: var(--color-text-primary);
+    position: relative;
+    overflow: hidden;
+}
+
+.register-page__left::before {
+    content: '';
+    position: absolute;
+    bottom: -30%;
+    right: -30%;
+    width: 150%;
+    height: 150%;
+    background: radial-gradient(circle, rgba(204, 255, 0, 0.1) 0%, transparent 50%);
+}
+
+.register-page__brand {
+    position: relative;
+    z-index: 1;
+    margin-bottom: var(--spacing-3xl);
+}
+
+.register-page__brand-icon {
+    color: var(--color-primary);
+    margin-bottom: var(--spacing-md);
+}
+
+.register-page__brand-name {
+    font-size: var(--font-size-4xl);
+    font-weight: var(--font-bold);
+    margin-bottom: var(--spacing-sm);
+    background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.register-page__brand-tagline {
+    font-size: var(--font-size-lg);
+    color: var(--color-text-secondary);
+    max-width: 350px;
+}
+
+.register-page__benefits {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.register-page__benefit {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    font-size: var(--font-size-base);
+    color: var(--color-text-secondary);
+}
+
+.register-page__benefit-check {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--color-primary);
+    color: var(--color-surface-dark);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-bold);
+}
+
+/* Right Section */
+.register-page__right {
+    flex: 1;
+    background-color: var(--color-background);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-xl);
+    overflow-y: auto;
+}
+
+.register-page__form-container {
+    width: 100%;
+    max-width: 400px;
+}
+
+.register-page__form-header {
+    margin-bottom: var(--spacing-xl);
+}
+
+.register-page__form-header h2 {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-bold);
+    color: var(--color-text-dark);
+    margin-bottom: var(--spacing-xs);
+}
+
+.register-page__form-header p {
+    color: var(--color-text-muted);
+}
+
+.register-page__form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.register-page__terms {
+    font-size: var(--font-size-sm);
+}
+
+.register-page__terms label {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+    color: var(--color-text-body);
+    cursor: pointer;
+}
+
+.register-page__terms input {
+    width: 16px;
+    height: 16px;
+    margin-top: 2px;
+    accent-color: var(--color-primary);
+    flex-shrink: 0;
+}
+
+.register-page__terms a {
+    color: var(--color-primary-dark);
+    font-weight: var(--font-medium);
+}
+
+.register-page__terms a:hover {
+    text-decoration: underline;
+}
+
+.register-page__login {
+    text-align: center;
+    margin-top: var(--spacing-xl);
+    color: var(--color-text-muted);
+}
+
+.register-page__login a {
+    color: var(--color-primary-dark);
+    font-weight: var(--font-semibold);
+}
+
+.register-page__login a:hover {
+    text-decoration: underline;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .register-page__left {
+        display: none;
+    }
+
+    .register-page__right {
+        flex: 1;
+    }
+}
+
+@media (max-width: 480px) {
+    .register-page__right {
+        padding: var(--spacing-md);
+    }
+
+    .register-page__form-header h2 {
+        font-size: var(--font-size-xl);
+    }
+}

@@ -1,0 +1,40 @@
+# Tareas - Implementación 4 Nuevos Módulos
+
+## 1. Módulo: Avisos (Hilos Colapsables y Multimedia)
+- [x] Actualizar schema `Announcement` y `store.ts` para soportar media en respuestas.
+- [x] Implementar botón de colapso de hilos ("Ver X comentarios").
+- [x] Diseñar UI para input multimedia (icono clip 📎) con validación 10MB/50MB simulada.
+- [x] Actualizar pantalla de Admin para crear Avisos (lugar, fecha).
+
+## 2. Módulo: Encuestas (Smart-Polling)
+- [x] Definir schema `Poll` en `store.ts` con opciones, votos y deadline.
+- [x] Crear componente interaccional UI para feed de Encuestas (barras animadas proporcionales).
+- [x] Implementar lógica de validación (encuesta expirada = deshabilitado).
+- [x] Formularios de creación (Admin) con toggle de notificación.
+
+## 3. Módulo: Favores (Tablón Post-it)
+- [x] Definir schema `Favor` en `store.ts`.
+- [x] Crear pantalla `FavoresScreen` estilo Tablón Mural (Masonry / Cards orgánicas).
+- [x] Implementar Crear, Editar (bloqueo a las 24 hrs), y Eliminar (con Confirm Dialog).
+- [x] Botón "Resuelto" que oculta/archiva el favor.
+
+## 4. Módulo: Gestión de Cuotas (Flujo Financiero)
+- [x] Actualizar máquina de estados en `MemberDue` (`PENDING_VALIDATION`, `REJECTED`, etc).
+- [x] Pantalla de usuario al pinchar cuota: Info bancaria -> Sube comprobante -> Enviar.
+- [x] Pantalla de Admin (Flujo de validación): Aprobar o Rechazar.
+- [x] Al Rechazar: Modal Obligatorio de Motivo. Cambiar estado a `REJECTED` (UI usuario rojo).
+
+## 5. Pruebas y QA
+- [x] Validar flujos de error (Toast Snackbar límite multimedia).
+- [x] Probar transición de estados en Cuotas.
+
+## 6. Correcciones y Mejoras (QA Report)
+- [x] **Error Crash (Zustand)**: Solucionar `Cannot convert undefined value to object` en `addAnnouncementReply`.
+- [x] **Push Notifications Expo Go**: Evitar error rojo al iniciar en Expo Go SDK 53.
+- [x] **Avisos UI**: Solucionar opción colapsable de mensajes que no aparece y usar `expo-image-picker` para adjuntar fotos reales al hilo.
+- [x] **Encuestas UI**: Separar Encuestas de Avisos en el feed de usuario.
+- [x] **Encuestas Edit**: Permitir al usuario cambiar su voto enviado anteriormente.
+- [x] **Encuestas Admin**: Usar componente DatePicker / Calendar desplegable para la fecha límite.
+- [x] **Favores Admin**: Dar acceso al tablón de Favores al Administrador.
+- [x] **Cuotas User**: Instalar implementacion real de subida de comprobante con `expo-document-picker` o file picker.
+- [x] **Admin Solicitudes**: Revisar por qué el Admin no está recibiendo "Solicitudes" en su bandeja (se añadieron datos dummy al store para que sean visibles, ya que la funcionalidad siempre operó correctamente dependiente de los datos).

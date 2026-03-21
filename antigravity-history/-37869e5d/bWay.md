@@ -1,0 +1,5 @@
+- [ ] Investigar por qué no se muestran todas las reservas en `AdminCalendarView` <!-- id: 10 -->
+- [ ] Investigar por qué no se muestra el nombre del usuario en las celdas ocupadas <!-- id: 11 -->
+- [ ] Revisar `src/app/api/admin/bookings/route.ts` para verificar el join con usuarios <!-- id: 12 -->
+- [ ] Corregir la visualización de nombres en `AdminCalendarView.tsx` <!-- id: 13 -->
+- [ ] Verificar que las reservas aparezcan correctamente en la grilla <!-- id: 14 -->

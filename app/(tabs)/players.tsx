@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
@@ -8,6 +8,7 @@ import { TOURNAMENT_CATEGORIES } from '@/constants/tournamentOptions';
 import { getTournamentPlacements } from '@/services/ranking';
 import * as SecureStore from 'expo-secure-store';
 import { useFocusEffect } from 'expo-router';
+import { TennisSpinner } from '@/components/TennisSpinner';
 
 type RankingRow = {
     playerId: string;
@@ -16,6 +17,11 @@ type RankingRow = {
     rank: number;
     previousRank: number | null;
 };
+
+const decodeEscapedUnicode = (value: unknown) =>
+    String(value ?? '').replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) =>
+        String.fromCharCode(parseInt(hex, 16))
+    );
 
 export default function PlayersScreen() {
     const insets = useSafeAreaInsets();
@@ -39,17 +45,25 @@ export default function PlayersScreen() {
         }, [activeCategory, modality])
     );
 
-    const getMockRankingRows = (): RankingRow[] =>
-        Array.from({ length: 20 }, (_, index) => ({
-            playerId: `mock-${index + 1}`,
-            name: `Jugador Escalafón ${index + 1}`,
-            points: Math.max(8, 220 - (index * 9)),
-            rank: index + 1,
-            previousRank: index === 0 ? 2 : index + 2,
-        }));
+    const resolveFallbackOrganizationId = async (currentUserId: string) => {
+        const { data: recentRegistration } = await supabase
+            .from('registrations')
+            .select('tournaments:tournaments!inner(organization_id)')
+            .eq('player_id', currentUserId)
+            .order('registered_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        const tournamentRef = (recentRegistration as any)?.tournaments;
+        if (Array.isArray(tournamentRef)) {
+            return tournamentRef[0]?.organization_id || null;
+        }
+        return tournamentRef?.organization_id || null;
+    };
 
     const loadRanking = async (category: string) => {
         setLoading(true);
+        setRankingRows([]);
         try {
             const { data: { session } } = await supabase.auth.getSession();
             if (!session?.user?.id) {
@@ -58,6 +72,10 @@ export default function PlayersScreen() {
             }
 
             const storedOrgId = await SecureStore.getItemAsync('selected_org_id');
+            const storedOrgName = decodeEscapedUnicode((await SecureStore.getItemAsync('selected_org_name')) || '');
+            if (storedOrgName) {
+                setOrganizationName(storedOrgName);
+            }
 
             const { data: profile } = await supabase
                 .from('profiles')
@@ -65,27 +83,29 @@ export default function PlayersScreen() {
                 .eq('id', session.user.id)
                 .single();
 
-            const orgId = storedOrgId || profile?.org_id || null;
+            const fallbackOrgId = await resolveFallbackOrganizationId(session.user.id);
+            const orgId = storedOrgId || profile?.org_id || fallbackOrgId || null;
             setOrganizationId(orgId);
             if (!orgId) {
+                setOrganizationName(storedOrgName || '');
                 setRankingRows([]);
                 return;
             }
 
             const { data: organization } = await supabase
-                .from('organizations')
+                .from('organizations_public')
                 .select('name')
                 .eq('id', orgId)
                 .single();
-            const organizationNameValue = organization?.name || '';
-            setOrganizationName(organizationNameValue);
+            const organizationNameValue = decodeEscapedUnicode(organization?.name || '');
+            setOrganizationName(organizationNameValue || storedOrgName || '');
             await SecureStore.setItemAsync('selected_org_id', orgId);
             await SecureStore.setItemAsync('selected_org_name', organizationNameValue);
 
             if (organizationNameValue === 'Chile Open' && category === 'Escalafón') {
                 const { count } = await supabase
                     .from('tournaments')
-                    .select('*', { count: 'exact', head: true })
+                    .select('id', { count: 'exact', head: true })
                     .eq('organization_id', orgId)
                     .eq('level', category)
                     .in('status', ['completed', 'finalized', 'finished']);
@@ -102,13 +122,15 @@ export default function PlayersScreen() {
                 .select('id, name, description, format, status, level, end_date, start_date, modality')
                 .eq('organization_id', orgId)
                 .eq('level', category)
-                .eq('modality', modality)
                 .in('status', ['completed', 'finalized', 'finished'])
                 .order('end_date', { ascending: false });
 
             if (tournamentsError) throw tournamentsError;
 
-            const completedTournaments = tournaments || [];
+            const completedTournaments = (tournaments || []).filter((tournament: any) => {
+                if (modality === 'dobles') return tournament.modality === 'dobles';
+                return !tournament.modality || tournament.modality === 'singles';
+            });
             if (completedTournaments.length === 0) {
                 setRankingRows([]);
                 return;
@@ -117,7 +139,7 @@ export default function PlayersScreen() {
             const tournamentIds = completedTournaments.map(tournament => tournament.id);
             const { data: matches, error: matchesError } = await supabase
                 .from('matches')
-                .select('*')
+                .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, score, status')
                 .in('tournament_id', tournamentIds);
 
             if (matchesError) throw matchesError;
@@ -166,7 +188,7 @@ export default function PlayersScreen() {
             }
 
             const { data: profiles, error: profilesError } = await supabase
-                .from('profiles')
+                .from('public_profiles')
                 .select('id, name')
                 .in('id', playerIds);
 
@@ -216,7 +238,6 @@ export default function PlayersScreen() {
             setRankingRows(nextRows);
             setPage(0);
         } catch (error) {
-            console.error('Error loading ranking:', error);
             setRankingRows([]);
         } finally {
             setLoading(false);
@@ -272,7 +293,9 @@ export default function PlayersScreen() {
             <View style={[styles.header, { paddingTop: Math.max(insets.top, spacing.md) }]}>
                 <Text style={styles.title}>Ranking</Text>
                 <Text style={styles.subtitle}>
-                    {organizationId ? `${organizationName || 'Organización actual'} · ${activeCategory} · ${modality === 'dobles' ? 'Dobles' : 'Singles'}` : 'Selecciona tu organización para ver el ranking'}
+                    {organizationId
+                        ? `${organizationName ? `${organizationName} · ` : ''}${activeCategory} · ${modality === 'dobles' ? 'Dobles' : 'Singles'}`
+                        : 'Selecciona tu organización para ver el ranking'}
                 </Text>
             </View>
 
@@ -309,7 +332,7 @@ export default function PlayersScreen() {
                 </ScrollView>
 
                 {loading ? (
-                    <ActivityIndicator size="large" color={colors.primary[500]} style={{ marginTop: spacing.xl }} />
+                    <TennisSpinner size={34} style={{ marginTop: spacing.xl }} />
                 ) : rankingRows.length === 0 ? (
                     <View style={styles.emptyState}>
                         <Ionicons name="podium-outline" size={64} color={colors.textTertiary} />
@@ -642,5 +665,7 @@ const getStyles = (colors: any) => StyleSheet.create({
         fontWeight: '700' 
     },
 });
+
+
 
 

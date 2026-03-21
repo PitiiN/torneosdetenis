@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+﻿import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { darkTheme, lightTheme } from './colors';
 import { typography } from './typography';
@@ -30,8 +30,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             if (savedTheme === 'light' || savedTheme === 'dark') {
                 setTheme(savedTheme);
             }
-        } catch (e) {
-            console.error('Failed to load theme', e);
+        } catch {
         }
     };
 
@@ -40,8 +39,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setTheme(nextTheme);
         try {
             await SecureStore.setItemAsync(THEME_STORAGE_KEY, nextTheme);
-        } catch (e) {
-            console.error('Failed to save theme', e);
+        } catch {
         }
     };
 
@@ -61,6 +59,8 @@ export const useTheme = () => {
     }
     return context;
 };
+
+export const useOptionalTheme = () => useContext(ThemeContext);
 
 // STATIC EXPORTS for compatibility
 // Warning: These will NOT react to theme changes if used directly in StyleSheet.create

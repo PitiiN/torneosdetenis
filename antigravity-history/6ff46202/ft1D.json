@@ -1,0 +1,14 @@
+{
+    "title": "Next.js Authentication and Middleware Patterns",
+    "summary": "Implementation details for Supabase authentication, middleware route protection, and navigational flow in ArriendoCanchas.",
+    "references": [
+        {
+            "type": "file",
+            "value": "src/middleware.ts"
+        },
+        {
+            "type": "conversation_id",
+            "value": "dc1fdd0e-9303-414b-86c0-9c2b13e3ce24"
+        }
+    ]
+}

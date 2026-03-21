@@ -1,0 +1,18 @@
+{
+    "title": "Dokploy and Next.js Deployment Troubleshooting",
+    "summary": "Solutions for common issues when deploying Next.js applications to Dokploy via Docker, including missing static directories and build-time environment variable configuration.",
+    "references": [
+        {
+            "type": "conversation_id",
+            "value": "dc1fdd0e-9303-414b-86c0-9c2b13e3ce24"
+        },
+        {
+            "type": "file",
+            "value": "Dockerfile"
+        },
+        {
+            "type": "file",
+            "value": ".env.production"
+        }
+    ]
+}

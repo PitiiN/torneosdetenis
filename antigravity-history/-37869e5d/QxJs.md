@@ -1,0 +1,7 @@
+- [x] Investigar y arreglar búsqueda de usuarios en `BookingEditModal` y `PatternBookingModal` (Fixed syntax)
+- [/] Investigar por qué la reserva de 09:30 no aparece (Added Timezone Fixes)
+- [/] Arreglar error "No se pudieron cargar los detalles" al clickear reserva (Range match logic pending)
+- [x] Corregir horarios de fin de semana en "Reserva Periódica" (`PatternBookingModal`)
+- [x] Agregar estado "Bloqueada" a la leyenda de la vista de Usuario
+- [x] Fix Page Hang (Added .catch to fetchFields)
+- [x] Fix Booking Creation Timezone (recurring/route.ts and AvailabilityPage)

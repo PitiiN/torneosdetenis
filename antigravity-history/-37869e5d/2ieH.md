@@ -1,0 +1,5 @@
+- [x] [REGRESSION] Fix: Booking/Block Visibility (Timezone cutoff in `availability/week`)
+- [x] [REGRESSION] Fix: Admin Editing (Re-implement range match for multi-hour slots)
+- [x] [REGRESSION] Fix: Database Error in Admin Bookings (Manual profile join)
+- [x] [REGRESSION] Fix: User Search (Fixed 500 error by removing non-existent `email` column)
+- [x] [REGRESSION] Fix: Financial Panel Active Users (Enable list for 'All Fields')

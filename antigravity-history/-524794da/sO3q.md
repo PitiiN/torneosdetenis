@@ -1,0 +1,134 @@
+# Task: Admin Dashboard Features
+
+## Planning
+- [x] Explore existing admin structure
+- [x] Review database schema
+- [x] Write implementation plan
+- [x] Get user approval
+
+## Implementation
+- [x] Admin Availability Page (with multi-day selection)
+- [x] BookingEditModal component
+- [x] Financial Dashboard Page
+- [x] BulkPaymentModal component
+- [x] API: PATCH booking endpoint
+- [x] API: Bulk payment endpoint
+- [x] API: Recurring booking endpoint
+- [x] API: Financial stats endpoint
+- [x] API: Debtors list endpoint
+- [x] API: Users search endpoint
+- [x] Admin Availability Page (with multi-day selection)
+- [x] BookingEditModal component
+- [x] Financial Dashboard Page
+- [x] BulkPaymentModal component
+- [x] Update navigation menu
+- [x] Checkbox UI component
+- [x] Admin Panel Refinements (Month selector, removing unused components)
+- [x] Admin Panel Selector Styling (Grouping Future/History)
+- [x] Implement PatternBookingModal (Rule-based recurring bookings)
+- [x] Update Admin Availability Page with new modal
+- [x] Refine UI: Remove Seleccion Multiple & Darken Pattern Modal
+- [x] Fix Dropdown Transparency Issues (All Selectors)
+- [x] Improve Recurring Booking Conflict Handling (Partial Success + 0 Created Feedback)
+- [x] Fix Invisible Error Alert in PatternBookingModal
+- [x] Fix Schema Relationship Error (Simplified API Query)
+- [x] Enforce Field-Specific Time Slots (Huelén :30, others :00)
+# Task List
+
+## Active Task
+- [/] Standardizing Booking Status Workflow
+    - [ ] **PASO 1:** Auditoría de estados (DB vs Código) -> `STATUS_AUDIT.md`
+    - [ ] **PASO 2:** Eliminar 'RECHAZADA' y estandarizar DB
+    - [x] **PASO 3: Implementar Status Mapping**
+    - [x] Crear función shared/utils para mapear estatus de Admin -> User.
+    - [x] Reglas: `Pendiente Pago` -> `Hold` (User), `Pagada` -> `Pagada`, `Bloqueada` (Admin) -> `Bloqueada` (Availability) / `Reserved` (User list if assigned).
+    - [x] Actualizar vista de usuario (`/bookings`, `/dashboard`) para usar este mapeo.
+
+- [x] **PASO 4: Implementar Expiración HOLD**
+    - [x] Asegurar que reservas `status='PENDIENTE_PAGO'` > 10 mins liberen disponibilidad.
+    - [x] Validar lógica en endpoint de disponibilidad.
+
+- [x] **PASO 5: Revisar Permisos y Transiciones**
+    - [x] Asegurar que el usuario pueda pasar de `Hold` -> `Pagada` (vía flow pago) o `Cancelada`.
+    - [x] Verificar RLS final.
+
+- [x] **PASO 6: Testing**
+    - [x] Crear `TEST_STATUS_FLOW.md` con pasos manuales.
+    - [x] Ejecutar prueba manual de los 4 escenarios clave (Pendiente, Pagada, Bloqueada, Cancelada).
+
+- [x] **Financial Panel Enhancements**
+    - [x] Update API (`/api/admin/financial`) to support `month` and `fieldId` filters.
+    - [x] Update Frontend (`/admin/financial`) to add Month and Field selectors.
+    - [x] Verify filtering logic.
+
+- [x] **Debtors by Field & Detail Modal**
+    - [x] Fix: Pass `fieldId` correctly to BulkPaymentModal to show history.
+    - [x] Create/Update API to handle price updates.
+    - [x] **Fix Price Edit**: Added missing functions and `stopPropagation` to prevent row selection.
+    - [x] **Status Revert**: Add "Marcar como Pendiente" capability.
+        - [x] Create `api/admin/bookings/bulk-status`.
+        - [x] Add button to modal to revert status of selected items.
+    - [x] Update `BulkPaymentModal.tsx` to fetch and show full history.
+    - [x] Verify debtor filtering and modal details.
+    
+- [x] **Omni-channel Validation**: Ensure cancelled bookings in Financial Panel reflect immediately in Availability View (filtered out 'CANCELADA').
+
+- [x] **Enhanced Financial Panel**
+    - [x] API: Create `field-users` endpoint to fetch ALL users with bookings (not just debtors).
+    - [x] UI: Update Financial Panel list to show "Gestión de Usuarios".
+    - [x] Modal: Allow selecting and cancelling ANY active booking (Paid or Unpaid).
+
+## Completed Tasks
+- [x] **User Bookings UI Refinement**
+    - [x] Remove "Hold (Pendiente)" button from user view.
+    - [x] Resize "Pagar" and "Cancelar" buttons to fill space better.
+- [x] Clean Up Conflicting "Ghost" Bookings
+- [ ] **Financial Panel Refinements**
+    - [x] Date Consistency: `field-users` API updated with `month` filter and anonymous support.
+    - [x] Modal Enhancements: `update-price` endpoint created, `BulkPaymentModal` updated with price edit UI and date filtering.
+    - [ ] Verification: Fix syntax error and verify functionality.
+- [x] Fix Availability Grid Visibility (Removed client-side date filtering)
+- [x] Fix Admin Visibility Override (Ignore public "10-min" rule for Admin)
+- [x] Verify Huelén 7 Visibility (Found 18:00 bookings outside 18:30 schedule)
+- [x] Clean Up Malformed Huelén 7 Bookings
+- [x] Fix Public Visibility for Pending Bookings (Show as "Arrendada" & Persist Admin Bookings)
+- [x] Fix Individual Booking Visibility (Enforce :30 slots in Edit Modal)
+- [x] Fix Admin Grid Labels (Show User Name or 'Admin' instead of 'Editar')
+- [x] Disable Weekend Selection for Tabancura (Strict Validation)
+- [x] Fix Tabancura Time Slots (Restrict to 19:00, 20:00, 21:00)
+- [x] Style 'Blocked' Status in Admin Grid (Purple)
+- [x] Fix Redirect Loop (Allow Authenticated Users to Access Login Page)
+- [x] Fix User 'Pending' List (Show Admin-created bookings indefinitely)
+- [x] Fix Public Availability 'Blocked' Styling (Show Purple for blocked slots) - FIXED CSS CLASS
+- [x] Fix Admin Login Redirect (Go to /admin instead of /dashboard)
+- [x] Fix Admin Login Redirect (Go to /admin instead of /dashboard)
+- [x] Test admin availability view
+- [x] Test booking edit functionality
+- [x] Test bulk payment operation
+- [x] Test financial reports
+- [x] Admin Panel Refinements Verification
+- [x] **UI/UX Polish**
+    - [x] **Fluid Transitions**: optimize Financial Panel loading.
+        - [x] Separate initial load from field-change load.
+        - [x] Use opacity/overlay instead of full spinner for field changes.
+- [x] **Booking Success Modal Refresh**
+    - [x] Remove labels and center bank details in a single column (Availability & Bookings pages).
+- [ ] **Fix Admin Tabs**
+    - [x] **Verification Tab**: Verify if user means Availability page or Bookings page. Ensure weekly view and edit capabilities.
+    - [/] **Blocks Tab**: Debug why blocks are not displaying. Check API `api/admin/blocks`.
+        - [x] Fix table name in `api/admin/blocks/route.ts`.
+        - [x] Update `api/admin/blocks` to include `bookings(status=BLOQUEADA)`.
+        - [x] Update `api/admin/blocks/[id]` to delete either Blocks or Bookings.
+        - [x] Remove "Verification" from Sidebar.
+        - [x] **UI & Recurrence**: Fix dropdown styles and add recurring blocks option.
+            - [x] Use ShadCN Select in `AdminBlocksPage`.
+            - [x] Implement Date Picker with Range support (ShadCN Calendar).
+            - [x] Implement recurring logic in frontend.
+            - [x] Fix API caching with `force-dynamic`.
+            - [x] Fix Calendar Interaction in PatternBookingModal (Reverted to Native Input as requested).
+            - [x] Fix Core Calendar Component Layout (Added RDP v9 compatibility keys, enforced min-width, and fixed nav button cursors).
+            - [x] Group Blocks by Reason (Motivo) in Admin List.
+                - [x] Implement grouping logic (by Reason).
+                - [x] Create 'BlockGroupRow' component (Integrated in Table).
+                - [x] Create 'BlockGroupDetailModal' (Dialog).
+

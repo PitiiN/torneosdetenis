@@ -1,0 +1,12 @@
+/* html body {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+} */
+
+.heroBanner {
+    background-image: url(./pexels-pixabay-163036.jpg);
+    background-size: cover;
+    
+    
+}

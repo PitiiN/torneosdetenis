@@ -1,0 +1,14 @@
+{
+    "nombre": "Javier",
+    "profesion": "Programador",
+    "edad": 32,
+    "conSueños": false,
+    "lenguajes": ["JavaScript", "Java", "Python"],
+    "nulo": null,
+    "rangoProfesional": {
+        "aniosDeExperiencia": 0,
+        "nivel": "senior"
+    }
+    
+}
+

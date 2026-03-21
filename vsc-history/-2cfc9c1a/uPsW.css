@@ -1,0 +1,512 @@
+@import url("https://fonts.googleapis.com/css2?family=Shadows+Into+Light&display=swap");
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: helvetica;
+}
+
+/* NAVBAR */
+
+header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  display: flex;
+  justify-content: space-around;
+  transition: 0.7s;
+  padding: 30px 20px;
+  z-index: 10;
+}
+
+/* CLASE GENERADA POR TOGGLE */
+.abajo {
+  background-color: black;
+  padding: 15px 20px;
+}
+
+.abajo .logo,
+.abajo ul li a {
+  color: white;
+}
+
+.logo {
+  position: relative;
+  color: white;
+  font-weight: bold;
+  font-size: 2em;
+  letter-spacing: 2px;
+  transition: 1.5s;
+  text-decoration: none;
+  font-family: "Shadows Into Light", cursive;
+}
+
+nav {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+header ul {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+header ul li {
+  list-style: none;
+}
+
+header ul li a {
+  position: relative;
+  font-family: helvetica;
+  margin: 0 15px;
+  text-decoration: none;
+  color: white;
+  letter-spacing: 2px;
+  font-weight: 600;
+  transition: 0, 7s;
+}
+
+/* COMIENZO SLIDER */
+
+.slider {
+  position: relative;
+  width: 100%;
+  margin: auto;
+  overflow: hidden;
+  max-height: 100vh;
+}
+
+.slider ul {
+  display: flex;
+  width: 400%;
+  animation: cambio 15s infinite alternate ease;
+}
+
+.slider li {
+  width: 100%;
+  list-style: none;
+}
+
+.slider img {
+  width: 100%;
+  height: 100%;
+}
+/* PONER LETRAS COLORES DE CHILE */
+.slider__texto1 {
+  position: absolute;
+  top: 50%;
+  left: 35%;
+  color: white;
+  font-size: 50px;
+  font-family: "Shadows Into Light", cursive;
+}
+
+@keyframes cambio {
+  0% {
+    margin-left: 0;
+  }
+  25% {
+    margin-left: -100%;
+  }
+  50% {
+    margin-left: -200%;
+  }
+  100% {
+    margin-left: -300%;
+  }
+}
+
+/* NOSOTROS */
+
+.nosotros {
+  background-color: white;
+  padding: 20px;
+  height: 50vh;
+  /* max-height: 50vh; */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.nosotros__contenido {
+  position: relative;
+  text-align: center;
+  width: 100%;
+  border: 1px solid black;
+  border-radius: 4px;
+}
+
+.nosotros__contenido img {
+  width: 50%;
+  height: 50%;
+}
+
+/* .nosotros__contenido__algo {
+  max-width: 800px;
+  margin: 0 auto;
+} */
+
+.nosotros__contenido h3 {
+  color: #161569;
+  font-family: "Shadows Into Light", cursive;
+  font-size: 40px;
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+
+.nosotros__contenido p {
+  font-size: 18px;
+  font-weight: 300;
+  color: #161569;
+  margin-bottom: 20px;
+  letter-spacing: 1px;
+}
+
+/* TOURS */
+
+.containerTarjetas {
+  width: 100%;
+  display: flex;
+  max-width: 1100px;
+  margin: auto;
+}
+
+#fondoTarjetas, #containerFormulario {
+  width: 100%;
+  background-image: linear-gradient(
+    135deg,
+    #00b7d4,
+    #505488,
+    #236714 /* #2f3f80, */ /* #161569,
+    #5a4894,
+     #a950a1,
+      #ff7cae */
+  );
+  background-size: 500%;
+  animation: fondoAnimado 10s infinite;
+}
+
+@keyframes fondoAnimado {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.tarjeta {
+  width: 100%;
+  margin: 40px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: white;
+  box-shadow: 0px 1px 10px rgba(0, 0, 0, 0.2);
+  cursor: default;
+  transition: all 400ms ease;
+}
+
+.tarjeta:hover {
+  box-shadow: 5px 5px 20px rgba(0, 0, 0, 0.4);
+  transform: translateY(-3%);
+}
+
+.tarjeta img {
+  width: 100%;
+  height: 210px;
+}
+
+.tarjeta__contenido {
+  padding: 15px;
+  text-align: center;
+}
+
+.tarjeta__contenido p {
+  line-height: 1.5;
+  font-weight: 400;
+  color: #161569;
+}
+
+.tarjeta__contenido h3 {
+  color: #161569;
+  font-weight: 600;
+  margin-bottom: 15px;
+}
+
+.tarjeta__contenido a {
+  text-decoration: none;
+  display: inline-block;
+  padding: 10px;
+  margin-top: 10px;
+  color: black;
+  background: rgb(171, 171, 220);
+  font-weight: 400;
+  border: 1px solid black;
+  border-radius: 4px;
+  transition: all 400ms ease;
+}
+
+.tarjeta__contenido a:hover {
+  background: #161569;
+  color: white;
+}
+
+/* CLIMA */
+.container__busqueda {
+  margin: 20px 20px;
+}
+
+.container__busqueda h1 {
+  color: #161569;
+  font-family: "Shadows Into Light", cursive;
+  text-align: center;
+  padding-bottom: 10px;
+}
+.busqueda {
+  padding: 10px 20px;
+  background-color: #161569;
+  max-width: 480px;
+  margin: 0px auto;
+  border-radius: 3px;
+}
+
+.busqueda__ciudad {
+  width: 100%;
+  background-color: #161569;
+  color: white;
+  border: none;
+  font-size: 1rem;
+}
+
+.busqueda__ciudad:focus {
+  outline: none;
+}
+
+.clima {
+  margin: 20px 20px;
+  width: 50%;
+  background: rgb(216, 146, 16);
+  color: white;
+  padding: 20px;
+  text-align: center;
+  border-radius: 3px;
+  display: none;
+}
+
+.clima__ciudad {
+  font-size: 2rem;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+}
+
+.clima__fecha {
+  font-size: 0.9rem;
+  margin-bottom: 2rem;
+}
+
+.clima__temperatura {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2rem;
+}
+
+.clima__temperatura__valor {
+  font-size: 2.2rem;
+  font-weight: bold;
+}
+
+.clima__temperatura img {
+  width: 50px;
+  margin-right: 10px;
+}
+
+.clima__clima {
+  font-size: 1.8rem;
+  margin-bottom: 1rem;
+}
+
+/* FORMULARIO */
+
+.formulario {
+  width: 400px;
+  background: #24303c;
+  padding: 30px;
+  margin: auto;
+  margin-top: 100px;
+  border-radius: 4px;
+  font-family: "calibri";
+  color: white;
+  box-shadow: 7px 13px 37px #000;
+}
+
+.formulario h4 {
+  font-size: 22px;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.formulario p {
+  height: 40px;
+  text-align: center;
+  font-size: 18px;
+  line-height: 20px;
+}
+
+.formulario a {
+  color: white;
+  text-decoration: none;
+}
+
+.formulario a:hover {
+  color: white;
+  text-decoration: underline;
+}
+
+.formulario__boton {
+  width: 100%;
+  background: #1f53c5;
+  border: none;
+  padding: 12px;
+  color: white;
+  margin: 16px 0;
+  font-size: 16px;
+}
+
+.formulario__control {
+  width: 100%;
+  background: #24303c;
+  padding: 10px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  border: 1px solid #1f53c5;
+  font-family: "calibri";
+  font-size: 18px;
+  color: white;
+}
+
+.formulario__contacto{
+  width: 100%;
+  max-width: 1100px;
+  margin: auto;
+  display: inline;
+  /* display: grid; */
+  /* grid-template-columns: repeat(4, 1fr); */
+  /* grid-gap: 50px; */
+  margin-top: 90px;
+}
+
+/* MAPA */
+
+/* .mapa {
+  height: 100vh;
+  width: 100%;
+} */
+
+.mapa__ubicacion {
+  position: relative;
+  margin: auto;
+  text-align: center;
+}
+
+/* CONTACTO */
+/* USAR DISPLAY FLEX PARA ALINEAR EN LA MISMA LINEA
+JUSTIFY CONTENT Y ALIGNT ITEMS CENTER */
+
+/* .mapa__ubicacion {
+  display: flex;
+} */
+
+.contacto__formulario h5 {
+  margin-bottom: 15px;
+  font-size: 35px;
+}
+
+/* .contacto__formulario p {
+  font-size: 17px;
+  line-height: 1.6;
+  margin-bottom: 30px;
+} */
+
+.contacto__formulario a {
+  font-size: 17px;
+  display: inline-block;
+  text-decoration: none;
+  width: 100%;
+  margin-bottom: 15px;
+  color: black;
+  font-weight: 700;
+}
+
+.fa-phone{
+  color: #161569;
+  margin-right: 10px;
+  display: flex;
+  font-size: 15px;
+}
+
+.fa-envelope{
+  color: #161569;
+  margin-right: 10px;
+  display: flex;
+  font-size: 15px;
+}
+
+.fa-city{
+  color: #161569;
+  margin-right: 10px;
+  display: flex;
+  font-size: 15px;
+}
+
+.contacto__formulario__form {
+  width: 100%;
+  color: black;
+  padding: 15px 10px;
+  font-size: 15px;
+  border: 1px solid #dbdbdb;
+  margin-bottom: 20px;
+  border-radius: 3px;
+  outline: 0px;
+}
+
+.contacto__formulario__form textarea {
+  max-width: 530px;
+  min-width: 530px;
+  min-height: 140px;
+  max-height: 150px;
+}
+
+.contacto__formulario__boton {
+  padding: 15px;
+  margin-bottom: 20px;
+  font-size: 16px;
+  border: none;
+  outline: 0px;
+  background: orange;
+  color: white;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 300ms ease;
+}
+
+.contacto__formulario__boton:hover {
+  background: green;
+}
+
+/* footer {
+  position: fixed;
+  bottom: 0;
+  padding: 20px;
+  border-top: 1px solid grey;
+  width: 100%;
+  text-align: center;
+}  */

@@ -1,0 +1,6 @@
+- [x] Actualizar `recurring/route.ts` para aceptar `verificationNote` <!-- id: 15 -->
+- [x] Actualizar `BookingEditModal.tsx` para permitir ingresar nombre de invitado <!-- id: 16 -->
+- [x] Actualizar `AdminCalendarView.tsx` para mostrar `verification_note` y corregir timezones <!-- id: 13 -->
+- [x] Localizar el componente de calendario del usuario (posiblemente `BookingCalendar.tsx`) <!-- id: 17 -->
+- [x] Investigar y corregir la visualización de reservas en la vista de usuario <!-- id: 18 -->
+- [x] Verificar que las reservas aparezcan correctamente en ambas vistas <!-- id: 14 -->

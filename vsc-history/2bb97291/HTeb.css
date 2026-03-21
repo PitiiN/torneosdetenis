@@ -1,0 +1,9 @@
+body {
+  background-image: linear-gradient(./pexels-sami-aksu-10439116.jpg) ;
+  background-size: 50rem;
+}
+
+h1 {
+    text-align: center;
+    color: white;
+}

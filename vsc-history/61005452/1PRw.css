@@ -1,0 +1,19 @@
+h1:hover {
+    /* background-color: red;
+  }
+
+  .master:hover {
+    background-color: red;
+  }
+
+  p:first-child {
+    background-color: red;
+  }
+
+  input:focus {
+    background-color: red;
+  } */
+
+  ::first-line {
+    background-color: yellow;
+  }

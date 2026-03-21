@@ -1,0 +1,109 @@
+/* ========== INPUT COMPONENT ========== */
+
+.input-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+}
+
+.input-wrapper--full-width {
+    width: 100%;
+}
+
+.input__label {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-medium);
+    color: var(--color-text-dark);
+}
+
+.input__container {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.input__field {
+    width: 100%;
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: var(--font-size-base);
+    color: var(--color-text-dark);
+    background-color: var(--color-card-light);
+    border: 2px solid var(--color-surface-light);
+    border-radius: var(--radius-lg);
+    transition: all var(--transition-fast);
+    outline: none;
+}
+
+.input__field::placeholder {
+    color: var(--color-text-muted);
+}
+
+.input__field:hover {
+    border-color: var(--color-text-muted);
+}
+
+.input__field:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(204, 255, 0, 0.2);
+}
+
+/* With Icon */
+.input-wrapper--with-icon.input-wrapper--icon-left .input__field {
+    padding-left: calc(var(--spacing-md) + 28px);
+}
+
+.input-wrapper--with-icon.input-wrapper--icon-right .input__field {
+    padding-right: calc(var(--spacing-md) + 28px);
+}
+
+.input__icon {
+    position: absolute;
+    color: var(--color-text-muted);
+    pointer-events: none;
+}
+
+.input__icon--left {
+    left: var(--spacing-md);
+}
+
+.input__icon--right {
+    right: var(--spacing-md);
+}
+
+.input__field:focus+.input__icon,
+.input__field:focus~.input__icon {
+    color: var(--color-primary);
+}
+
+/* Error State */
+.input-wrapper--error .input__field {
+    border-color: var(--color-error);
+}
+
+.input-wrapper--error .input__field:focus {
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
+.input__helper {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+.input__helper--error {
+    color: var(--color-error);
+}
+
+/* Dark Mode Variant */
+.input-wrapper--dark .input__label {
+    color: var(--color-text-primary);
+}
+
+.input-wrapper--dark .input__field {
+    background-color: var(--color-surface);
+    border-color: var(--color-surface-light);
+    color: var(--color-text-primary);
+}
+
+.input-wrapper--dark .input__field:hover {
+    border-color: var(--color-surface-hover);
+}

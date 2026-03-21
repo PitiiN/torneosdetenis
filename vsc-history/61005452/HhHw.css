@@ -1,0 +1,27 @@
+/* h1:hover {
+    /* background-color: red;
+  }
+
+  .master:hover {
+    background-color: red;
+  }
+
+  p:first-child {
+    background-color: red;
+  }
+
+  input:focus {
+    background-color: red;
+  } */
+
+/* .intro::first-line {
+    background-color: red;
+} */
+
+/* .intro::first-letter {
+    background-color: red;
+} */
+
+p::after::before {
+  content: url(https://c.tenor.com/yFi06hL-W1IAAAAM/smiley.gif);
+}

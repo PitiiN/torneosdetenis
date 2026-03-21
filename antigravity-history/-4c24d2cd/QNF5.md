@@ -1,0 +1,31 @@
+# Task List
+
+## Reestructuración de Clases
+- [/] **Planificación**
+  - [x] Analizar código actual (dashboard, create, edit, class detail, DB schema)
+  - [/] Redactar plan de implementación
+  - [ ] Obtener aprobación del usuario
+- [ ] **Base de Datos**
+  - [ ] Actualizar categorías (Inicial, Intermedio, Avanzado)
+  - [ ] Agregar `student_category` a `profiles`
+  - [ ] Hacer `coach_id` nullable
+  - [ ] Agregar `auto_cancelled` a `classes`
+  - [ ] Actualizar vista `classes_with_availability`
+- [ ] **Dashboard (Popup)**
+  - [ ] Eliminar "Bloquear" y `blockHour`
+  - [ ] Nuevo popup: Clase Adultos / Clase Niños / Cancelar
+- [ ] **Formulario de Creación**
+  - [ ] Eliminar sección Profesor
+  - [ ] Agregar asignación de categoría por cancha (2 clases)
+- [ ] **Edición de Clase**
+  - [ ] Eliminar sección Profesor
+- [ ] **Vista Alumno (Inscripción)**
+  - [ ] Restricción por categoría
+  - [ ] Botón "Solicitud" para clases auto-canceladas
+- [ ] **Auto-cancelación (Edge Function / Cron)**
+  - [ ] Crear función que cancele clases < 3 inscritos a las 7AM
+  - [ ] Devolver créditos y enviar notificación push
+- [ ] **Admin — Categoría del Alumno**
+  - [ ] Selector en modal de detalle de alumno
+- [ ] **Verificación**
+  - [ ] Probar todo el flujo

@@ -1,0 +1,15 @@
+p {
+    color: red;
+}
+
+#para1 {
+    color: red;
+}
+
+.colortext {
+    color: red;
+}
+
+p, h1 {
+    color: red;
+}

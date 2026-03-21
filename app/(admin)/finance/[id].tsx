@@ -1,24 +1,27 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/services/supabase';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { BackHandler } from 'react-native';
+import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
+import { TennisSpinner } from '@/components/TennisSpinner';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type Registration = {
     id: string;
     player_id: string;
     fee_amount: number;
     is_paid: boolean;
-    profiles: {
-        name: string | null;
-    } | null;
+    player_name: string | null;
 };
 
 export default function TournamentFinanceDetail() {
     const { id } = useLocalSearchParams();
+    const tournamentId = Array.isArray(id) ? id[0] : id;
     const insets = useSafeAreaInsets();
     const router = useRouter();
     const { colors } = useTheme();
@@ -28,13 +31,17 @@ export default function TournamentFinanceDetail() {
     const [tournament, setTournament] = useState<any>(null);
     const [registrations, setRegistrations] = useState<Registration[]>([]);
 
+    const navigateBack = useCallback(() => {
+        router.replace('/(tabs)/finance');
+    }, [router]);
+
     useEffect(() => {
-        if (id) {
+        if (tournamentId) {
             loadTournamentFinance();
         }
 
         const backAction = () => {
-            router.replace('/(tabs)/finance');
+            navigateBack();
             return true;
         };
 
@@ -44,31 +51,65 @@ export default function TournamentFinanceDetail() {
         );
 
         return () => backHandler.remove();
-    }, [id]);
+    }, [navigateBack, tournamentId]);
 
     const loadTournamentFinance = async () => {
         setLoading(true);
         try {
+            const access = await getCurrentUserAccessContext();
+            if (!access) {
+                router.replace('/(auth)/login');
+                return;
+            }
+
             // Load tournament
             const { data: tourData, error: tourError } = await supabase
                 .from('tournaments')
-                .select('*')
-                .eq('id', id)
+                .select('id, name, organization_id, status, registration_fee')
+                .eq('id', tournamentId)
                 .single();
 
             if (tourError) throw tourError;
+            if (!canManageOrganization(access, tourData.organization_id)) {
+                router.replace('/(tabs)/finance');
+                return;
+            }
             setTournament(tourData);
 
             // Load registrations
             const { data: regData, error: regError } = await supabase
                 .from('registrations')
-                .select('id, player_id, fee_amount, is_paid, profiles(name)')
-                .eq('tournament_id', id);
+                .select('id, player_id, fee_amount, is_paid')
+                .eq('tournament_id', tournamentId);
 
             if (regError) throw regError;
-            setRegistrations((regData || []) as any[]);
+
+            const playerIds = [...new Set(
+                (regData || [])
+                    .map((registration: any) => String(registration.player_id || ''))
+                    .filter((playerId) => UUID_PATTERN.test(playerId))
+            )];
+            let playerNamesById: Record<string, string> = {};
+
+            if (playerIds.length > 0) {
+                const { data: publicProfiles, error: publicProfilesError } = await supabase
+                    .from('public_profiles')
+                    .select('id, name')
+                    .in('id', playerIds);
+
+                if (publicProfilesError) throw publicProfilesError;
+                playerNamesById = (publicProfiles || []).reduce((acc: Record<string, string>, profile: any) => {
+                    acc[profile.id] = profile.name || 'Jugador';
+                    return acc;
+                }, {});
+            }
+
+            const hydratedRegistrations = (regData || []).map((registration: any) => ({
+                ...registration,
+                player_name: playerNamesById[registration.player_id] || null,
+            }));
+            setRegistrations(hydratedRegistrations as Registration[]);
         } catch (error) {
-            console.error('Error loading tournament finance:', error);
             Alert.alert('Error', 'No se pudo cargar la información financiera.');
         } finally {
             setLoading(false);
@@ -101,7 +142,6 @@ export default function TournamentFinanceDetail() {
                 current.map(reg => reg.id === regId ? { ...reg, ...updates } : reg)
             );
         } catch (error) {
-            console.error('Error updating registration:', error);
             Alert.alert('Error', 'No se pudo actualizar el registro.');
         } finally {
             setSaving(null);
@@ -126,7 +166,7 @@ export default function TournamentFinanceDetail() {
     if (loading) {
         return (
             <View style={[styles.container, styles.center]}>
-                <ActivityIndicator size="large" color={colors.primary[500]} />
+                <TennisSpinner size={34} />
             </View>
         );
     }
@@ -134,8 +174,8 @@ export default function TournamentFinanceDetail() {
     return (
         <View style={[styles.container, { paddingTop: insets.top }]}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.replace('/(tabs)/finance')} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color="#fff" />
+                <TouchableOpacity onPress={navigateBack} style={styles.backButton}>
+                    <Ionicons name="arrow-back" size={24} color={colors.text} />
                 </TouchableOpacity>
                 <View style={styles.headerTextContainer}>
                     <Text style={styles.title} numberOfLines={1}>{tournament?.name}</Text>
@@ -167,7 +207,7 @@ export default function TournamentFinanceDetail() {
                                 <View key={reg.id} style={styles.playerCard}>
                                     <View style={styles.playerHeader}>
                                         <View style={styles.playerInfo}>
-                                            <Text style={styles.playerName}>{reg.profiles?.name || 'Jugador'}</Text>
+                                            <Text style={styles.playerName}>{reg.player_name || 'Jugador'}</Text>
                                             <View style={[styles.paidBadge, reg.is_paid ? styles.paidBadgeActive : styles.unpaidBadge]}>
                                                 <Text style={styles.paidBadgeText}>{reg.is_paid ? 'PAGADO' : 'PENDIENTE'}</Text>
                                             </View>
@@ -236,7 +276,9 @@ function getStyles(colors: any) {
             width: 40,
             height: 40,
             borderRadius: 20,
-            backgroundColor: 'rgba(255,255,255,0.05)',
+            backgroundColor: colors.surfaceSecondary,
+            borderWidth: 1,
+            borderColor: colors.border,
             justifyContent: 'center',
             alignItems: 'center',
         },

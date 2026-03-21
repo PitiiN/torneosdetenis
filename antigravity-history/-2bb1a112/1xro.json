@@ -1,0 +1,10 @@
+{
+    "title": "Next.js Local Development Troubleshooting",
+    "summary": "Procedures for resolving common local development issues such as file lock errors and stale build caches.",
+    "references": [
+        {
+            "type": "conversation_id",
+            "value": "dc1fdd0e-9303-414b-86c0-9c2b13e3ce24"
+        }
+    ]
+}

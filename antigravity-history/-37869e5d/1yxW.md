@@ -1,0 +1,4 @@
+- [ ] Eliminar la tarjeta "Por Verificar" en `admin/page.tsx` <!-- id: 3 -->
+- [ ] Ajustar la grilla de tarjetas de 3 columnas a 2 en `admin/page.tsx` <!-- id: 6 -->
+- [ ] Eliminar el botón "Verificar Pagos" en `admin/page.tsx` <!-- id: 1 -->
+- [ ] Verificar layout visual <!-- id: 7 -->

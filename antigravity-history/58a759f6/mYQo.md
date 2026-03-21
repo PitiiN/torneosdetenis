@@ -1,0 +1,65 @@
+# Walkthrough - Day Selector and Navigation Fixes (Phase 1 & 2)
+
+I have implemented multiple improvements and bug fixes across the application.
+
+## Changes Made
+
+### 1. Initialization & Initial Loading (Phase 2)
+- Added a 6-second safety timeout in `AuthGate` within [app/_layout.tsx](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/app/_layout.tsx) to prevent infinite loaders on first launch.
+- Synchronized `initializing` and `isLoading` states for a consistent loading flow.
+
+### 2. Day Selector Scrolling (Phase 1, 2 & 3)
+- Added `useRef` to carousels in `app/(tabs)/index.tsx`, `app/(admin)/schedule.tsx`, and `app/(admin)/dashboard.tsx`.
+- **Improved (Phase 3)**: Used `useFocusEffect` and `onContentSizeChange` for highly reliable centering of the selected date. Increased the center offset to improve visibility.
+- **Improved (Phase 4)**: Implemented a multi-retry scroll mechanism and corrected the offset calculation (including padding) to ensure centering works 100% of the time, even on first load.
+
+### 3. Back Button Navigation (Phase 1)
+- **Root Navigation**: Changed `Slot` to `Stack` in [app/_layout.tsx](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/app/_layout.tsx) to enable a navigation stack.
+- **Tab Behavior**: Added `backBehavior="history"` to [app/(tabs)/_layout.tsx](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/app/(tabs)/_layout.tsx).
+- **Admin Navigation**: Updated [AdminBottomBar.tsx](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/src/components/AdminBottomBar.tsx) to use `router.push`.
+
+### 4. Arriendo de Canchas (Phase 2)
+- Updated the alert message in [selection.tsx](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/app/selection.tsx) to the requested text.
+
+### 5. Profile Settings Persistence & Fixes (Phase 2 & 3)
+- Updated [profile.tsx](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/app/(tabs)/profile.tsx) to manually refresh the global auth store after updating the profile.
+- **Fixed (Phase 3)**: Resolved `ReferenceError` by adding missing `useAuthStore` import.
+- Consistently stays in the "Ajustes" section after a successful save.
+
+### 6. Cancellation Rules (Phase 3, 4 & 5)
+- Updated [my-classes.tsx](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/app/(tabs)/my-classes.tsx) to enforce a **24-hour** cancellation limit.
+- **Phase 5**: Updated the Home screen modal in [index.tsx](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/app/(tabs)/index.tsx) to also follow the 24h rule.
+
+### 7. Flexible Recurring Enrollment
+- **Dry-run Validation**: Added `validateRecurringEnrollment` in [enrollments.service.ts](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/src/services/enrollments.service.ts) to detect conflicts before enrolling.
+- **Themed pop-up**: The conflict resolution and success Alerts now use the `CustomAlert` component, matching the application's dark theme and palette.
+- **Aesthetic Refinements**: 
+    - Dates in conflict messages now start with a **capital letter** (e.g., "Miércoles 18...").
+    - Button labels like "Inscribir disponibles" are now properly **centered** and aligned.
+- **Credit Recalculation**: Credits are automatically recalculated and validated based on the final accepted subset of classes.
+
+### 8. Admin "Create Class" Enhancements
+- **Auto-scroll Time Blocks**: The hourly carousel in [create.tsx](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/app/(admin)/classes/create.tsx) now automatically centers the selected block.
+- **Improved Layout**: Added safe area bottom padding to prevent overlap with phone navigation buttons.
+- **Cancel Operation**: Added a themed "**Cancelar**" button next to "Crear Clase".
+- **Recurring Creation**: Admins can now replicate a new class for multiple future weeks using the same logic implemented for students.
+
+### 9. Admin "Edit Class" Refinements
+- **UI Cleanup**: Removed the manual status selector ("Estado") to simplify the form.
+- **Dedicated Cancellation**: Added a "Cancelar Clase" button with confirmation that updates status to 'cancelled' and triggers credit recovery for all enrolled students.
+- **Manual Enrollment Replication**: The "Agregar alumno manualmente" modal now includes the option to replicate that enrollment for future weeks, consistent with the user-side logic.
+
+### 10. Class Deletion & Search Fixes
+- **Absolute Liberation**: Changed class cancellation to physical deletion in [Edit Class](file:///c:/Users/Asus/OneDrive - CORPORACIÓN XIX JUEGOS PANAMERICANOS SANTIAGO 2023/Escritorio/PitiN/Antigravity/EscuelaDeTenis/app/(admin)/classes/[id].tsx). This ensures the time slot is purely empty in the dashboard, rather than appearing as "Blocked".
+- **Enhanced Student Search**: The "Agregar Alumno" search now matches against both **Name** and **Email**, and supports larger student lists. Added `autoCapitalize="none"` for faster email entry.
+- **Credit Safety**: Physical deletion is only performed *after* marking enrollments as cancelled, ensuring students always recover their credits.
+
+## Verification Results
+
+### Manual Verification
+- **Deletion**:- [x] Implement physical deletion of classes (with credit recovery)
+- [x] Fix "Blocked" slots in dashboard by removing deleted classes
+- [x] Enhance student search to include email, admin/coach roles, and handle larger lists
+- [x] Implement Conflict Detection for Recurring Classes with themed alert
+- [x] Refine Coach Selection logic and UI in Admin Edit Class
+- **Stability**: Confirmed notifications are still sent before the class record is removed.

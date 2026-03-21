@@ -1,0 +1,43 @@
+{
+  "cli": {
+    "version": ">= 12.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {
+        "simulator": false
+      },
+      "env": {
+        "npm_config_legacy_peer_deps": "true"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "npm_config_legacy_peer_deps": "true"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "AQUI_VA_EL_APPLE_ID_DE_TU_APP"
+      },
+      "android": {
+        "serviceAccountKeyPath": "./pc-api-key.json"
+      }
+    }
+  }
+}

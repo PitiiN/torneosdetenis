@@ -1,0 +1,6 @@
+- [ ] Investigar y arreglar búsqueda de usuarios en `BookingEditModal` y `PatternBookingModal` <!-- id: 20 -->
+- [ ] Investigar por qué la reserva de 09:30 no aparece (posible error en `validTimeSlots` o timezone) <!-- id: 21 -->
+- [ ] Arreglar error "No se pudieron cargar los detalles" al clickear reserva <!-- id: 22 -->
+- [ ] Corregir horarios de fin de semana en "Reserva Periódica" (`PatternBookingModal`) <!-- id: 23 -->
+- [ ] Agregar estado "Bloqueada" a la leyenda de la vista de Usuario <!-- id: 24 -->
+- [ ] Verificar consistencia entre vista Admin y Usuario <!-- id: 25 -->

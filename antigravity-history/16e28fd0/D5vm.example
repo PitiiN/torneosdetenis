@@ -1,0 +1,10 @@
+# Supabase
+EXPO_PUBLIC_SUPABASE_URL=https://tbahjhufxmsyldhghhhz.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+
+# Configuración de la escuela
+EXPO_PUBLIC_SCHOOL_NAME=Escuela de Tenis
+EXPO_PUBLIC_CURRENCY=CLP
+EXPO_PUBLIC_TIMEZONE=America/Santiago
+EXPO_PUBLIC_OPERATING_HOURS_START=08:00
+EXPO_PUBLIC_OPERATING_HOURS_END=22:00

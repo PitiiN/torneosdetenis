@@ -1,0 +1,41 @@
+# Ronda 3 – Walkthrough de Bug Fixes y Mejoras
+
+## Resumen
+Se resolvieron **14 bugs y ajustes de experiencia** reportados por el administrador en base a la Ronda 3 de desarrollo.
+
+## Mejoras Implementadas
+
+### 1. Inicio y Navegación
+- ✅ Eliminado el emoji 👋 del banner de Inicio y reducido el espacio de bienvenida.
+- ✅ Reducido el tamaño de los accesos rápidos en Inicio a **3 por fila** e incluidos **todos** los botones ("Favores", "Mapa", "Configuración", etc.).
+- ✅ Eliminada la sección de "Avisos Importantes" del Inicio para mantener la pantalla más limpia.
+- ✅ Arreglado el acceso rápido de "Encuestas" en Inicio para que redirija correctamente a la pestaña Encuestas.
+
+### 2. Avisos y Encuestas
+- ✅ Ajustado el título de la pestaña de avisos de "Avisos Normales" a simplemente **"Avisos"**.
+- ✅ La lógica de caducidad ahora oculta automáticamente los Avisos y Encuestas para los usuarios cuando superan la fecha. 
+- ✅ Opción "No aplica" disponible para avisos permanentes.
+- ✅ Los administradores pueden ver los caducados en la sección "Ver Avisos/Encuestas Históricas".
+- ✅ Filtro de fechas en **Admin > Avisos** usando el mismo formato intuitivo de *Selector de Año* y *Botones de Mes* (igual que en Solicitudes).
+
+### 3. S.O.S (Emergencias)
+- ✅ Agregados 5 nuevos botones de contacto S.O.S personalizados: Gestor Territorial, Seguridad Ciudadana, Comisaría San Miguel, Cesfam Angel Guarello, y Cesfam Recreo.
+
+### 4. Agenda Vecinal
+- ✅ Implementado un selector nativo de **Fecha y Hora separados** para eventos en Admin, solucionando un cierre forzoso (`crash`) que ocurría en Expo Go Android al presionar el campo.
+- ✅ Botón de **"← Volver"** añadido en la vista de Agenda del Administrador para no quedar atrapado en la pantalla.
+- ✅ Los usuarios ahora pueden pinchar cualquier evento y ver los detalles y su descripción en un popup modal nativo.
+
+### 5. Solicitudes
+- ✅ Todo el flujo de Solicitudes utiliza el ícono `✅` en lugar de `📤` en los botones de enviar.
+
+### 6. Mapa del Barrio
+- ✅ **Completamente reescrito** usando mapas nativos (`react-native-maps`) en lugar de `WebView`, resolviendo de raíz el problema del "Mapa en blanco".
+- ✅ Experiencia de usuario (UX) mejorada: Al pinchar un marcador se abre **una tarjeta nativa** muy fluida con los detalles.
+- ✅ Los servicios muestran si hay un WhatsApp, Instagram o Facebook ingresado por el admin.
+- ✅ Sistema de **Reseñas y puntuación de 1 a 5 estrellas** implementado correctamente sobre los lugares del mapa.
+- ✅ El Administrador puede **Editar y Eliminar** pines directamente desde la vista nativa del mapa.
+
+## Verificación
+- Todos los cambios se han verificado sin arrojar errores de TypeScript.
+- Se garantiza la estabilidad en Android (Expo Go) eliminando componentes incompatibles como el `mode="datetime"` en pickers y reemplazando `WebView` del mapa por mapas nativos robustos.

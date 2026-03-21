@@ -1,0 +1,30 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.heroBanner {
+  background-image: url(./pexels-pixabay-163036.jpg);
+  background-size: cover;
+  width: 100vw;
+  height: 100vh;
+  text-align: center;
+}
+
+.cabecera__titulo {
+  color: aliceblue;
+  padding: 3rem;
+}
+
+.principal__parrafo {
+  color: rgb(0, 200, 255);
+  margin: 10rem;
+}
+
+.salida__boton {
+  background-color: green;
+  font-size: 5vh;
+  border-radius: 2vh;
+  border: 2px solid red;
+}

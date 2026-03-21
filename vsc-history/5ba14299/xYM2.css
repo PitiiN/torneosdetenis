@@ -1,0 +1,8 @@
+.container {
+    display: grid;
+    grid-template-rows: 1fr 5fr repeat(3, 2fr);
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-areas: 
+    "header menu menu menu"
+    ;
+}

@@ -1,0 +1,37 @@
+# Task List
+
+## Reestructuración de Clases
+- [x] **Planificación**
+  - [x] Analizar código actual
+  - [x] Redactar plan de implementación
+  - [x] Obtener aprobación del usuario
+- [x] **Base de Datos**
+  - [x] Migration SQL: categorías a Inicial/Intermedio/Avanzado
+  - [x] Migration SQL: `student_category` en `profiles`
+  - [x] Migration SQL: `coach_id` nullable
+  - [x] Migration SQL: `court2_category_id` en `classes`
+  - [x] Migration SQL: `auto_cancelled` en `classes`
+  - [x] Migration SQL: vista `classes_with_availability` actualizada
+- [x] **Dashboard (Popup)**
+  - [x] Eliminar "Bloquear" y `blockHour`
+  - [x] Nuevo popup: Clase Adultos / Clase Niños / Cancelar
+  - [x] Mostrar dual categories en grilla horaria
+- [x] **Formulario de Creación**
+  - [x] Eliminar sección Profesor
+  - [x] Asignación de categoría por cancha (court1 + court2)
+- [x] **Edición de Clase**
+  - [x] Eliminar sección Profesor
+  - [x] Dual category selector
+- [x] **Vista Alumno (Inscripción)**
+  - [x] Restricción por categoría (Inicial blocked from Intermedio/Avanzado-only)
+  - [x] Botón "Solicitar Inscripción" para clases auto-canceladas
+  - [x] Dual category badges
+- [x] **Auto-cancelación (Edge Function)**
+  - [x] Crear Edge Function `auto-cancel-classes`
+- [x] **Admin — Categoría del Alumno**
+  - [x] Selector Inicial/Intermedio/Avanzado en modal de detalle
+- [x] **Profile Type**
+  - [x] Agregar `student_category` y `joined_at` a interface Profile
+- [/] **Verificación**
+  - [/] Compilación TypeScript
+  - [ ] Revisión usuario

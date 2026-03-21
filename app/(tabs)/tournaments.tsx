@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Dimensions, Image, ActivityIndicator, Modal } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Dimensions, Image, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/services/supabase';
-import { useCallback } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { adminModeService } from '@/services/adminMode';
+import { getCurrentUserAccessContext } from '@/services/accessControl';
+import { TennisSpinner } from '@/components/TennisSpinner';
 
 const { width } = Dimensions.get('window');
 
@@ -30,7 +30,16 @@ interface Tournament {
     registration_fee?: number;
     address?: string;
     comuna?: string;
+    modality?: 'singles' | 'dobles' | string | null;
 }
+
+type OrganizationInfo = {
+    name: string;
+    contact_email: string | null;
+    contact_whatsapp: string | null;
+    social_links: string | null;
+    photos_drive_url: string | null;
+};
 
 const SURFACE_MAP: { [key: string]: string } = {
     'clay': 'Arcilla',
@@ -53,93 +62,153 @@ const STATUS_DISPLAY: { [key: string]: string } = {
     'draft': 'BORRADOR'
 };
 
+const decodeEscapedUnicode = (value: unknown) =>
+    String(value ?? '').replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) =>
+        String.fromCharCode(parseInt(hex, 16))
+    );
+
 export default function TorneosScreen() {
     const insets = useSafeAreaInsets();
     const router = useRouter();
     const { colors } = useTheme();
     const styles = getStyles(colors);
     const { orgId } = useLocalSearchParams<{ orgId: string }>();
+    const routeOrgId = Array.isArray(orgId) ? orgId[0] : orgId;
     
     const [activeFilter, setActiveFilter] = useState('Próximos');
     const [role, setRole] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [tournaments, setTournaments] = useState<Tournament[]>([]);
+    const [registeredTournamentIds, setRegisteredTournamentIds] = useState<Set<string>>(new Set());
     const [orgName, setOrgName] = useState<string>('Torneos');
+    const [organizationInfo, setOrganizationInfo] = useState<OrganizationInfo | null>(null);
 
-    const [userEmail, setUserEmail] = useState<string | null>(null);
-    const [userId, setUserId] = useState<string | null>(null);
+    const [isSuperAdmin, setIsSuperAdmin] = useState(false);
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
     const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
     const [userOrgId, setUserOrgId] = useState<string | null>(null);
+    const [activeOrgId, setActiveOrgId] = useState<string | null>(routeOrgId || null);
     const [notifications, setNotifications] = useState<Array<{ id: string; title: string; body: string }>>([]);
-    const [viewMode, setViewMode] = useState(adminModeService.getMode());
     const [isNotificationsVisible, setIsNotificationsVisible] = useState(false);
 
     const filters = ['Próximos', 'En Curso', 'Finalizados'];
 
     useFocusEffect(
         useCallback(() => {
-            fetchUserData();
-            if (orgId) {
-                fetchOrgDetails();
-                fetchTournaments();
-            }
-        }, [orgId])
+            bootstrapScreen();
+        }, [routeOrgId])
     );
 
     useEffect(() => {
-        const unsubscribe = adminModeService.subscribe((m) => {
-            setViewMode(m);
-        });
-        return unsubscribe;
-    }, []);
+        bootstrapScreen();
+    }, [routeOrgId]);
 
-    useEffect(() => {
-        if (orgId) {
-            fetchOrgDetails();
-            fetchTournaments();
+    async function bootstrapScreen() {
+        setOrgName('');
+        setTournaments([]);
+        setOrganizationInfo(null);
+        const access = await fetchUserData();
+        if (!access) {
+            setActiveOrgId(routeOrgId || null);
+            setTournaments([]);
+            setRegisteredTournamentIds(new Set());
+            setOrgName('Torneos');
+            setOrganizationInfo(null);
+            return;
         }
-    }, [orgId]);
 
-    async function fetchOrgDetails() {
-        const { data } = await supabase
+        const storedOrgId = await SecureStore.getItemAsync('selected_org_id');
+        let nextOrgId: string | null = null;
+
+        if (access.isSuperAdmin) {
+            nextOrgId = routeOrgId || storedOrgId || null;
+        } else {
+            nextOrgId = routeOrgId || storedOrgId || access.profile.org_id || null;
+        }
+
+        setActiveOrgId(nextOrgId);
+
+        if (!nextOrgId) {
+            setTournaments([]);
+            setRegisteredTournamentIds(new Set());
+            setOrgName('Torneos');
+            setOrganizationInfo(null);
+            return;
+        }
+
+        const hasAdminRole = access.profile.role === 'admin' || access.profile.role === 'organizer';
+        const canManageOrg = access.isSuperAdmin || Boolean(
+            hasAdminRole &&
+            access.profile.org_id &&
+            access.profile.org_id === nextOrgId
+        );
+
+        await fetchOrgDetails(nextOrgId);
+        await fetchTournaments(nextOrgId, canManageOrg);
+        await fetchRegistrations(access.session.user.id, nextOrgId);
+        await fetchNotifications(access.session.user.id, nextOrgId);
+    }
+
+    async function fetchOrgDetails(targetOrgId: string) {
+        let info: OrganizationInfo | null = null;
+
+        const { data: organizationData } = await supabase
             .from('organizations')
-            .select('name')
-            .eq('id', orgId)
-            .single();
-        if (data) {
-            setOrgName(data.name);
-            if (orgId) {
-                await SecureStore.setItemAsync('selected_org_id', String(orgId));
-                await SecureStore.setItemAsync('selected_org_name', data.name);
+            .select('name, contact_email, contact_whatsapp, social_links, photos_drive_url')
+            .eq('id', targetOrgId)
+            .maybeSingle();
+
+        if (organizationData) {
+            info = {
+                name: decodeEscapedUnicode(organizationData.name || ''),
+                contact_email: decodeEscapedUnicode(organizationData.contact_email || '') || null,
+                contact_whatsapp: decodeEscapedUnicode(organizationData.contact_whatsapp || '') || null,
+                social_links: decodeEscapedUnicode(organizationData.social_links || '') || null,
+                photos_drive_url: decodeEscapedUnicode(organizationData.photos_drive_url || '') || null,
+            };
+        } else {
+            const { data: publicData } = await supabase
+                .from('organizations_public')
+                .select('name')
+                .eq('id', targetOrgId)
+                .single();
+
+            if (publicData) {
+                info = {
+                    name: decodeEscapedUnicode(publicData.name || ''),
+                    contact_email: null,
+                    contact_whatsapp: null,
+                    social_links: null,
+                    photos_drive_url: null,
+                };
             }
         }
-    }
 
+        if (!info) return;
+
+        const normalizedOrgName = info.name || 'Torneos';
+        setOrgName(normalizedOrgName);
+        setOrganizationInfo(info);
+        await SecureStore.setItemAsync('selected_org_id', String(targetOrgId));
+        await SecureStore.setItemAsync('selected_org_name', normalizedOrgName || '');
+    }
     async function fetchUserData() {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-            setUserEmail(session.user.email || null);
-            setUserId(session.user.id);
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('role, org_id')
-                .eq('id', session.user.id)
-                .single();
-            setRole(profile?.role || 'player');
-            setUserOrgId(profile?.org_id || null);
-            fetchNotifications(session.user.id);
-        }
-    }
+        const access = await getCurrentUserAccessContext();
+        if (!access) return null;
 
-    async function fetchNotifications(currentUserId: string) {
+        setRole(access.profile.role || 'player');
+        setUserOrgId(access.profile.org_id || null);
+        setIsSuperAdmin(access.isSuperAdmin);
+        return access;
+    }
+    async function fetchNotifications(currentUserId: string, targetOrgId: string) {
         try {
             const items: Array<{ id: string; title: string; body: string }> = [];
 
             const { data: publishedTournaments } = await supabase
                 .from('tournaments')
                 .select('id, name')
-                .eq('organization_id', orgId)
+                .eq('organization_id', targetOrgId)
                 .in('status', ['open', 'ongoing', 'in_progress'])
                 .order('start_date', { ascending: true })
                 .limit(5);
@@ -180,32 +249,90 @@ export default function TorneosScreen() {
 
             setNotifications(items);
         } catch (error) {
-            console.error('Error fetching notifications:', error);
+            setNotifications([]);
         }
     }
 
-    async function fetchTournaments() {
+    async function fetchRegistrations(currentUserId: string, targetOrgId: string) {
+        try {
+            const { data: registrations, error } = await supabase
+                .from('registrations')
+                .select('tournament_id')
+                .eq('player_id', currentUserId);
+
+            if (error) throw error;
+
+            const registrationTournamentIds = [...new Set(
+                (registrations || [])
+                    .map((row: any) => String(row?.tournament_id || ''))
+                    .filter(Boolean)
+            )];
+
+            if (registrationTournamentIds.length === 0) {
+                setRegisteredTournamentIds(new Set());
+                return;
+            }
+
+            const { data: tournamentsInOrg, error: tournamentsError } = await supabase
+                .from('tournaments')
+                .select('id')
+                .eq('organization_id', targetOrgId)
+                .in('id', registrationTournamentIds);
+
+            if (tournamentsError) throw tournamentsError;
+
+            const nextIds = new Set<string>();
+            (tournamentsInOrg || []).forEach((tournamentRow: any) => {
+                const tournamentId = String(tournamentRow?.id || '');
+                if (tournamentId) {
+                    nextIds.add(tournamentId);
+                }
+            });
+            setRegisteredTournamentIds(nextIds);
+        } catch (error) {
+            setRegisteredTournamentIds(new Set());
+        }
+    }
+    async function fetchTournaments(targetOrgId: string, canManageOrg: boolean) {
         setLoading(true);
         try {
             let query = supabase
                 .from('tournaments')
-                .select('*')
-                .eq('organization_id', orgId)
+                .select('id, name, description, status, surface, format, start_date, organization_id, registration_fee, address, comuna, modality')
+                .eq('organization_id', targetOrgId)
                 .order('start_date', { ascending: false });
+
+            if (!canManageOrg) {
+                query = query.in('status', ['open', 'ongoing', 'in_progress', 'completed', 'finalized', 'finished']);
+            }
             
             const { data, error } = await query;
             if (error) throw error;
-            setTournaments(data || []);
+            setTournaments(
+                (data || []).map((tournament: any) => ({
+                    ...tournament,
+                    name: decodeEscapedUnicode(tournament.name || ''),
+                    description: decodeEscapedUnicode(tournament.description || ''),
+                    format: decodeEscapedUnicode(tournament.format || ''),
+                    surface: decodeEscapedUnicode(tournament.surface || ''),
+                    address: decodeEscapedUnicode(tournament.address || ''),
+                    comuna: decodeEscapedUnicode(tournament.comuna || ''),
+                }))
+            );
         } catch (error) {
-            console.error('Error fetching tournaments:', error);
         } finally {
             setLoading(false);
         }
     }
 
-    const isGlobalAdmin = userEmail === 'javier.aravena25@gmail.com';
-    // Admin can create only if it's their organization AND they are in admin view mode
-    const canManage = (isGlobalAdmin || (role === 'admin' && userOrgId === orgId)) && viewMode === 'admin';
+    const canManage = isSuperAdmin || ((role === 'admin' || role === 'organizer') && userOrgId === activeOrgId);
+    const hasOrganizationInfoDetails = Boolean(
+        organizationInfo?.contact_email ||
+        organizationInfo?.contact_whatsapp ||
+        organizationInfo?.social_links ||
+        organizationInfo?.photos_drive_url
+    );
+    const shouldShowOrganizationInfo = Boolean(activeOrgId && organizationInfo && !canManage && hasOrganizationInfoDetails);
 
     const filteredTournaments = tournaments.filter(t => {
         // Determine if tournament should be visible based on role and filter
@@ -245,13 +372,47 @@ export default function TorneosScreen() {
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                 {/* Manager Actions */}
+                {shouldShowOrganizationInfo && organizationInfo && (
+                    <View style={styles.organizationInfoCard}>
+                        <Text style={styles.organizationInfoTitle}>Información de la organización</Text>
+                        {organizationInfo.contact_email && (
+                            <View style={styles.organizationInfoRow}>
+                                <Ionicons name="mail-outline" size={14} color={colors.textSecondary} />
+                                <Text style={styles.organizationInfoText}>{organizationInfo.contact_email}</Text>
+                            </View>
+                        )}
+                        {organizationInfo.contact_whatsapp && (
+                            <View style={styles.organizationInfoRow}>
+                                <Ionicons name="logo-whatsapp" size={14} color={colors.textSecondary} />
+                                <Text style={styles.organizationInfoText}>{organizationInfo.contact_whatsapp}</Text>
+                            </View>
+                        )}
+                        {organizationInfo.social_links && (
+                            <View style={styles.organizationInfoRow}>
+                                <Ionicons name="globe-outline" size={14} color={colors.textSecondary} />
+                                <Text style={styles.organizationInfoText} numberOfLines={2}>
+                                    {organizationInfo.social_links}
+                                </Text>
+                            </View>
+                        )}
+                        {organizationInfo.photos_drive_url && (
+                            <View style={styles.organizationInfoRow}>
+                                <Ionicons name="images-outline" size={14} color={colors.textSecondary} />
+                                <Text style={styles.organizationInfoText} numberOfLines={2}>
+                                    {organizationInfo.photos_drive_url}
+                                </Text>
+                            </View>
+                        )}
+                    </View>
+                )}
+
                 {canManage && (
                     <View style={styles.actionsGrid}>
                         <TouchableOpacity 
                             style={[styles.actionCard, { backgroundColor: colors.primary[500] }]}
                             onPress={() => router.push({
                                 pathname: '/(admin)/tournaments/create',
-                                params: { orgId }
+                                params: { orgId: activeOrgId || '' }
                             })}
                         >
                             <Ionicons name="trophy" size={40} color="#fff" />
@@ -328,7 +489,7 @@ export default function TorneosScreen() {
                     </View>
                 )}
 
-                {!orgId ? (
+                {!activeOrgId ? (
                     <View style={styles.emptyState}>
                         <Ionicons name="business-outline" size={64} color={colors.textTertiary} />
                         <Text style={styles.emptyText}>Por favor, selecciona una organización en la pestaña de Inicio para ver sus torneos.</Text>
@@ -340,14 +501,16 @@ export default function TorneosScreen() {
                         </TouchableOpacity>
                     </View>
                 ) : loading ? (
-                    <ActivityIndicator size="large" color={colors.primary[500]} style={{ marginTop: 40 }} />
+                    <TennisSpinner size={36} style={{ marginTop: 40 }} />
                 ) : (
                     <View style={styles.tournamentList}>
                         <View style={styles.sectionHeader}>
                             <Text style={styles.sectionTitle}>Torneos {activeFilter}</Text>
                             <Text style={styles.resultsCount}>{filteredTournaments.length} resultados</Text>
                         </View>
-                        {filteredTournaments.map((tournament) => (
+                        {filteredTournaments.map((tournament) => {
+                            const isRegistered = registeredTournamentIds.has(tournament.id);
+                            return (
                             <TouchableOpacity 
                                 key={tournament.id} 
                                 style={styles.tournamentCard}
@@ -392,6 +555,12 @@ export default function TorneosScreen() {
                                                 <Text style={styles.metaText}>{tournament.format}</Text>
                                             </View>
                                             <View style={styles.metaItem}>
+                                                <Ionicons name="tennisball-outline" size={12} color={colors.textTertiary} />
+                                                <Text style={styles.metaText}>
+                                                    {`Modalidad: ${String(tournament.modality || '').toLowerCase() === 'dobles' ? 'Dobles' : 'Singles'}`}
+                                                </Text>
+                                            </View>
+                                            <View style={styles.metaItem}>
                                                 <Ionicons name="cash-outline" size={12} color={colors.primary[500]} />
                                                 <Text style={[styles.metaText, { color: colors.primary[500], fontWeight: '700' }]}>
                                                     ${tournament.registration_fee || 0}
@@ -410,12 +579,13 @@ export default function TorneosScreen() {
                                 </View>
                                 <View style={styles.cardFooter}>
                                     <View style={styles.detailsButton}>
-                                        <Text style={styles.detailsButtonText}>Ver detalles e inscribirse</Text>
+                                        <Text style={styles.detailsButtonText}>{isRegistered ? 'Estás inscrito! Ver detalles' : 'Ver detalles e inscribirse'}</Text>
                                         <Ionicons name="chevron-forward" size={16} color={colors.primary[500]} />
                                     </View>
                                 </View>
                             </TouchableOpacity>
-                        ))}
+                            );
+                        })}
 
                         {filteredTournaments.length === 0 && (
                             <View style={styles.emptyState}>
@@ -495,6 +665,33 @@ const getStyles = (colors: any) => StyleSheet.create({
     actionsGrid: {
         gap: spacing.md,
         marginBottom: spacing.xl,
+    },
+    organizationInfoCard: {
+        marginBottom: spacing.xl,
+        padding: spacing.lg,
+        borderRadius: borderRadius.xl,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        gap: spacing.sm,
+    },
+    organizationInfoTitle: {
+        color: colors.text,
+        fontSize: 14,
+        fontWeight: '800',
+        marginBottom: 2,
+    },
+    organizationInfoRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 8,
+    },
+    organizationInfoText: {
+        flex: 1,
+        color: colors.textSecondary,
+        fontSize: 12,
+        fontWeight: '600',
+        lineHeight: 17,
     },
     actionCard: {
         flexDirection: 'row',
@@ -780,4 +977,3 @@ const getStyles = (colors: any) => StyleSheet.create({
         elevation: 8,
     }
 });
-

@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Turismo</title>
+    <link rel="stylesheet" href="style.css" />
+    <script
+      src="https://kit.fontawesome.com/38401ff5e9.js"
+      crossorigin="anonymous"
+    ></script>
+  </head>
+  <body>
+    <!-- SECCIÓN DE NAVEGACIÓN NAVBAR-->
+    <header>
+      <a href="#" class="logo">TURISMO CHILE</a>
+      <nav>
+        <ul>
+          <li><a href="#">Inicio</a></li>
+          <li><a href="#nosotros">Nosotros</a></li>
+          <li><a href="#tarjetas">Tours</a></li>
+          <li><a href="#main">Clima Ciudades</a></li>
+          <li><a href="#footer">Contacto</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <!-- SECCIÓN DE IMÁGENES EN MOVIMIENTO -->
+    <div class="slider">
+      <ul>
+        <li>
+          <img src="./assets/slider1.jpg" alt="" />
+          <div class="slider__texto1">BIENVENIDO A CHILE</div>
+        </li>
+        <li>
+          <img src="./assets/slider5.jpg" alt="" />
+        </li>
+        <li>
+          <img src="./assets/slider3.jpg" alt="" />
+        </li>
+        <li>
+          <img src="./assets/slider4.jpg" alt="" />
+        </li>
+      </ul>
+    </div>
+
+    <!-- SECCIÓN DE NOSOTROS -->
+    <section class="nosotros" id="nosotros">
+      <div class="nosotros__contenido">
+        <h3>¿Quiénes somos?</h3>
+        <!-- <img src="./assets/nosotros.jpg" alt=""> -->
+        <p>
+          Compañía turística con más de 20 años de experiencia en el mercado, 17
+          de ellos como operador exclusivo de la Caja de Compensación de los
+          Andes y 5 años como operador de la Caja de Compensación La Araucana.
+        </p>
+
+        <p>
+          Operamos en forma directa y sin ningún tipo de intermediarios la
+          realización de todos nuestros programas turísticos, para lo cual
+          tenemos estrictos protocolos de selección de nuestros proveedores.
+        </p>
+
+        <p>TTenemos presencia activa en todos los rincones del país.</p>
+
+        <p>
+          Estamos registrados en las oficinas del Servicio Nacional de Turismo
+          (SERNATUR) y somos acreedores del sello Tour Operador y Calidad
+          Turística.
+        </p>
+      </div>
+    </section>
+
+    <!-- SECCIÓN DE TARJETAS TOURS -->
+    <div id="fondoTarjetas">
+      <div class="containerTarjetas" id="tarjetas">
+        <div class="tarjeta">
+          <figure>
+            <img src="./assets/tarjeta1.jpg" alt="" />
+          </figure>
+          <div class="tarjeta__contenido">
+            <h3>Torres del Paine</h3>
+            <p>
+              Es una de las áreas silvestres protegidas más importantes de
+              Chile. Se encuentra ubicado entre la Cordillera de los Andes y la
+              estepa Patagónica, en la Comuna de Torres del Paine, provincia de
+              Última Esperanza, entre los 51° de latitud sur y 72° 57' de
+              longitud oeste, distante unos 150 km de Puerto Natales y a 318.2
+              km de Punta Arenas. Fue creada el año 1959 y es administrada por
+              la Corporación Nacional Forestal.
+            </p>
+            <a href="#formulario">Inscribirse al Tour</a>
+          </div>
+        </div>
+        <div class="tarjeta">
+          <figure>
+            <img src="./assets/tarjeta2.jpg" alt="" />
+          </figure>
+          <div class="tarjeta__contenido">
+            <h3>San Pedro de Atacama</h3>
+            <p>
+              Es una comuna chilena ubicada en la provincia de El Loa, en la
+              región de Antofagasta, en el norte grande de Chile ubicada a 2450
+              m s. n. m. Su capital es la localidad del mismo nombre y que da
+              también su nombre al río San Pedro de Atacama que la bordea. .El
+              Salar de Atacama se encuentra 62 km hacia el este. Es una reserva
+              natural de flamencos, de gran tamaño. Este lugar tiene una vista
+              magnífica, mostrando grandes montañas (en el invierno nevadas).
+            </p>
+            <a href="#formulario">Inscribirse al Tour</a>
+          </div>
+        </div>
+        <div class="tarjeta">
+          <figure>
+            <img src="./assets/tarjeta3.jpg" alt="" />
+          </figure>
+          <div class="tarjeta__contenido">
+            <h3>Carretera Austral</h3>
+            <p>
+              Es una carretera chilena que se encuentra en la zona sur-austral
+              de Chile. Para el año 2014 el recorrido era de 1240 kilómetros y
+              unía a Puerto Montt con Villa O'Higgins, aunque el proyecto es que
+              en el futuro llegue hasta Puerto Williams. Es la principal vía de
+              transporte terrestre de la Región de Aysén y de la Provincia de
+              Palena en la Región de Los Lagos, permitiendo su conexión con el
+              resto del territorio del país, haciendo un recorrido por la
+              Patagonia chilena.
+            </p>
+            <a href="#formulario">Inscribirse al Tour</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CLIMA -->
+    <main id="main">
+      <div class="container__busqueda">
+        <h1>BUSCA EL CLIMA EN CUALQUIER CIUDAD</h1>
+        <form id="formulario__busqueda">
+          <div class="busqueda">
+            <input
+              type="text"
+              class="busqueda__ciudad"
+              id="busqueda__ciudad"
+              autocomplete="off"
+              placeholder="Ejemplo: Barcelona"
+            />
+          </div>
+        </form>
+      </div>
+
+      <div class="clima" id="clima">
+        <div class="clima__ciudad" id="ciudad">Lima, PE</div>
+        <div class="clima__fecha" id="fecha">10/14/2020</div>
+        <div class="clima__temperatura">
+          <img src="./assets/temp-mid.png" class="" id="climaImg" alt="" />
+          <div class="clima__temperatura__valor" id="clima-valor">14°c</div>
+        </div>
+        <div class="clima__clima" id="climas">Sol</div>
+        <div class="clima__rango" id="rangoClima">12c / 18c</div>
+      </div>
+    </main>
+
+    <!-- FORMULARIO -->
+    <div id="containerFormulario">
+      <section class="formulario" id="formulario">
+        <h4>Formulario de Registro</h4>
+        <form action="">
+          <input
+            class="formulario__control"
+            type="text"
+            name="nombre"
+            id="nombre"
+            placeholder="Ingresa tu nombre"
+          />
+          <input
+            class="formulario__control"
+            type="text"
+            name="apellidos"
+            id="apellidos"
+            placeholder="Ingresa tus apellidos"
+          />
+          <input
+            class="formulario__control"
+            type="email"
+            name="correo"
+            id="correo"
+            placeholder="Ingresa tu correo"
+          />
+          <input
+            class="formulario__control"
+            type="password"
+            name="contraseña"
+            id="contraseña"
+            placeholder="Ingresa tu contraseña"
+          />
+          <p>Estoy de acuerdo con <a href="">Términos y Condiciones</a></p>
+          <input class="formulario__boton" type="submit" value="Registrar" />
+          <p><a href="">¿Ya tienes Cuenta?</a></p>
+        </form>
+      </section>
+      <div class="formulario__contacto">
+        <h5>Contáctanos</h5>
+        <form action="#" autocomplete="off">
+          <input
+            type="text"
+            name="nombre"
+            class="contacto__formulario__form"
+            placeholder="Nombre"
+          />
+          <input
+            type="text"
+            name="email"
+            class="contacto__formulario__form"
+            placeholder="Email"
+          />
+          <textarea
+            name="mensaje"
+            id=""
+            class="contacto__formulario__form"
+            placeholder="Ingresa tu Mensaje"
+          >
+          </textarea>
+          <input
+            type="submit"
+            name="enviar"
+            value="Enviar Mensaje"
+            class="contacto__formulario__boton"
+          />
+        </form>
+      </div>
+    </div>
+
+    <footer id="footer">
+      <div class="contacto__formulario">
+        <iframe
+          src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3327.6000752708655!2d-70.65472059999999!3d-33.485761499999995!2m3!1f0!2f0!3f0!3m2!
+          1i1024!2i768!4f13.1!3m3!1m2!1s0x9662c5324a275b51%3A0xd90b3753e8c2c5e0!2sLos%20Casta%C3%B1os%203455%2C%20San%20Miguel%2C%208910139%2C%20Regi%C3%B3n%20
+          Metropolitana!5e0!3m2!1ses-419!2scl!4v1664579664701!5m2!1ses-419!2scl"
+          width="200"
+          height="150"
+          style="border: 0"
+          allowfullscreen=""
+          loading="lazy"
+          referrerpolicy="no-referrer-when-downgrade"
+        ></iframe>
+
+        <a href=""><i class="fa-solid fa-phone">+569 95158428</i></a>
+        <a href=""><i class="fa-solid fa-envelope">turismo@chile.cl</i></a>
+        <a href=""
+          ><i class="fa-solid fa-city">Santiago, Chile</i></a
+        >
+      </div>
+    </footer>
+
+    <script src="./main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,178 @@
+import { create } from 'zustand'
+import { supabase } from '../lib/supabaseClient'
+
+/**
+ * Store de autenticación
+ * Maneja el estado del usuario actual y operaciones de auth
+ */
+
+export const useAuthStore = create((set, get) => ({
+    // Estado
+    user: null,
+    isLoading: true, // Empezar cargando para verificar sesión
+    error: null,
+    sessionChecked: false, // Flag para evitar múltiples llamadas a checkSession
+
+    // Acciones
+
+    /**
+     * Iniciar sesión con email y contraseña
+     * @param {string} email
+     * @param {string} password
+     */
+    login: async (email, password) => {
+        set({ isLoading: true, error: null })
+
+        try {
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email,
+                password
+            })
+
+            if (error) throw error
+
+            // El usuario se actualizará mediante onAuthStateChange
+            set({ isLoading: false })
+            return { success: true }
+        } catch (error) {
+            set({ isLoading: false, error: error.message })
+            return { success: false, error: error.message }
+        }
+    },
+
+    /**
+     * Registrar nuevo usuario
+     * @param {string} email
+     * @param {string} password
+     * @param {string} name
+     */
+    register: async (email, password, name) => {
+        set({ isLoading: true, error: null })
+
+        try {
+            const { data, error } = await supabase.auth.signUp({
+                email,
+                password,
+                options: {
+                    data: {
+                        name,
+                        full_name: name, // Supabase standard
+                    }
+                }
+            })
+
+            if (error) throw error
+
+            set({ isLoading: false })
+            return { success: true }
+        } catch (error) {
+            set({ isLoading: false, error: error.message })
+            return { success: false, error: error.message }
+        }
+    },
+
+    /**
+     * Cerrar sesión
+     */
+    logout: async () => {
+        set({ isLoading: true })
+        try {
+            const { error } = await supabase.auth.signOut()
+            if (error) throw error
+            // El estado se limpiará en onAuthStateChange
+        } catch (error) {
+            set({ error: error.message, isLoading: false })
+        }
+    },
+
+    /**
+     * Verificar sesión existente al cargar la app
+     * Configura el listener de cambios de estado
+     */
+    checkSession: async () => {
+        // Si ya se verificó la sesión, no volver a hacerlo
+        if (get().sessionChecked) {
+            console.log("checkSession: already checked, skipping")
+            return
+        }
+
+        console.log("checkSession started")
+        set({ isLoading: true })
+
+        try {
+            // Race condition: Supabase vs Timeout (5 seconds)
+            const sessionPromise = supabase.auth.getSession()
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Connection request timed out')), 5000)
+            )
+
+            const { data: { session }, error } = await Promise.race([sessionPromise, timeoutPromise])
+
+            console.log("Supabase session result:", { session, error })
+
+            if (error) throw error
+
+            if (session?.user) {
+                // Obtener perfil adicional si es necesario
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', session.user.id)
+                    .single()
+
+                const user = {
+                    ...session.user,
+                    // Combinar metadatos de auth y perfil público
+                    name: profile?.full_name || session.user.user_metadata?.name || session.user.email.split('@')[0],
+                    role: profile?.role || 'employee',
+                    department: profile?.department || 'General',
+                    avatar: profile?.avatar_url
+                }
+                set({ user, isLoading: false, sessionChecked: true })
+            } else {
+                set({ user: null, isLoading: false, sessionChecked: true })
+            }
+
+            // Suscribirse a cambios
+            supabase.auth.onAuthStateChange(async (event, session) => {
+                console.log("Auth state change:", event)
+                if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+                    if (session?.user) {
+                        try {
+                            // Fetch profile again if needed or use existing logic
+                            const { data: profile } = await supabase
+                                .from('profiles')
+                                .select('*')
+                                .eq('id', session.user.id)
+                                .single()
+
+                            const user = {
+                                ...session.user,
+                                name: profile?.full_name || session.user.user_metadata?.name || session.user.email.split('@')[0],
+                                role: profile?.role || 'employee',
+                                department: profile?.department || 'General',
+                                avatar: profile?.avatar_url
+                            }
+                            set({ user, isLoading: false, error: null })
+                        } catch (err) {
+                            console.error("Error fetching profile on change", err)
+                            set({ isLoading: false })
+                        }
+                    }
+                } else if (event === 'SIGNED_OUT') {
+                    set({ user: null, isLoading: false, error: null })
+                    localStorage.removeItem('control_horario_user')
+                }
+            })
+        } catch (error) {
+            console.error('Session check failed:', error)
+            // Even on error, we must stop loading to show the error UI
+            set({ user: null, isLoading: false, sessionChecked: true, error: error.message })
+        }
+    },
+
+    /**
+     * Limpiar errores
+     */
+    clearError: () => set({ error: null })
+}))

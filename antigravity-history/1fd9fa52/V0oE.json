@@ -1,0 +1,14 @@
+{
+    "title": "Agent Custom Workflows: Git Automation",
+    "summary": "Patterns for creating custom agent workflows to automate repetitive Git operations like staged commits and remote pushes with user-provided messages.",
+    "references": [
+        {
+            "type": "conversation_id",
+            "value": "dc1fdd0e-9303-414b-86c0-9c2b13e3ce24"
+        },
+        {
+            "type": "file",
+            "value": ".agent/workflows/commit.md"
+        }
+    ]
+}

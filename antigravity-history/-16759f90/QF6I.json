@@ -1,0 +1,10 @@
+{
+    "title": "Next.js API and Data Aggregation Patterns",
+    "summary": "Patterns for building complex API endpoints in Next.js, including weekly availability aggregation and data normalization from multiple Supabase tables.",
+    "references": [
+        {
+            "type": "file",
+            "value": "src/app/api/availability/week/route.ts"
+        }
+    ]
+}

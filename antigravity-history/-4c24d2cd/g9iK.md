@@ -1,0 +1,13 @@
+# Task: Bug Fix Phase 2
+
+- [x] Research and fix infinite loading bug in `app/_layout.tsx`
+- [x] Update "Arriendo de Canchas" message in `app/selection.tsx`
+- [x] Improve day selector scrolling in all views (User/Admin)
+- [x] Fix profile phone persistence and navigation in `app/(tabs)/profile.tsx`
+- [x] Verify all fixes
+
+# Task: Bug Fix Phase 3
+- [ ] Fix `useAuthStore` import error in `app/(tabs)/profile.tsx`
+- [ ] Debug and fix day selector scrolling (User/Admin)
+- [ ] Implement 24h cancellation rule for students
+- [ ] Verify all Phase 3 fixes

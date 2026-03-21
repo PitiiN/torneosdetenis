@@ -1,0 +1,6 @@
+# Public Supabase Keys (Safe to expose in client bundle)
+NEXT_PUBLIC_SUPABASE_URL=https://wlzqcrrkmaoqjqpkmigh.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndsenFjcnJrbWFvcWpxcGttaWdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAyMzU3ODQsImV4cCI6MjA4NTgxMTc4NH0.31QWL1oUTu-oW-sAFtyV48C5198kbIR8KI2lO1eRwl8
+NEXT_PUBLIC_APP_URL=https://arriendocanchas.clubf2.com
+
+# Service Role Key is NOT here. It stays in Dokploy Environment variables for runtime security.
