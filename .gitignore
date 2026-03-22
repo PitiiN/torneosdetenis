@@ -16,3 +16,9 @@ node_modules
 
 # Supabase local state
 supabase/.temp
+
+# Local/editor history and machine-local config (never commit)
+antigravity-history/
+vsc-history/
+.vscode/
+*.local
