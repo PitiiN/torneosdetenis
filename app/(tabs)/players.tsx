@@ -18,6 +18,8 @@ type RankingRow = {
     previousRank: number | null;
 };
 
+const NO_ORGANIZATION_MESSAGE = 'Por favor, selecciona una organización en la pestaña de Inicio para ver el ranking.';
+
 const decodeEscapedUnicode = (value: unknown) =>
     String(value ?? '').replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) =>
         String.fromCharCode(parseInt(hex, 16))
@@ -295,7 +297,7 @@ export default function PlayersScreen() {
                 <Text style={styles.subtitle}>
                     {organizationId
                         ? `${organizationName ? `${organizationName} · ` : ''}${activeCategory} · ${modality === 'dobles' ? 'Dobles' : 'Singles'}`
-                        : 'Selecciona tu organización para ver el ranking'}
+                        : NO_ORGANIZATION_MESSAGE}
                 </Text>
             </View>
 
@@ -333,6 +335,12 @@ export default function PlayersScreen() {
 
                 {loading ? (
                     <TennisSpinner size={34} style={{ marginTop: spacing.xl }} />
+                ) : !organizationId ? (
+                    <View style={styles.emptyState}>
+                        <Ionicons name="business-outline" size={64} color={colors.textTertiary} />
+                        <Text style={styles.emptyTitle}>Organización no seleccionada</Text>
+                        <Text style={styles.emptyText}>{NO_ORGANIZATION_MESSAGE}</Text>
+                    </View>
                 ) : rankingRows.length === 0 ? (
                     <View style={styles.emptyState}>
                         <Ionicons name="podium-outline" size={64} color={colors.textTertiary} />

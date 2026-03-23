@@ -2,7 +2,7 @@
   "expo": {
     "name": "SweetSpot",
     "slug": "torneosdetenis",
-    "version": "3.0.0",
+    "version": "3.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -26,7 +26,7 @@
         "backgroundColor": "#000000"
       },
       "package": "com.pitin.torneosdetenis",
-      "versionCode": 4,
+      "versionCode": 5,
       "blockedPermissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"

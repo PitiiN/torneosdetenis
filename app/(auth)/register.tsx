@@ -6,7 +6,11 @@ import { colors, spacing, borderRadius } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
-import { getSafeAuthErrorMessage } from '@/services/errorMessages';
+import {
+    getSafeAuthErrorMessage,
+    isAuthDuplicateUserError,
+    isAuthSignupConfigurationError,
+} from '@/services/errorMessages';
 import { TennisSpinner } from '@/components/TennisSpinner';
 
 export default function RegisterScreen() {
@@ -25,7 +29,7 @@ export default function RegisterScreen() {
         }
 
         if (password.length < 8) {
-            Alert.alert('Error', 'La contrasena debe tener al menos 8 caracteres.');
+            Alert.alert('Error', 'La contraseña debe tener al menos 8 caracteres.');
             return;
         }
 
@@ -33,18 +37,44 @@ export default function RegisterScreen() {
         try {
             const normalizedEmail = email.trim().toLowerCase();
             const fullName = `${firstName.trim()} ${lastName.trim()}`.replace(/\s+/g, ' ').slice(0, 80);
-            const { data, error } = await supabase.auth.signUp({
+            let { data, error } = await supabase.auth.signUp({
                 email: normalizedEmail,
                 password,
+                options: {
+                    data: {
+                        name: fullName,
+                        full_name: fullName,
+                        display_name: fullName,
+                        first_name: firstName.trim(),
+                        last_name: lastName.trim(),
+                    },
+                },
             });
+
+            if (error && isAuthSignupConfigurationError(error)) {
+                // Retry without metadata in case an old DB trigger expects a stricter payload path.
+                const retry = await supabase.auth.signUp({
+                    email: normalizedEmail,
+                    password,
+                });
+                data = retry.data;
+                error = retry.error;
+            }
 
             if (error) throw error;
 
+            // With some Supabase settings, duplicate emails may return a user with no identities.
+            const identities = Array.isArray((data?.user as any)?.identities)
+                ? (data?.user as any).identities
+                : null;
+            if (identities && identities.length === 0) {
+                throw { message: 'user already registered', code: 'user_already_exists' };
+            }
+
             if (data.user) {
-                // Update profile with name and surname
                 const { error: profileError } = await supabase
                     .from('profiles')
-                    .update({ 
+                    .update({
                         name: fullName,
                     })
                     .eq('id', data.user.id);
@@ -54,18 +84,21 @@ export default function RegisterScreen() {
                 }
 
                 Alert.alert(
-                    '¡Cuenta creada!', 
+                    '¡Cuenta creada!',
                     'Tu cuenta ha sido creada exitosamente. Ya puedes iniciar sesión.',
                     [{ text: 'OK', onPress: () => router.replace('/(auth)/login') }]
                 );
             }
         } catch (error: any) {
+            if (isAuthDuplicateUserError(error)) {
+                Alert.alert('Error', 'Este correo ya está registrado. Inicia sesión o recupera tu clave.');
+                return;
+            }
             Alert.alert('Error', getSafeAuthErrorMessage(error, 'register'));
         } finally {
             setLoading(false);
         }
     }
-
     return (
         <View style={styles.container}>
             <StatusBar style="light" />
@@ -287,3 +320,4 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
 });
+

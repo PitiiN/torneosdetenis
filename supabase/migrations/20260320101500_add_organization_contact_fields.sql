@@ -19,7 +19,7 @@ begin
         contact_email is null
         or (
           length(contact_email) <= 120
-          and contact_email ~* '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$'
+          and contact_email ~* '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$'
         )
       );
   end if;

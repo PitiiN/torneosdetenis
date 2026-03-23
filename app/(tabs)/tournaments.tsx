@@ -175,19 +175,27 @@ export default function TorneosScreen() {
                 photos_drive_url: decodeEscapedUnicode(organizationData.photos_drive_url || '') || null,
             };
         } else {
-            const { data: publicData } = await supabase
+            const { data: publicDataWithContact, error: publicDataWithContactError } = await supabase
                 .from('organizations_public')
-                .select('name')
+                .select('name, contact_email, contact_whatsapp, social_links, photos_drive_url')
                 .eq('id', targetOrgId)
                 .single();
+
+            const publicData = publicDataWithContactError
+                ? (await supabase
+                    .from('organizations_public')
+                    .select('name')
+                    .eq('id', targetOrgId)
+                    .single()).data
+                : publicDataWithContact;
 
             if (publicData) {
                 info = {
                     name: decodeEscapedUnicode(publicData.name || ''),
-                    contact_email: null,
-                    contact_whatsapp: null,
-                    social_links: null,
-                    photos_drive_url: null,
+                    contact_email: decodeEscapedUnicode((publicData as any).contact_email || '') || null,
+                    contact_whatsapp: decodeEscapedUnicode((publicData as any).contact_whatsapp || '') || null,
+                    social_links: decodeEscapedUnicode((publicData as any).social_links || '') || null,
+                    photos_drive_url: decodeEscapedUnicode((publicData as any).photos_drive_url || '') || null,
                 };
             }
         }
@@ -197,7 +205,7 @@ export default function TorneosScreen() {
         const normalizedOrgName = info.name || 'Torneos';
         setOrgName(normalizedOrgName);
         setOrganizationInfo(info);
-        setCachedValue(orgCacheKey, info, 5 * 60_000);
+        setCachedValue(orgCacheKey, info, 60_000);
         await SecureStore.setItemAsync('selected_org_id', String(targetOrgId));
         await SecureStore.setItemAsync('selected_org_name', normalizedOrgName || '');
     }
@@ -368,7 +376,7 @@ export default function TorneosScreen() {
         organizationInfo?.social_links ||
         organizationInfo?.photos_drive_url
     );
-    const shouldShowOrganizationInfo = Boolean(activeOrgId && organizationInfo && !canManage && hasOrganizationInfoDetails);
+    const shouldShowOrganizationInfo = Boolean(activeOrgId && organizationInfo);
 
     const filteredTournaments = tournaments.filter(t => {
         // Determine if tournament should be visible based on role and filter
@@ -411,6 +419,10 @@ export default function TorneosScreen() {
                 {shouldShowOrganizationInfo && organizationInfo && (
                     <View style={styles.organizationInfoCard}>
                         <Text style={styles.organizationInfoTitle}>Información de la organización</Text>
+                        <View style={styles.organizationInfoRow}>
+                            <Ionicons name="business-outline" size={14} color={colors.textSecondary} />
+                            <Text style={styles.organizationInfoText}>{organizationInfo.name || orgName || 'Organización'}</Text>
+                        </View>
                         {organizationInfo.contact_email && (
                             <View style={styles.organizationInfoRow}>
                                 <Ionicons name="mail-outline" size={14} color={colors.textSecondary} />
@@ -438,6 +450,11 @@ export default function TorneosScreen() {
                                     {organizationInfo.photos_drive_url}
                                 </Text>
                             </View>
+                        )}
+                        {!hasOrganizationInfoDetails && (
+                            <Text style={styles.organizationInfoText}>
+                                Esta organización aún no ha publicado información de contacto.
+                            </Text>
                         )}
                     </View>
                 )}

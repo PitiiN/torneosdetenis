@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +20,8 @@ interface PaymentRecord {
     status: string;
 }
 
+const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
 export default function PaymentsScreen() {
     const insets = useSafeAreaInsets();
     const { colors } = useTheme();
@@ -27,6 +29,8 @@ export default function PaymentsScreen() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [payments, setPayments] = useState<PaymentRecord[]>([]);
+    const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+    const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
 
     useFocusEffect(
         useCallback(() => {
@@ -105,7 +109,31 @@ export default function PaymentsScreen() {
         }
     }
 
-    const totalUnpaid = payments.filter(p => !p.is_paid).reduce((acc, p) => acc + p.fee_amount, 0);
+    const availableYears = useMemo(() => {
+        const currentYear = new Date().getFullYear();
+        const years = new Set<number>([currentYear]);
+
+        payments.forEach((payment) => {
+            const paymentDate = new Date(payment.created_at);
+            if (!Number.isNaN(paymentDate.getTime())) {
+                years.add(paymentDate.getFullYear());
+            }
+        });
+
+        return [...years].sort((a, b) => b - a);
+    }, [payments]);
+
+    const filteredPayments = useMemo(() => (
+        payments.filter((payment) => {
+            const paymentDate = new Date(payment.created_at);
+            if (Number.isNaN(paymentDate.getTime())) return false;
+            return paymentDate.getFullYear() === selectedYear && paymentDate.getMonth() === selectedMonth;
+        })
+    ), [payments, selectedYear, selectedMonth]);
+
+    const totalUnpaid = filteredPayments
+        .filter(payment => !payment.is_paid)
+        .reduce((acc, payment) => acc + payment.fee_amount, 0);
 
     return (
         <View style={styles.container}>
@@ -138,11 +166,45 @@ export default function PaymentsScreen() {
                     <Text style={styles.sectionTitle}>Historial de Torneos</Text>
                 </View>
 
+                <View style={styles.filterSection}>
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.carouselScroll}
+                    >
+                        {availableYears.map((year) => (
+                            <TouchableOpacity
+                                key={year}
+                                style={[styles.carouselItem, selectedYear === year && styles.carouselItemActive]}
+                                onPress={() => setSelectedYear(year)}
+                            >
+                                <Text style={[styles.carouselText, selectedYear === year && styles.carouselTextActive]}>{year}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.carouselScroll}
+                        style={{ marginTop: spacing.xs }}
+                    >
+                        {MONTHS.map((month, index) => (
+                            <TouchableOpacity
+                                key={month}
+                                style={[styles.carouselItem, selectedMonth === index && styles.carouselItemActive]}
+                                onPress={() => setSelectedMonth(index)}
+                            >
+                                <Text style={[styles.carouselText, selectedMonth === index && styles.carouselTextActive]}>{month}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                </View>
+
                 {loading && !refreshing ? (
                     <TennisSpinner size={34} style={{ marginTop: 40 }} />
-                ) : payments.length > 0 ? (
+                ) : filteredPayments.length > 0 ? (
                     <View style={styles.list}>
-                        {payments.map((p) => (
+                        {filteredPayments.map((p) => (
                             <View key={p.id} style={styles.paymentCard}>
                                 <View style={styles.paymentInfo}>
                                     <Text style={styles.tournamentName} numberOfLines={1}>{p.tournament_name}</Text>
@@ -165,7 +227,7 @@ export default function PaymentsScreen() {
                 ) : (
                     <View style={styles.emptyState}>
                         <Ionicons name="receipt-outline" size={64} color={colors.textTertiary} />
-                        <Text style={styles.emptyText}>No tienes registros de pagos aún.</Text>
+                        <Text style={styles.emptyText}>No hay pagos para el mes y año seleccionados.</Text>
                     </View>
                 )}
             </ScrollView>
@@ -233,6 +295,35 @@ const getStyles = (colors: any) => StyleSheet.create({
     },
     sectionHeader: {
         marginBottom: spacing.lg,
+    },
+    filterSection: {
+        marginBottom: spacing.xl,
+    },
+    carouselScroll: {
+        gap: spacing.xs,
+        paddingRight: spacing.xl,
+    },
+    carouselItem: {
+        paddingHorizontal: spacing.md,
+        paddingVertical: 8,
+        borderRadius: borderRadius.lg,
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.border,
+        minWidth: 70,
+        alignItems: 'center',
+    },
+    carouselItemActive: {
+        backgroundColor: colors.primary[500] + '20',
+        borderColor: colors.primary[500],
+    },
+    carouselText: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: colors.textSecondary,
+    },
+    carouselTextActive: {
+        color: colors.primary[500],
     },
     sectionTitle: {
         fontSize: 20,

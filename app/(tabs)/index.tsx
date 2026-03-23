@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '@/services/supabase';
 import * as SecureStore from 'expo-secure-store';
 import { DateField } from '@/components/DateField';
@@ -11,6 +11,7 @@ import { CHILEAN_COMUNAS } from '@/constants/tournamentOptions';
 import { Modal } from 'react-native';
 import { resolveStorageAssetUrl } from '@/services/storage';
 import { TennisSpinner } from '@/components/TennisSpinner';
+import { getCachedValue, setCachedValue } from '@/services/runtimeCache';
 
 const { width } = Dimensions.get('window');
 
@@ -23,26 +24,104 @@ interface Organization {
     logo_signed_url?: string | null;
 }
 
+type OpenTournamentRef = {
+    organization_id: string;
+    comuna?: string | null;
+    start_date?: string | null;
+};
+
+type HomeCachePayload = {
+    savedAt: number;
+    organizations: Organization[];
+    openTournaments: OpenTournamentRef[];
+};
+
+const HOME_RUNTIME_CACHE_KEY = 'home:organizations:v1';
+const HOME_CACHE_TTL_MS = 5 * 60_000;
+const ORGANIZATIONS_UPDATED_AT_KEY = 'organizations_last_updated_at';
+
 export default function InicioScreen() {
     const insets = useSafeAreaInsets();
     const router = useRouter();
     const { colors } = useTheme();
     const styles = getStyles(colors);
     const [organizations, setOrganizations] = useState<Organization[]>([]);
+    const [sourceOrganizations, setSourceOrganizations] = useState<Organization[]>([]);
+    const [openTournaments, setOpenTournaments] = useState<OpenTournamentRef[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedComuna, setSelectedComuna] = useState<string | null>(null);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [showComunaModal, setShowComunaModal] = useState(false);
+    const lastSeenOrganizationsUpdatedAtRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        loadOrganizationsSource();
+    }, []);
 
     useFocusEffect(
         useCallback(() => {
-            fetchOrganizations();
-        }, [selectedComuna, selectedDate])
+            let active = true;
+
+            (async () => {
+                const updatedAt = await SecureStore.getItemAsync(ORGANIZATIONS_UPDATED_AT_KEY);
+                if (!active) return;
+
+                if (updatedAt && updatedAt !== lastSeenOrganizationsUpdatedAtRef.current) {
+                    lastSeenOrganizationsUpdatedAtRef.current = updatedAt;
+                    await loadOrganizationsSource(true);
+                }
+            })();
+
+            return () => {
+                active = false;
+            };
+        }, [])
     );
 
-    async function fetchOrganizations() {
+    useEffect(() => {
+        applyFilters();
+    }, [sourceOrganizations, openTournaments, selectedComuna, selectedDate]);
+
+    const applyFilters = () => {
+        const tournamentsByOrg = openTournaments.reduce((acc, tournament) => {
+            const key = tournament.organization_id;
+            if (!key) return acc;
+            acc[key] = [...(acc[key] || []), tournament];
+            return acc;
+        }, {} as Record<string, OpenTournamentRef[]>);
+
+        let filtered = sourceOrganizations;
+        if (selectedComuna || selectedDate) {
+            filtered = sourceOrganizations.filter((org) => {
+                const orgTournaments = tournamentsByOrg[org.id] || [];
+                if (orgTournaments.length === 0) return false;
+                return orgTournaments.some((tournament) => {
+                    const matchComuna = !selectedComuna || tournament.comuna === selectedComuna;
+                    const matchDate = !selectedDate || String(tournament.start_date || '') >= selectedDate;
+                    return matchComuna && matchDate;
+                });
+            });
+        }
+
+        setOrganizations(filtered);
+    };
+
+    async function loadOrganizationsSource(forceRefresh = false) {
         setLoading(true);
+        let hydratedFromCache = false;
         try {
+            let cachedPayload = getCachedValue<HomeCachePayload>(HOME_RUNTIME_CACHE_KEY);
+
+            if (cachedPayload) {
+                setSourceOrganizations(cachedPayload.organizations);
+                setOpenTournaments(cachedPayload.openTournaments);
+                hydratedFromCache = true;
+                const isCacheFresh = Date.now() - cachedPayload.savedAt < HOME_CACHE_TTL_MS;
+                if (isCacheFresh && !forceRefresh) {
+                    return;
+                }
+            }
+
             const { data: orgData, error: orgError } = await supabase
                 .from('organizations_public')
                 .select('id, name, slug, created_at, logo_url');
@@ -54,30 +133,10 @@ export default function InicioScreen() {
                 .eq('status', 'open');
             if (tournamentsError) throw tournamentsError;
 
-            const tournamentsByOrg = (tournamentData || []).reduce((acc, tournament: any) => {
-                const key = tournament.organization_id;
-                if (!key) return acc;
-                acc[key] = [...(acc[key] || []), tournament];
-                return acc;
-            }, {} as Record<string, Array<{ comuna?: string | null; start_date?: string | null }>>);
-
-            let filtered = (orgData || []) as Organization[];
-            if (selectedComuna || selectedDate) {
-                filtered = filtered.filter((org) => {
-                    const orgTournaments = tournamentsByOrg[org.id] || [];
-                    if (orgTournaments.length === 0) return false;
-                    return orgTournaments.some((tournament) => {
-                        const matchComuna = !selectedComuna || tournament.comuna === selectedComuna;
-                        const matchDate = !selectedDate || String(tournament.start_date || '') >= selectedDate;
-                        return matchComuna && matchDate;
-                    });
-                });
-            }
-
             const enrichedOrganizations = await Promise.all(
-                filtered.map(async (organization) => ({
+                ((orgData || []) as Organization[]).map(async (organization) => ({
                     ...organization,
-                    logo_signed_url: await resolveStorageAssetUrl(organization.logo_url),
+                    logo_signed_url: await resolveStorageAssetUrl(organization.logo_url, 900),
                 }))
             );
 
@@ -88,9 +147,19 @@ export default function InicioScreen() {
                     .map((url) => Image.prefetch(url))
             );
 
-            setOrganizations(enrichedOrganizations);
+            const nextPayload: HomeCachePayload = {
+                savedAt: Date.now(),
+                organizations: enrichedOrganizations,
+                openTournaments: (tournamentData || []) as OpenTournamentRef[],
+            };
+
+            setSourceOrganizations(nextPayload.organizations);
+            setOpenTournaments(nextPayload.openTournaments);
+            setCachedValue(HOME_RUNTIME_CACHE_KEY, nextPayload, HOME_CACHE_TTL_MS);
         } catch (error) {
-            setOrganizations([]);
+            if (!hydratedFromCache) {
+                setOrganizations([]);
+            }
         } finally {
             setLoading(false);
         }

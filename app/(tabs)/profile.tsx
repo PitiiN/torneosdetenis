@@ -4,16 +4,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { getTournamentPlacements } from '@/services/ranking';
 import { adminModeService } from '@/services/adminMode';
 import { notificationService } from '@/services/notificationService';
 import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
+import { getCurrentUserAccessContext } from '@/services/accessControl';
 
 const { width } = Dimensions.get('window');
-const GLOBAL_ADMIN_EMAIL = 'javier.aravena25@gmail.com';
 const BACKHAND_FIELD = 'rev\u00E9s';
+const VIEW_TOGGLE_BLOCKED_EMAILS = new Set(['javier.aravena25@gmail.com']);
 
 export default function ProfileScreen() {
     const insets = useSafeAreaInsets();
@@ -50,6 +51,7 @@ export default function ProfileScreen() {
 
     // Super Admin States
     const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
+    const [currentUserEmail, setCurrentUserEmail] = useState('');
     const [viewMode, setViewMode] = useState(adminModeService.getMode());
     const [allOrganizations, setAllOrganizations] = useState<any[]>([]);
     const [orgSearch, setOrgSearch] = useState('');
@@ -76,11 +78,9 @@ export default function ProfileScreen() {
         return () => backHandler.remove();
     }, [showContextModal, showOrgSearchModal]);
 
-    useFocusEffect(
-        useCallback(() => {
-            loadProfileData();
-        }, [])
-    );
+    useEffect(() => {
+        loadProfileData();
+    }, []);
 
     useEffect(() => {
         if (selectedContext) {
@@ -111,6 +111,8 @@ export default function ProfileScreen() {
         try {
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) return;
+            const normalizedSessionEmail = String(session.user.email || '').trim().toLowerCase();
+            setCurrentUserEmail(normalizedSessionEmail);
 
             // Fetch Profile
             const { data: profile, error: profErr } = await supabase
@@ -124,11 +126,15 @@ export default function ProfileScreen() {
             const signedAvatar = await resolveStorageAssetUrlWithRetry(profile?.avatar_url, { attempts: 4, baseDelayMs: 350 });
             setProfileAvatarUrl(signedAvatar || '');
 
-            const isGlobal = session.user.email === GLOBAL_ADMIN_EMAIL;
+            const accessContext = await getCurrentUserAccessContext();
+            const isGlobal = Boolean(accessContext?.isSuperAdmin);
             setIsGlobalAdmin(isGlobal);
 
-            // Removing isGlobal restriction so all users fetch organizations for stats filter
-            fetchAllOrganizations();
+            if (isGlobal) {
+                fetchAllOrganizations();
+            } else {
+                setAllOrganizations([]);
+            }
 
             // Avoid ambiguous registrations->tournaments embeds by loading in two steps.
             const { data: registrationRows, error: registrationError } = await supabase
@@ -378,7 +384,7 @@ export default function ProfileScreen() {
             if (error) throw error;
             setUser({ ...user, location: newLocation });
         } catch (error) {
-            Alert.alert('Error', 'No se pudo actualizar la ubicaciÃ³n.');
+            Alert.alert('Error', 'No se pudo actualizar la ubicación.');
         }
     };
 
@@ -392,7 +398,7 @@ export default function ProfileScreen() {
             if (error) throw error;
             setUser({ ...user, phone: newPhone.trim() });
         } catch (error) {
-            Alert.alert('Error', 'No se pudo actualizar el telÃ©fono.');
+            Alert.alert('Error', 'No se pudo actualizar el teléfono.');
         }
     };
 
@@ -422,7 +428,7 @@ export default function ProfileScreen() {
             setUser({ ...user, notifications_enabled: newValue });
         } catch (error) {
             console.error(error);
-            Alert.alert('Error', 'No se pudo actualizar la configuraciÃ³n de notificaciones.');
+            Alert.alert('Error', 'No se pudo actualizar la configuración de notificaciones.');
         } finally {
             setUpdating(false);
         }
@@ -442,7 +448,7 @@ export default function ProfileScreen() {
                 })
                 .eq('id', user.id);
             if (error) throw error;
-            Alert.alert('Ã‰xito', 'Cambios guardados correctamente.');
+            Alert.alert('Éxito', 'Cambios guardados correctamente.');
             setIsEditingBackhand(false);
             setIsEditingDominantHand(false);
         } catch (error) {
@@ -506,7 +512,7 @@ export default function ProfileScreen() {
             const signedAvatar = await resolveStorageAssetUrlWithRetry(filePath, { attempts: 4, baseDelayMs: 350 });
             setProfileAvatarUrl(signedAvatar || '');
             setUser({ ...user, avatar_url: filePath });
-            Alert.alert('Ã‰xito', 'Foto de perfil actualizada.');
+            Alert.alert('Éxito', 'Foto de perfil actualizada.');
         } catch (error) {
             console.error('Error uploading avatar:', error);
             Alert.alert('Error', 'No se pudo subir la imagen.');
@@ -542,7 +548,7 @@ export default function ProfileScreen() {
                         <Text style={styles.logoText}>SweetSpot</Text>
                     </View>
 
-                    {isGlobalAdmin && (
+                    {isGlobalAdmin && !VIEW_TOGGLE_BLOCKED_EMAILS.has(currentUserEmail) && (
                         <TouchableOpacity
                             style={[styles.viewToggle, viewMode === 'user' && styles.viewToggleUser]}
                             onPress={handleToggleMode}
@@ -598,7 +604,7 @@ export default function ProfileScreen() {
                                             value={user.phone || ''}
                                             onChangeText={(val) => setUser({ ...user, phone: val })}
                                             onBlur={() => handleUpdatePhone(user.phone)}
-                                            placeholder="TelÃ©fono..."
+                                            placeholder="Teléfono..."
                                             placeholderTextColor={colors.textTertiary}
                                             keyboardType="phone-pad"
                                         />
@@ -622,7 +628,7 @@ export default function ProfileScreen() {
 
                             <View style={styles.extraFields}>
                                 <TouchableOpacity style={styles.extraField} onPress={() => setIsEditingBackhand(true)}>
-                                    <Text style={styles.extraFieldLabel}>RevÃ©s:</Text>
+                                    <Text style={styles.extraFieldLabel}>Revés:</Text>
                                     {isEditingBackhand ? (
                                         <TextInput
                                             style={styles.extraFieldInput}
@@ -677,7 +683,7 @@ export default function ProfileScreen() {
                             <View style={styles.contextInfo}>
                                 <Ionicons name="filter-outline" size={16} color={colors.primary[500]} />
                                 <Text style={styles.contextText}>
-                                    {selectedContext ? `${selectedContext.org_name} Â· ${selectedContext.level}` : 'Filtrar por OrganizaciÃ³n/Nivel'}
+                                    {selectedContext ? `${selectedContext.org_name} · ${selectedContext.level}` : 'Filtrar por Organización/Nivel'}
                                 </Text>
                             </View>
                             <Ionicons name="chevron-forward" size={16} color={colors.primary[500]} />
@@ -704,7 +710,7 @@ export default function ProfileScreen() {
                 {/* Stats Bento */}
                 <View style={styles.statsGrid}>
                     <View style={styles.mainRankCard}>
-                        <Text style={styles.statLabel} numberOfLines={1}>POSICIÃ“N RANKING</Text>
+                        <Text style={styles.statLabel} numberOfLines={1}>POSICIÓN RANKING</Text>
                         <View>
                             <Text style={styles.rankValue}>{stats.rank}</Text>
                             <View style={styles.rankStatus}>
@@ -784,11 +790,11 @@ export default function ProfileScreen() {
                             </View>
                             <View style={styles.historyInfo}>
                                 <Text style={styles.historyName}>{t.name}</Text>
-                                <Text style={styles.historyMeta}>{t.level} Â· {t.format} Â· {t.modality === 'dobles' ? 'Dobles' : 'Singles'}</Text>
+                                <Text style={styles.historyMeta}>{t.level} · {t.format} · {t.modality === 'dobles' ? 'Dobles' : 'Singles'}</Text>
                             </View>
                             <View style={styles.historyResult}>
-                                <View style={t.place.includes('1Â°') ? styles.winnerBadge : styles.resultBadge}>
-                                    <Text style={t.place.includes('1Â°') ? styles.winnerBadgeText : styles.resultBadgeText}>
+                                <View style={t.place.includes('1°') ? styles.winnerBadge : styles.resultBadge}>
+                                    <Text style={t.place.includes('1°') ? styles.winnerBadgeText : styles.resultBadgeText}>
                                         {t.place}
                                     </Text>
                                 </View>
@@ -797,13 +803,13 @@ export default function ProfileScreen() {
                         </TouchableOpacity>
                     )) : (
                         <View style={styles.emptyCard}>
-                            <Text style={styles.emptyText}>No has participado en torneos aÃºn.</Text>
+                            <Text style={styles.emptyText}>No has participado en torneos aún.</Text>
                         </View>
                     )}
                 </View>
                 {/* Account Settings */}
                 <View style={styles.settingsSection}>
-                    <Text style={styles.settingsTitle}>ConfiguraciÃ³n de Cuenta</Text>
+                    <Text style={styles.settingsTitle}>Configuración de Cuenta</Text>
 
                     <View style={styles.settingsGrid}>
                         <TouchableOpacity style={styles.settingItem} onPress={handleToggleNotifications}>
@@ -829,7 +835,7 @@ export default function ProfileScreen() {
                             </View>
                             <View style={styles.settingText}>
                                 <Text style={styles.settingLabel}>Privacidad</Text>
-                                <Text style={styles.settingDesc}>ContraseÃ±a y visibilidad</Text>
+                                <Text style={styles.settingDesc}>Contraseña y visibilidad</Text>
                             </View>
                             <Ionicons name="chevron-forward" size={20} color={colors.border} />
                         </TouchableOpacity>
@@ -840,7 +846,7 @@ export default function ProfileScreen() {
                             </View>
                             <View style={styles.settingText}>
                                 <Text style={styles.settingLabel}>Modo Oscuro</Text>
-                                <Text style={styles.settingDesc}>Cambiar el tema de la aplicaciÃ³n</Text>
+                                <Text style={styles.settingDesc}>Cambiar el tema de la aplicación</Text>
                             </View>
                             <View style={[styles.themeToggle, { backgroundColor: isDark ? colors.primary[500] : colors.surfaceSecondary }]}>
                                 <View style={[styles.themeToggleCircle, { alignSelf: isDark ? 'flex-end' : 'flex-start' }]} />
@@ -852,7 +858,7 @@ export default function ProfileScreen() {
                                 <Ionicons name="log-out-outline" size={20} color={colors.error} />
                             </View>
                             <View style={styles.settingText}>
-                                <Text style={[styles.settingLabel, { color: colors.error }]}>Cerrar SesiÃ³n</Text>
+                                <Text style={[styles.settingLabel, { color: colors.error }]}>Cerrar Sesión</Text>
                                 <Text style={styles.settingDesc}>Salir de tu cuenta</Text>
                             </View>
                         </TouchableOpacity>
@@ -865,7 +871,7 @@ export default function ProfileScreen() {
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Ver EstadÃ­sticas en:</Text>
+                            <Text style={styles.modalTitle}>Ver Estadísticas en:</Text>
                             <TouchableOpacity onPress={() => setShowContextModal(false)}>
                                 <Ionicons name="close" size={24} color="#fff" />
                             </TouchableOpacity>
@@ -881,7 +887,7 @@ export default function ProfileScreen() {
                                     }}
                                 >
                                     <Text style={[styles.ctxItemText, selectedContext?.org_id === ctx.org_id && selectedContext.level === ctx.level && styles.ctxItemTextActive]}>
-                                        {ctx.org_name} Â· {ctx.level}
+                                        {ctx.org_name} · {ctx.level}
                                     </Text>
                                 </TouchableOpacity>
                             ))}
@@ -902,7 +908,7 @@ export default function ProfileScreen() {
                         </View>
                         <TextInput
                             style={styles.modalSearchInput}
-                            placeholder="Buscar organizaciÃ³n..."
+                            placeholder="Buscar organización..."
                             placeholderTextColor={colors.textTertiary}
                             value={orgSearch}
                             onChangeText={setOrgSearch}
@@ -914,7 +920,7 @@ export default function ProfileScreen() {
                                     <View key={org.id} style={styles.orgGroup}>
                                         <Text style={styles.orgGroupName}>{org.name}</Text>
                                         <View style={styles.levelChips}>
-                                            {['Primera', 'Segunda', 'Tercera', 'Cuarta', 'Quinta', 'Honor', 'EscalafÃ³n'].map(lvl => (
+                                            {['Primera', 'Segunda', 'Tercera', 'Cuarta', 'Quinta', 'Honor', 'Escalafón'].map(lvl => (
                                                 <TouchableOpacity
                                                     key={lvl}
                                                     style={[styles.levelChip, selectedContext?.org_id === org.id && selectedContext.level === lvl && styles.levelChipActive]}

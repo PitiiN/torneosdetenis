@@ -514,15 +514,14 @@ export default function TournamentDetailScreen() {
                 )}
             </ScrollView>
 
-            {tournament.status === 'open' && (
+            {tournament.status === 'open' && !isRegistered && (
                 <View style={[styles.footerActions, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
                     <TouchableOpacity
-                        style={[styles.joinButton, isRegistered && { opacity: 0.88 }]}
-                        onPress={isRegistered ? undefined : handleJoin}
-                        disabled={isRegistered}
+                        style={styles.joinButton}
+                        onPress={handleJoin}
                     >
-                        <Text style={styles.joinButtonText}>{isRegistered ? '¡Estás inscrito! Ver detalles' : 'Inscribirse al Torneo'}</Text>
-                        <Ionicons name={isRegistered ? 'checkmark-circle-outline' : 'enter-outline'} size={20} color="#fff" />
+                        <Text style={styles.joinButtonText}>Inscribirse al Torneo</Text>
+                        <Ionicons name="enter-outline" size={20} color="#fff" />
                     </TouchableOpacity>
                 </View>
             )}

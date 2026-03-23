@@ -9,6 +9,7 @@ import { getCurrentUserAccessContext } from '@/services/accessControl';
 import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
 import * as SecureStore from 'expo-secure-store';
 import { TennisSpinner } from '@/components/TennisSpinner';
+import { clearCachedValue } from '@/services/runtimeCache';
 
 const ROLE_OPTIONS = ['player', 'admin'] as const;
 const PROTECTED_SUPER_ADMIN_ROLE = 'super_admin';
@@ -30,12 +31,34 @@ const isProtectedSuperAdmin = (user: any) =>
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const WHATSAPP_PATTERN = /^[0-9+\s()-]{0,30}$/;
 const URL_PATTERN = /^https?:\/\/.+/i;
+const SLUG_PATTERN = /[^a-z0-9-]/g;
+const HOME_ORGANIZATIONS_CACHE_KEY = 'home:organizations:v1';
 
 const getExtensionFromUri = (uri: string) => {
     const sanitized = uri.split('?')[0].trim();
     const dotIndex = sanitized.lastIndexOf('.');
     if (dotIndex < 0 || dotIndex === sanitized.length - 1) return '';
     return sanitized.slice(dotIndex + 1).toLowerCase();
+};
+
+const buildOrganizationSlug = (value: string) => {
+    const baseSlug = value
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(SLUG_PATTERN, '')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 48);
+
+    if (baseSlug) return baseSlug;
+    return `organizacion-${Date.now()}`;
+};
+
+const isSlugConstraintError = (error: any) => {
+    const normalized = String(error?.message || '').toLowerCase();
+    return error?.code === '23505' && normalized.includes('slug');
 };
 
 export default function SettingsScreen() {
@@ -72,6 +95,14 @@ export default function SettingsScreen() {
     const [newOrgWhatsapp, setNewOrgWhatsapp] = useState('');
     const [newOrgSocial, setNewOrgSocial] = useState('');
     const [newOrgDrive, setNewOrgDrive] = useState('');
+
+    const notifyOrganizationDataChanged = async (orgId?: string | null) => {
+        clearCachedValue(HOME_ORGANIZATIONS_CACHE_KEY);
+        if (orgId) {
+            clearCachedValue(`org:details:${orgId}`);
+        }
+        await SecureStore.setItemAsync('organizations_last_updated_at', String(Date.now()));
+    };
 
     useEffect(() => {
         loadInitialData();
@@ -133,11 +164,19 @@ export default function SettingsScreen() {
         let resolvedOrg = org;
 
         if (!resolvedOrg || orgErr) {
-            const { data: publicOrg } = await supabase
+            const { data: publicOrgWithContact, error: publicOrgWithContactError } = await supabase
                 .from('organizations_public')
-                .select('id, name, logo_url')
+                .select('id, name, logo_url, contact_email, contact_whatsapp, social_links, photos_drive_url')
                 .eq('id', orgId)
                 .single();
+
+            const publicOrg = publicOrgWithContactError
+                ? (await supabase
+                    .from('organizations_public')
+                    .select('id, name, logo_url')
+                    .eq('id', orgId)
+                    .single()).data
+                : publicOrgWithContact;
 
             if (!publicOrg) {
                 setOrganization(null);
@@ -146,10 +185,10 @@ export default function SettingsScreen() {
 
             resolvedOrg = {
                 ...publicOrg,
-                contact_email: null,
-                contact_whatsapp: null,
-                social_links: null,
-                photos_drive_url: null,
+                contact_email: (publicOrg as any).contact_email || null,
+                contact_whatsapp: (publicOrg as any).contact_whatsapp || null,
+                social_links: (publicOrg as any).social_links || null,
+                photos_drive_url: (publicOrg as any).photos_drive_url || null,
             };
         }
 
@@ -162,6 +201,7 @@ export default function SettingsScreen() {
         setContactWhatsapp(resolvedOrg.contact_whatsapp || '');
         setSocialLinks(resolvedOrg.social_links || '');
         setPhotosDriveUrl(resolvedOrg.photos_drive_url || '');
+        await SecureStore.setItemAsync('selected_org_id', orgId);
         await SecureStore.setItemAsync('selected_org_name', resolvedOrg.name || '');
     };
 
@@ -244,6 +284,7 @@ export default function SettingsScreen() {
                 .eq('id', organization.id);
 
             if (logoUpdateError) throw logoUpdateError;
+            await notifyOrganizationDataChanged(organization.id);
 
             const signedLogoUrl = await resolveStorageAssetUrlWithRetry(filePath, { attempts: 4, baseDelayMs: 350 });
             setLogoPath(filePath);
@@ -295,18 +336,10 @@ export default function SettingsScreen() {
                 .update(fullPayload)
                 .eq('id', organization.id);
 
-            if (fullUpdateError) {
-                const { error: fallbackError } = await supabase
-                    .from('organizations')
-                    .update({
-                        name: normalizedName,
-                        logo_url: logoPath || null,
-                    })
-                    .eq('id', organization.id);
-                if (fallbackError) throw fallbackError;
-            }
+            if (fullUpdateError) throw fullUpdateError;
 
             await SecureStore.setItemAsync('selected_org_name', normalizedName);
+            await notifyOrganizationDataChanged(organization.id);
             setOrganization((current: any) => current ? ({
                 ...current,
                 name: normalizedName,
@@ -318,7 +351,12 @@ export default function SettingsScreen() {
             }) : current);
             Alert.alert('Éxito', 'Configuración guardada.');
         } catch (error) {
-            Alert.alert('Error', 'No se pudo guardar la configuración.');
+            const normalizedMessage = String((error as any)?.message || '').toLowerCase();
+            if ((error as any)?.code === '23514' || normalizedMessage.includes('organizations_contact_email_format_chk')) {
+                Alert.alert('Error', 'El correo de contacto no cumple el formato permitido.');
+            } else {
+                Alert.alert('Error', 'No se pudo guardar la configuración.');
+            }
         } finally {
             setSaving(false);
         }
@@ -330,31 +368,91 @@ export default function SettingsScreen() {
         const normalizedWhatsapp = newOrgWhatsapp.trim().slice(0, 30);
         const normalizedSocial = newOrgSocial.trim().slice(0, 500);
         const normalizedDrive = newOrgDrive.trim().slice(0, 500);
+        const baseSlug = buildOrganizationSlug(normalizedName);
 
         if (!normalizedName) {
             Alert.alert('Error', 'El nombre de la organización es obligatorio.');
             return;
         }
+
+        if (normalizedEmail && !EMAIL_PATTERN.test(normalizedEmail)) {
+            Alert.alert('Error', 'El correo de contacto no tiene un formato válido.');
+            return;
+        }
+
+        if (normalizedWhatsapp && !WHATSAPP_PATTERN.test(normalizedWhatsapp)) {
+            Alert.alert('Error', 'El WhatsApp de contacto solo puede incluir números y símbolos básicos.');
+            return;
+        }
+
+        if (normalizedDrive && !URL_PATTERN.test(normalizedDrive)) {
+            Alert.alert('Error', 'El enlace de fotos debe comenzar con http:// o https://');
+            return;
+        }
+
+        const access = await getCurrentUserAccessContext();
+        const ownerProfileId = access?.profile?.id || access?.session?.user?.id || null;
+        if (!ownerProfileId) {
+            Alert.alert('Error', 'No pudimos identificar tu perfil para crear la organización.');
+            return;
+        }
+
         setSaving(true);
         try {
-            const fullPayload = {
-                name: normalizedName,
-                contact_email: normalizedEmail || null,
-                contact_whatsapp: normalizedWhatsapp || null,
-                social_links: normalizedSocial || null,
-                photos_drive_url: normalizedDrive || null,
-            };
+            let insertedOrganization: { id: string; name: string } | null = null;
+            let insertError: any = null;
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+                const slugCandidate = attempt === 0
+                    ? baseSlug
+                    : `${baseSlug}-${Math.floor(100 + Math.random() * 900)}`;
 
-            const { error } = await supabase
-                .from('organizations')
-                .insert([fullPayload]);
+                const fullPayload = {
+                    name: normalizedName,
+                    slug: slugCandidate,
+                    owner_profile_id: ownerProfileId,
+                    contact_email: normalizedEmail || null,
+                    contact_whatsapp: normalizedWhatsapp || null,
+                    social_links: normalizedSocial || null,
+                    photos_drive_url: normalizedDrive || null,
+                };
 
-            if (error) {
-                const { error: fallbackError } = await supabase
+                const { data, error } = await supabase
                     .from('organizations')
-                    .insert([{ name: normalizedName }]);
+                    .insert([fullPayload])
+                    .select('id, name')
+                    .single();
 
-                if (fallbackError) throw fallbackError;
+                if (!error) {
+                    insertedOrganization = data || null;
+                    insertError = null;
+                    break;
+                }
+
+                const { data: fallbackData, error: fallbackError } = await supabase
+                    .from('organizations')
+                    .insert([{
+                        name: normalizedName,
+                        slug: slugCandidate,
+                        owner_profile_id: ownerProfileId,
+                    }])
+                    .select('id, name')
+                    .single();
+
+                if (!fallbackError) {
+                    insertedOrganization = fallbackData || null;
+                    insertError = null;
+                    break;
+                }
+
+                insertError = fallbackError;
+                if (!isSlugConstraintError(fallbackError)) {
+                    break;
+                }
+            }
+
+            if (insertError) throw insertError;
+            if (!insertedOrganization?.id) {
+                throw new Error('organization creation returned no row');
             }
 
             Alert.alert('Éxito', 'Organización creada correctamente.');
@@ -369,9 +467,24 @@ export default function SettingsScreen() {
 
             // Refresh list and select the new one
             await fetchAllOrganizations();
+            await fetchOrgDetails(insertedOrganization.id);
+            await notifyOrganizationDataChanged(insertedOrganization.id);
         } catch (error) {
             console.error('Error creating organization:', error);
-            Alert.alert('Error', 'No se pudo crear la organización.');
+            const normalizedMessage = String((error as any)?.message || '').toLowerCase();
+            if ((error as any)?.code === '42501' || normalizedMessage.includes('row-level security')) {
+                Alert.alert('Error', 'Tu usuario no tiene permisos de super admin para crear organizaciones.');
+            } else if (normalizedMessage.includes('owner_profile_id') || (error as any)?.code === '23502') {
+                Alert.alert('Error', 'No se pudo crear la organización porque falta el propietario interno del registro.');
+            } else if (
+                normalizedMessage.includes('contact_email')
+                || normalizedMessage.includes('whatsapp')
+                || normalizedMessage.includes('photos_drive_url')
+            ) {
+                Alert.alert('Error', 'Revisa el formato de correo, WhatsApp o enlace de fotos antes de crear la organización.');
+            } else {
+                Alert.alert('Error', 'No se pudo crear la organización.');
+            }
         } finally {
             setSaving(false);
         }

@@ -1,30 +1,59 @@
-import * as Notifications from 'expo-notifications';
+import type { Notification, NotificationResponse } from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+const isExpoGo = Constants.appOwnership === 'expo';
+
+let notificationsModule: typeof import('expo-notifications') | null = null;
+let notificationHandlerConfigured = false;
+
+const getNotificationsModule = () => {
+  if (isExpoGo) return null;
+  if (!notificationsModule) {
+    notificationsModule = require('expo-notifications');
+  }
+  return notificationsModule;
+};
+
+const ensureNotificationHandler = () => {
+  const Notifications = getNotificationsModule();
+  if (!Notifications || notificationHandlerConfigured) return;
+
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+
+  notificationHandlerConfigured = true;
+};
 
 export const notificationService = {
   /**
    * Register for push notifications and save the token to the user's profile
    */
   registerForPushNotifications: async (userId: string) => {
-    if (!Device.isDevice) {
+    if (!Device.isDevice || isExpoGo) {
       return null;
     }
+
+    const Notifications = getNotificationsModule();
+    if (!Notifications) {
+      return null;
+    }
+
+    ensureNotificationHandler();
 
     try {
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
-      
+
       if (existingStatus !== 'granted') {
         const { status } = await Notifications.requestPermissionsAsync();
         finalStatus = status;
@@ -51,14 +80,13 @@ export const notificationService = {
         return null;
       }
 
-      // Save token to Supabase
       await supabase
         .from('profiles')
         .update({ expo_push_token: token })
         .eq('id', userId);
 
       if (Platform.OS === 'android') {
-        Notifications.setNotificationChannelAsync('default', {
+        await Notifications.setNotificationChannelAsync('default', {
           name: 'default',
           importance: Notifications.AndroidImportance.MAX,
           vibrationPattern: [0, 250, 250, 250],
@@ -67,7 +95,7 @@ export const notificationService = {
       }
 
       return token;
-    } catch (error) {
+    } catch {
       return null;
     }
   },
@@ -76,15 +104,22 @@ export const notificationService = {
    * Set up notification listeners
    */
   addNotificationListeners: (
-    onNotificationReceived: (notification: Notifications.Notification) => void,
-    onNotificationResponse: (response: Notifications.NotificationResponse) => void
+    onNotificationReceived: (notification: Notification) => void,
+    onNotificationResponse: (response: NotificationResponse) => void
   ) => {
+    const Notifications = getNotificationsModule();
+    if (!Notifications) {
+      return () => {};
+    }
+
+    ensureNotificationHandler();
+
     const notificationListener = Notifications.addNotificationReceivedListener(onNotificationReceived);
     const responseListener = Notifications.addNotificationResponseReceivedListener(onNotificationResponse);
 
     return () => {
-      Notifications.removeNotificationSubscription(notificationListener);
-      Notifications.removeNotificationSubscription(responseListener);
+      notificationListener.remove();
+      responseListener.remove();
     };
   },
 };
