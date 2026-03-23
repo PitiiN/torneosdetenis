@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Slot, useRouter, useSegments } from 'expo-router';
-import { clearSessionArtifacts, supabase } from '@/services/supabase';
+import { clearSessionArtifacts, supabase, supabaseConfigError } from '@/services/supabase';
 import { Session } from '@supabase/supabase-js';
-import { Image, View } from 'react-native';
+import { Image, Text, View } from 'react-native';
 import { ThemeProvider, darkTheme } from '@/theme';
 import { TennisSpinner } from '@/components/TennisSpinner';
 
@@ -11,6 +11,7 @@ const MIN_BOOTSTRAP_LOADING_MS = 3000;
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null);
   const [initialized, setInitialized] = useState(false);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const router = useRouter();
   const segments = useSegments();
 
@@ -18,6 +19,13 @@ export default function RootLayout() {
     let isMounted = true;
 
     const bootstrapSession = async () => {
+      if (supabaseConfigError) {
+        if (!isMounted) return;
+        setBootstrapError(supabaseConfigError);
+        setInitialized(true);
+        return;
+      }
+
       const [{ data: { session } }] = await Promise.all([
         supabase.auth.getSession(),
         new Promise((resolve) => setTimeout(resolve, MIN_BOOTSTRAP_LOADING_MS)),
@@ -67,6 +75,24 @@ export default function RootLayout() {
           resizeMode="contain"
         />
         <TennisSpinner size={34} color={darkTheme.primary[500]} />
+      </View>
+    );
+  }
+
+  if (bootstrapError) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24, backgroundColor: '#FFFFFF' }}>
+        <Image
+          source={require('../assets/LogoSweetSpot.png')}
+          style={{ width: 320, height: 128, marginBottom: 20 }}
+          resizeMode="contain"
+        />
+        <Text style={{ fontSize: 18, fontWeight: '700', color: '#111827', marginBottom: 10, textAlign: 'center' }}>
+          Configuracion incompleta
+        </Text>
+        <Text style={{ fontSize: 14, color: '#374151', textAlign: 'center' }}>
+          {bootstrapError}
+        </Text>
       </View>
     );
   }

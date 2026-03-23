@@ -9,6 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { getTournamentPlacements } from '@/services/ranking';
 import { adminModeService } from '@/services/adminMode';
 import { notificationService } from '@/services/notificationService';
+import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
 
 const { width } = Dimensions.get('window');
 const GLOBAL_ADMIN_EMAIL = 'javier.aravena25@gmail.com';
@@ -23,6 +24,7 @@ export default function ProfileScreen() {
     const [refreshing, setRefreshing] = useState(false);
     const [updating, setUpdating] = useState(false);
     const [user, setUser] = useState<any>(null);
+    const [profileAvatarUrl, setProfileAvatarUrl] = useState<string>('');
     const [stats, setStats] = useState({
         rank: '-',
         trophies: 0,
@@ -52,12 +54,6 @@ export default function ProfileScreen() {
     const [allOrganizations, setAllOrganizations] = useState<any[]>([]);
     const [orgSearch, setOrgSearch] = useState('');
     const [showOrgSearchModal, setShowOrgSearchModal] = useState(false);
-
-    // Payments Persistence States
-    const [profilePayments, setProfilePayments] = useState<any[]>([]);
-    const [paymentMonthFilter, setPaymentMonthFilter] = useState<number>(new Date().getMonth());
-    const [paymentYearFilter, setPaymentYearFilter] = useState<number>(new Date().getFullYear());
-    const [loadingPayments, setLoadingPayments] = useState(false);
 
     useEffect(() => {
         const backAction = () => {
@@ -93,12 +89,6 @@ export default function ProfileScreen() {
     }, [selectedContext, user?.id, modality]);
 
     useEffect(() => {
-        if (user?.id) {
-            fetchProfilePayments();
-        }
-    }, [user?.id, paymentMonthFilter, paymentYearFilter]);
-
-    useEffect(() => {
         const unsubscribe = adminModeService.subscribe((m) => {
             setViewMode(m);
         });
@@ -131,6 +121,8 @@ export default function ProfileScreen() {
 
             if (profErr) throw profErr;
             setUser(profile);
+            const signedAvatar = await resolveStorageAssetUrlWithRetry(profile?.avatar_url, { attempts: 4, baseDelayMs: 350 });
+            setProfileAvatarUrl(signedAvatar || '');
 
             const isGlobal = session.user.email === GLOBAL_ADMIN_EMAIL;
             setIsGlobalAdmin(isGlobal);
@@ -242,77 +234,10 @@ export default function ProfileScreen() {
     const fetchAllOrganizations = async () => {
         const { data, error } = await supabase
             .from('organizations')
-            .select('*')
+            .select('id, name')
             .order('name');
         if (data && !error) {
             setAllOrganizations(data);
-        }
-    };
-
-    const fetchProfilePayments = async () => {
-        setLoadingPayments(true);
-        try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) return;
-
-            const { data: registrationRows, error } = await supabase
-                .from('registrations')
-                .select('id, tournament_id, fee_amount, is_paid, status, registered_at')
-                .eq('player_id', session.user.id)
-                .order('id', { ascending: false });
-
-            if (error) throw error;
-
-            const tournamentIds = [...new Set(
-                (registrationRows || [])
-                    .map((row: any) => row?.tournament_id)
-                    .filter(Boolean)
-            )] as string[];
-
-            const tournamentsById: Record<string, any> = {};
-            if (tournamentIds.length > 0) {
-                const { data: tournamentRows, error: tournamentsError } = await supabase
-                    .from('tournaments')
-                    .select('id, name, end_date, start_date')
-                    .in('id', tournamentIds);
-                if (tournamentsError) throw tournamentsError;
-
-                (tournamentRows || []).forEach((tournament: any) => {
-                    tournamentsById[tournament.id] = tournament;
-                });
-            }
-
-            let filtered = (registrationRows || []).map((registration: any) => {
-                const tournament = tournamentsById[registration.tournament_id] || null;
-                const paymentDate = new Date(
-                    tournament?.end_date ||
-                    tournament?.start_date ||
-                    registration.registered_at ||
-                    Date.now()
-                );
-
-                return {
-                    id: registration.id,
-                    tournament_id: registration.tournament_id,
-                    tournament_name: tournament?.name || 'Torneo',
-                    fee_amount: registration.fee_amount,
-                    is_paid: registration.is_paid,
-                    date: paymentDate,
-                    status: registration.status,
-                };
-            });
-
-            // Filter by selected month and year
-            filtered = filtered.filter(payment =>
-                payment.date.getMonth() === paymentMonthFilter &&
-                payment.date.getFullYear() === paymentYearFilter
-            );
-
-            setProfilePayments(filtered);
-        } catch (err) {
-            console.error('Error fetching profile payments:', err);
-        } finally {
-            setLoadingPayments(false);
         }
     };
 
@@ -453,7 +378,7 @@ export default function ProfileScreen() {
             if (error) throw error;
             setUser({ ...user, location: newLocation });
         } catch (error) {
-            Alert.alert('Error', 'No se pudo actualizar la ubicación.');
+            Alert.alert('Error', 'No se pudo actualizar la ubicaciÃ³n.');
         }
     };
 
@@ -467,7 +392,7 @@ export default function ProfileScreen() {
             if (error) throw error;
             setUser({ ...user, phone: newPhone.trim() });
         } catch (error) {
-            Alert.alert('Error', 'No se pudo actualizar el teléfono.');
+            Alert.alert('Error', 'No se pudo actualizar el telÃ©fono.');
         }
     };
 
@@ -497,7 +422,7 @@ export default function ProfileScreen() {
             setUser({ ...user, notifications_enabled: newValue });
         } catch (error) {
             console.error(error);
-            Alert.alert('Error', 'No se pudo actualizar la configuración de notificaciones.');
+            Alert.alert('Error', 'No se pudo actualizar la configuraciÃ³n de notificaciones.');
         } finally {
             setUpdating(false);
         }
@@ -517,7 +442,7 @@ export default function ProfileScreen() {
                 })
                 .eq('id', user.id);
             if (error) throw error;
-            Alert.alert('Éxito', 'Cambios guardados correctamente.');
+            Alert.alert('Ã‰xito', 'Cambios guardados correctamente.');
             setIsEditingBackhand(false);
             setIsEditingDominantHand(false);
         } catch (error) {
@@ -529,43 +454,22 @@ export default function ProfileScreen() {
     };
 
     const handlePickImage = async () => {
-        Alert.alert(
-            'Editar Foto',
-            'Selecciona una opción',
-            [
-                { text: 'Cámara', onPress: () => launchImagePicker(true) },
-                { text: 'Galería', onPress: () => launchImagePicker(false) },
-                { text: 'Cancelar', style: 'cancel' }
-            ]
-        );
+        launchImagePicker();
     };
 
-    const launchImagePicker = async (useCamera: boolean) => {
-        let result;
-        if (useCamera) {
-            const { status } = await ImagePicker.requestCameraPermissionsAsync();
-            if (status !== 'granted') {
-                Alert.alert('Permiso denegado', 'Necesitamos acceso a la cámara.');
-                return;
-            }
-            result = await ImagePicker.launchCameraAsync({
-                allowsEditing: true,
-                aspect: [1, 1],
-                quality: 0.5,
-            });
-        } else {
-            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-            if (status !== 'granted') {
-                Alert.alert('Permiso denegado', 'Necesitamos acceso a la galería.');
-                return;
-            }
-            result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                allowsEditing: true,
-                aspect: [1, 1],
-                quality: 0.5,
-            });
+    const launchImagePicker = async () => {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permiso denegado', 'Necesitamos acceso a la galeria.');
+            return;
         }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.5,
+        });
 
         if (!result.canceled) {
             uploadAvatar(result.assets[0].uri);
@@ -576,35 +480,33 @@ export default function ProfileScreen() {
         if (!user) return;
         setUpdating(true);
         try {
+            const response = await fetch(uri);
+            const fileBytes = typeof response.arrayBuffer === 'function'
+                ? await response.arrayBuffer()
+                : await (await response.blob()).arrayBuffer();
             const fileExt = uri.split('.').pop() || 'png';
             const fileName = `${user.id}-${Date.now()}.${fileExt}`;
-            const filePath = `avatars/${fileName}`;
-
-            const formData = new FormData();
-            formData.append('file', {
-                uri,
-                name: fileName,
-                type: `image/${fileExt}`,
-            } as any);
+            const filePath = `avatars/${user.id}/${fileName}`;
 
             const { error: uploadError } = await supabase.storage
                 .from('organizations')
-                .upload(filePath, formData);
+                .upload(filePath, fileBytes, {
+                    contentType: `image/${fileExt}`,
+                    upsert: false,
+                });
 
             if (uploadError) throw uploadError;
 
-            const { data: { publicUrl } } = supabase.storage
-                .from('organizations')
-                .getPublicUrl(filePath);
-
             const { error: updateError } = await supabase
                 .from('profiles')
-                .update({ avatar_url: publicUrl })
+                .update({ avatar_url: filePath })
                 .eq('id', user.id);
 
             if (updateError) throw updateError;
-            setUser({ ...user, avatar_url: publicUrl });
-            Alert.alert('Éxito', 'Foto de perfil actualizada.');
+            const signedAvatar = await resolveStorageAssetUrlWithRetry(filePath, { attempts: 4, baseDelayMs: 350 });
+            setProfileAvatarUrl(signedAvatar || '');
+            setUser({ ...user, avatar_url: filePath });
+            Alert.alert('Ã‰xito', 'Foto de perfil actualizada.');
         } catch (error) {
             console.error('Error uploading avatar:', error);
             Alert.alert('Error', 'No se pudo subir la imagen.');
@@ -668,7 +570,7 @@ export default function ProfileScreen() {
                     <View style={styles.profileMain}>
                         <TouchableOpacity style={styles.avatarContainer} onPress={handlePickImage} disabled={updating}>
                             <Image
-                                source={user.avatar_url ? { uri: user.avatar_url } : require('../../assets/images/placeholder.png')}
+                                source={profileAvatarUrl ? { uri: profileAvatarUrl } : require('../../assets/images/placeholder.png')}
                                 style={styles.avatar}
                             />
                             <View style={styles.avatarEditBtn}>
@@ -696,7 +598,7 @@ export default function ProfileScreen() {
                                             value={user.phone || ''}
                                             onChangeText={(val) => setUser({ ...user, phone: val })}
                                             onBlur={() => handleUpdatePhone(user.phone)}
-                                            placeholder="Teléfono..."
+                                            placeholder="TelÃ©fono..."
                                             placeholderTextColor={colors.textTertiary}
                                             keyboardType="phone-pad"
                                         />
@@ -720,7 +622,7 @@ export default function ProfileScreen() {
 
                             <View style={styles.extraFields}>
                                 <TouchableOpacity style={styles.extraField} onPress={() => setIsEditingBackhand(true)}>
-                                    <Text style={styles.extraFieldLabel}>Revés:</Text>
+                                    <Text style={styles.extraFieldLabel}>RevÃ©s:</Text>
                                     {isEditingBackhand ? (
                                         <TextInput
                                             style={styles.extraFieldInput}
@@ -775,7 +677,7 @@ export default function ProfileScreen() {
                             <View style={styles.contextInfo}>
                                 <Ionicons name="filter-outline" size={16} color={colors.primary[500]} />
                                 <Text style={styles.contextText}>
-                                    {selectedContext ? `${selectedContext.org_name} · ${selectedContext.level}` : 'Filtrar por Organización/Nivel'}
+                                    {selectedContext ? `${selectedContext.org_name} Â· ${selectedContext.level}` : 'Filtrar por OrganizaciÃ³n/Nivel'}
                                 </Text>
                             </View>
                             <Ionicons name="chevron-forward" size={16} color={colors.primary[500]} />
@@ -802,7 +704,7 @@ export default function ProfileScreen() {
                 {/* Stats Bento */}
                 <View style={styles.statsGrid}>
                     <View style={styles.mainRankCard}>
-                        <Text style={styles.statLabel} numberOfLines={1}>POSICIÓN RANKING</Text>
+                        <Text style={styles.statLabel} numberOfLines={1}>POSICIÃ“N RANKING</Text>
                         <View>
                             <Text style={styles.rankValue}>{stats.rank}</Text>
                             <View style={styles.rankStatus}>
@@ -882,11 +784,11 @@ export default function ProfileScreen() {
                             </View>
                             <View style={styles.historyInfo}>
                                 <Text style={styles.historyName}>{t.name}</Text>
-                                <Text style={styles.historyMeta}>{t.level} · {t.format} · {t.modality === 'dobles' ? 'Dobles' : 'Singles'}</Text>
+                                <Text style={styles.historyMeta}>{t.level} Â· {t.format} Â· {t.modality === 'dobles' ? 'Dobles' : 'Singles'}</Text>
                             </View>
                             <View style={styles.historyResult}>
-                                <View style={t.place.includes('1°') ? styles.winnerBadge : styles.resultBadge}>
-                                    <Text style={t.place.includes('1°') ? styles.winnerBadgeText : styles.resultBadgeText}>
+                                <View style={t.place.includes('1Â°') ? styles.winnerBadge : styles.resultBadge}>
+                                    <Text style={t.place.includes('1Â°') ? styles.winnerBadgeText : styles.resultBadgeText}>
                                         {t.place}
                                     </Text>
                                 </View>
@@ -895,72 +797,13 @@ export default function ProfileScreen() {
                         </TouchableOpacity>
                     )) : (
                         <View style={styles.emptyCard}>
-                            <Text style={styles.emptyText}>No has participado en torneos aún.</Text>
+                            <Text style={styles.emptyText}>No has participado en torneos aÃºn.</Text>
                         </View>
                     )}
-                </View>
-
-                {/* Payments History Section */}
-                <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Historial de Pagos</Text>
-                </View>
-
-                <View style={styles.paymentFilters}>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
-                        {['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'].map((m, idx) => (
-                            <TouchableOpacity
-                                key={m}
-                                style={[styles.filterChip, paymentMonthFilter === idx && styles.filterChipActive]}
-                                onPress={() => setPaymentMonthFilter(idx)}
-                            >
-                                <Text style={[styles.filterChipText, paymentMonthFilter === idx && styles.filterChipTextActive]}>{m}</Text>
-                            </TouchableOpacity>
-                        ))}
-                    </ScrollView>
-                    
-                    <View style={styles.yearRow}>
-                        {[2025, 2026, 2027].map(y => (
-                            <TouchableOpacity
-                                key={y}
-                                style={[styles.yearChip, paymentYearFilter === y && styles.yearChipActive]}
-                                onPress={() => setPaymentYearFilter(y)}
-                            >
-                                <Text style={[styles.yearChipText, paymentYearFilter === y && styles.yearChipTextActive]}>{y}</Text>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
-                </View>
-
-                <View style={styles.paymentList}>
-                    {loadingPayments ? (
-                        <ActivityIndicator color={colors.primary[500]} style={{ marginVertical: 20 }} />
-                    ) : profilePayments.length > 0 ? (
-                        profilePayments.map(p => (
-                            <View key={p.id} style={styles.paymentSummaryCard}>
-                                <View style={styles.paymentInfoMain}>
-                                    <Text style={styles.paymentName} numberOfLines={1}>{p.tournament_name}</Text>
-                                    <Text style={styles.paymentDate}>{p.date.toLocaleDateString()}</Text>
-                                </View>
-                                <View style={styles.paymentStatusRow}>
-                                    <Text style={styles.paymentAmount}>${p.fee_amount.toLocaleString()}</Text>
-                                    <View style={[styles.statusTag, p.is_paid ? styles.statusTagPaid : styles.statusTagUnpaid]}>
-                                        <Text style={[styles.statusTagText, p.is_paid ? styles.statusTagTextPaid : styles.statusTagTextUnpaid]}>
-                                            {p.is_paid ? 'PAGADO' : 'PENDIENTE'}
-                                        </Text>
-                                    </View>
-                                </View>
-                            </View>
-                        ))
-                    ) : (
-                        <View style={styles.emptyCard}>
-                            <Text style={styles.emptyText}>No hay registros para este período.</Text>
-                        </View>
-                    )}
-                </View>
-
+                </View>
                 {/* Account Settings */}
                 <View style={styles.settingsSection}>
-                    <Text style={styles.settingsTitle}>Configuración de Cuenta</Text>
+                    <Text style={styles.settingsTitle}>ConfiguraciÃ³n de Cuenta</Text>
 
                     <View style={styles.settingsGrid}>
                         <TouchableOpacity style={styles.settingItem} onPress={handleToggleNotifications}>
@@ -986,7 +829,7 @@ export default function ProfileScreen() {
                             </View>
                             <View style={styles.settingText}>
                                 <Text style={styles.settingLabel}>Privacidad</Text>
-                                <Text style={styles.settingDesc}>Contraseña y visibilidad</Text>
+                                <Text style={styles.settingDesc}>ContraseÃ±a y visibilidad</Text>
                             </View>
                             <Ionicons name="chevron-forward" size={20} color={colors.border} />
                         </TouchableOpacity>
@@ -997,7 +840,7 @@ export default function ProfileScreen() {
                             </View>
                             <View style={styles.settingText}>
                                 <Text style={styles.settingLabel}>Modo Oscuro</Text>
-                                <Text style={styles.settingDesc}>Cambiar el tema de la aplicación</Text>
+                                <Text style={styles.settingDesc}>Cambiar el tema de la aplicaciÃ³n</Text>
                             </View>
                             <View style={[styles.themeToggle, { backgroundColor: isDark ? colors.primary[500] : colors.surfaceSecondary }]}>
                                 <View style={[styles.themeToggleCircle, { alignSelf: isDark ? 'flex-end' : 'flex-start' }]} />
@@ -1009,7 +852,7 @@ export default function ProfileScreen() {
                                 <Ionicons name="log-out-outline" size={20} color={colors.error} />
                             </View>
                             <View style={styles.settingText}>
-                                <Text style={[styles.settingLabel, { color: colors.error }]}>Cerrar Sesión</Text>
+                                <Text style={[styles.settingLabel, { color: colors.error }]}>Cerrar SesiÃ³n</Text>
                                 <Text style={styles.settingDesc}>Salir de tu cuenta</Text>
                             </View>
                         </TouchableOpacity>
@@ -1022,7 +865,7 @@ export default function ProfileScreen() {
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Ver Estadísticas en:</Text>
+                            <Text style={styles.modalTitle}>Ver EstadÃ­sticas en:</Text>
                             <TouchableOpacity onPress={() => setShowContextModal(false)}>
                                 <Ionicons name="close" size={24} color="#fff" />
                             </TouchableOpacity>
@@ -1038,7 +881,7 @@ export default function ProfileScreen() {
                                     }}
                                 >
                                     <Text style={[styles.ctxItemText, selectedContext?.org_id === ctx.org_id && selectedContext.level === ctx.level && styles.ctxItemTextActive]}>
-                                        {ctx.org_name} · {ctx.level}
+                                        {ctx.org_name} Â· {ctx.level}
                                     </Text>
                                 </TouchableOpacity>
                             ))}
@@ -1059,7 +902,7 @@ export default function ProfileScreen() {
                         </View>
                         <TextInput
                             style={styles.modalSearchInput}
-                            placeholder="Buscar organización..."
+                            placeholder="Buscar organizaciÃ³n..."
                             placeholderTextColor={colors.textTertiary}
                             value={orgSearch}
                             onChangeText={setOrgSearch}
@@ -1071,7 +914,7 @@ export default function ProfileScreen() {
                                     <View key={org.id} style={styles.orgGroup}>
                                         <Text style={styles.orgGroupName}>{org.name}</Text>
                                         <View style={styles.levelChips}>
-                                            {['Primera', 'Segunda', 'Tercera', 'Cuarta', 'Quinta', 'Honor', 'Escalafón'].map(lvl => (
+                                            {['Primera', 'Segunda', 'Tercera', 'Cuarta', 'Quinta', 'Honor', 'EscalafÃ³n'].map(lvl => (
                                                 <TouchableOpacity
                                                     key={lvl}
                                                     style={[styles.levelChip, selectedContext?.org_id === org.id && selectedContext.level === lvl && styles.levelChipActive]}

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Dimensions, Image, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +9,7 @@ import { supabase } from '@/services/supabase';
 import * as SecureStore from 'expo-secure-store';
 import { getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
+import { getCachedValue, setCachedValue } from '@/services/runtimeCache';
 
 const { width } = Dimensions.get('window');
 
@@ -85,7 +86,7 @@ export default function TorneosScreen() {
 
     const [isSuperAdmin, setIsSuperAdmin] = useState(false);
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-    const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
+    const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
     const [userOrgId, setUserOrgId] = useState<string | null>(null);
     const [activeOrgId, setActiveOrgId] = useState<string | null>(routeOrgId || null);
     const [notifications, setNotifications] = useState<Array<{ id: string; title: string; body: string }>>([]);
@@ -98,10 +99,6 @@ export default function TorneosScreen() {
             bootstrapScreen();
         }, [routeOrgId])
     );
-
-    useEffect(() => {
-        bootstrapScreen();
-    }, [routeOrgId]);
 
     async function bootstrapScreen() {
         setOrgName('');
@@ -150,6 +147,17 @@ export default function TorneosScreen() {
     }
 
     async function fetchOrgDetails(targetOrgId: string) {
+        const orgCacheKey = `org:details:${targetOrgId}`;
+        const cachedInfo = getCachedValue<OrganizationInfo>(orgCacheKey);
+        if (cachedInfo) {
+            const normalizedOrgName = cachedInfo.name || 'Torneos';
+            setOrgName(normalizedOrgName);
+            setOrganizationInfo(cachedInfo);
+            await SecureStore.setItemAsync('selected_org_id', String(targetOrgId));
+            await SecureStore.setItemAsync('selected_org_name', normalizedOrgName || '');
+            return;
+        }
+
         let info: OrganizationInfo | null = null;
 
         const { data: organizationData } = await supabase
@@ -189,6 +197,7 @@ export default function TorneosScreen() {
         const normalizedOrgName = info.name || 'Torneos';
         setOrgName(normalizedOrgName);
         setOrganizationInfo(info);
+        setCachedValue(orgCacheKey, info, 5 * 60_000);
         await SecureStore.setItemAsync('selected_org_id', String(targetOrgId));
         await SecureStore.setItemAsync('selected_org_name', normalizedOrgName || '');
     }
@@ -255,6 +264,12 @@ export default function TorneosScreen() {
 
     async function fetchRegistrations(currentUserId: string, targetOrgId: string) {
         try {
+            const registrationCacheKey = `registrations:${currentUserId}:${targetOrgId}`;
+            const cachedRegistrationIds = getCachedValue<string[]>(registrationCacheKey);
+            if (cachedRegistrationIds) {
+                setRegisteredTournamentIds(new Set(cachedRegistrationIds));
+            }
+
             const { data: registrations, error } = await supabase
                 .from('registrations')
                 .select('tournament_id')
@@ -289,6 +304,7 @@ export default function TorneosScreen() {
                 }
             });
             setRegisteredTournamentIds(nextIds);
+            setCachedValue(registrationCacheKey, [...nextIds], 60_000);
         } catch (error) {
             setRegisteredTournamentIds(new Set());
         }
@@ -296,6 +312,13 @@ export default function TorneosScreen() {
     async function fetchTournaments(targetOrgId: string, canManageOrg: boolean) {
         setLoading(true);
         try {
+            const tournamentsCacheKey = `tournaments:${targetOrgId}:${canManageOrg ? 'manage' : 'player'}`;
+            const cachedTournaments = getCachedValue<Tournament[]>(tournamentsCacheKey);
+            if (cachedTournaments) {
+                setTournaments(cachedTournaments);
+                setLoading(false);
+            }
+
             let query = supabase
                 .from('tournaments')
                 .select('id, name, description, status, surface, format, start_date, organization_id, registration_fee, address, comuna, modality')
@@ -318,6 +341,19 @@ export default function TorneosScreen() {
                     address: decodeEscapedUnicode(tournament.address || ''),
                     comuna: decodeEscapedUnicode(tournament.comuna || ''),
                 }))
+            );
+            setCachedValue(
+                tournamentsCacheKey,
+                (data || []).map((tournament: any) => ({
+                    ...tournament,
+                    name: decodeEscapedUnicode(tournament.name || ''),
+                    description: decodeEscapedUnicode(tournament.description || ''),
+                    format: decodeEscapedUnicode(tournament.format || ''),
+                    surface: decodeEscapedUnicode(tournament.surface || ''),
+                    address: decodeEscapedUnicode(tournament.address || ''),
+                    comuna: decodeEscapedUnicode(tournament.comuna || ''),
+                })),
+                60_000
             );
         } catch (error) {
         } finally {
@@ -349,7 +385,7 @@ export default function TorneosScreen() {
 
             const tDate = new Date(t.start_date || '');
             const yearMatch = tDate.getFullYear() === selectedYear;
-            const monthMatch = selectedMonth === null || tDate.getMonth() === selectedMonth;
+            const monthMatch = tDate.getMonth() === selectedMonth;
             return yearMatch && monthMatch;
         }
         return true;
@@ -470,12 +506,6 @@ export default function TorneosScreen() {
                             contentContainerStyle={styles.carouselScroll}
                             style={{ marginTop: spacing.xs }}
                         >
-                            <TouchableOpacity 
-                                style={[styles.carouselItem, selectedMonth === null && styles.carouselItemActive]}
-                                onPress={() => setSelectedMonth(null)}
-                            >
-                                <Text style={[styles.carouselText, selectedMonth === null && styles.carouselTextActive]}>Todos</Text>
-                            </TouchableOpacity>
                             {MONTHS.map((month, idx) => (
                                 <TouchableOpacity 
                                     key={month} 

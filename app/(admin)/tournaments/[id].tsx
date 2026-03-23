@@ -9,8 +9,6 @@ import { FlatList, KeyboardAvoidingView, Platform } from 'react-native';
 import { createInitialMatches, getRoundRobinGroupNames, getRoundRobinSlots, getSetsToShow, hasConsolationBracket, isRoundRobinFormat } from '@/services/tournamentStructure';
 import { DateField } from '@/components/DateField';
 import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
-import ViewShot from 'react-native-view-shot';
-import * as MediaLibrary from 'expo-media-library';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { resolveStorageAssetUrl } from '@/services/storage';
 
@@ -30,9 +28,6 @@ export default function AdminTournamentDetailScreen() {
     const [matches, setMatches] = useState<any[]>([]);
     const [playerAvatarById, setPlayerAvatarById] = useState<Record<string, string | null>>({});
     const [isLoading, setIsLoading] = useState(true);
-    const bracketCaptureRef = useRef<ViewShot | null>(null);
-    const [isExportingBracket, setIsExportingBracket] = useState(false);
-
     const [activeTab, setActiveTab] = useState('main');
 
     // Score Edit Modal
@@ -83,40 +78,6 @@ export default function AdminTournamentDetailScreen() {
         const date = new Date(scheduledAt);
         if (Number.isNaN(date.getTime())) return null;
         return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    };
-
-    const exportBracketImage = async () => {
-        if (!bracketCaptureRef.current) {
-            Alert.alert('Error', 'No se pudo preparar la imagen del cuadro.');
-            return;
-        }
-
-        setIsExportingBracket(true);
-        try {
-            const permissions = await MediaLibrary.requestPermissionsAsync(true);
-            if (permissions.status !== 'granted') {
-                Alert.alert('Permiso requerido', 'Debes habilitar acceso a la galería para guardar la imagen.');
-                return;
-            }
-
-            await new Promise((resolve) => setTimeout(resolve, 120));
-            const captureUri = await bracketCaptureRef.current.capture?.();
-            if (!captureUri) {
-                throw new Error('capture-failed');
-            }
-
-            try {
-                await MediaLibrary.saveToLibraryAsync(captureUri);
-            } catch {
-                await MediaLibrary.createAssetAsync(captureUri);
-            }
-
-            Alert.alert('Éxito', 'El cuadro se guardó en tu galería.');
-        } catch (error) {
-            Alert.alert('Error', 'No se pudo exportar el cuadro. Revisa permisos de galería o prueba en un development build.');
-        } finally {
-            setIsExportingBracket(false);
-        }
     };
 
     const collectPlayerIds = (registrations: any[], tournamentMatches: any[]) => {
@@ -1380,15 +1341,6 @@ export default function AdminTournamentDetailScreen() {
                 </TouchableOpacity>
                 <Text style={styles.headerTitle} numberOfLines={1}>{tournament.name}</Text>
                 <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-                    {matches.length > 0 && (
-                        <TouchableOpacity style={[styles.actionButton, { padding: 4 }]} onPress={exportBracketImage} disabled={isExportingBracket}>
-                            {isExportingBracket ? (
-                                <TennisSpinner size={18} />
-                            ) : (
-                                <Ionicons name="download-outline" size={22} color={colors.textSecondary} />
-                            )}
-                        </TouchableOpacity>
-                    )}
                     <TouchableOpacity style={[styles.actionButton, { padding: 4 }]} onPress={() => router.push(`/(admin)/tournaments/edit/${id}` as any)}>
                         <Ionicons name="pencil" size={22} color={colors.textSecondary} />
                     </TouchableOpacity>
@@ -1445,8 +1397,7 @@ export default function AdminTournamentDetailScreen() {
                 )}
             </View>
 
-            <ViewShot ref={bracketCaptureRef} options={{ format: 'jpg', quality: 1, snapshotContentContainer: true }} style={{ flex: 1 }}>
-            <ScrollView contentContainerStyle={styles.scrollContent}>
+                        <ScrollView contentContainerStyle={styles.scrollContent}>
 
                 {/* Summary Info Card */}
                 <View style={[styles.summaryCard, { paddingVertical: spacing.lg }]}>
@@ -1917,7 +1868,6 @@ export default function AdminTournamentDetailScreen() {
                     </ScrollView>
                 )}
             </ScrollView>
-            </ViewShot>
 
             {/* Edit Match Score Modal */}
             <Modal visible={isEditModalVisible} transparent animationType="fade">
@@ -2359,3 +2309,6 @@ function getStyles(colors: any) {
         },
     });
 }
+
+
+

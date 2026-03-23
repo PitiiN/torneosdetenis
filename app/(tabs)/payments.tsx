@@ -6,6 +6,7 @@ import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { useFocusEffect } from 'expo-router';
 import { TennisSpinner } from '@/components/TennisSpinner';
+import { getCachedValue, setCachedValue } from '@/services/runtimeCache';
 
 const { width } = Dimensions.get('window');
 
@@ -43,32 +44,59 @@ export default function PaymentsScreen() {
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) return;
 
-            const { data, error } = await supabase
+            const cacheKey = `payments:${session.user.id}`;
+            const cached = getCachedValue<PaymentRecord[]>(cacheKey);
+            if (cached) {
+                setPayments(cached);
+            }
+
+            const { data: registrationRows, error } = await supabase
                 .from('registrations')
-                .select(`
-                    id,
-                    tournament_id,
-                    fee_amount,
-                    is_paid,
-                    status,
-                    tournaments:tournaments!inner(name, end_date, start_date)
-                `)
+                .select('id, tournament_id, fee_amount, is_paid, status, registered_at')
                 .eq('player_id', session.user.id)
                 .order('id', { ascending: false });
 
             if (error) throw error;
 
-            const formatted = (data || []).map((r: any) => ({
-                id: r.id,
-                tournament_id: r.tournament_id,
-                tournament_name: r.tournaments.name,
-                fee_amount: r.fee_amount,
-                is_paid: r.is_paid,
-                created_at: r.tournaments.end_date || r.tournaments.start_date || new Date().toISOString(),
-                status: r.status
-            }));
+            const tournamentIds = [...new Set(
+                (registrationRows || [])
+                    .map((row: any) => row?.tournament_id)
+                    .filter(Boolean)
+            )] as string[];
+
+            const tournamentsById: Record<string, { name: string; end_date: string | null; start_date: string | null }> = {};
+            if (tournamentIds.length > 0) {
+                const { data: tournamentRows, error: tournamentsError } = await supabase
+                    .from('tournaments')
+                    .select('id, name, end_date, start_date')
+                    .in('id', tournamentIds);
+
+                if (tournamentsError) throw tournamentsError;
+
+                (tournamentRows || []).forEach((tournament: any) => {
+                    tournamentsById[tournament.id] = {
+                        name: tournament.name || 'Torneo',
+                        end_date: tournament.end_date || null,
+                        start_date: tournament.start_date || null,
+                    };
+                });
+            }
+
+            const formatted = (registrationRows || []).map((registration: any) => {
+                const tournament = tournamentsById[registration.tournament_id];
+                return {
+                    id: registration.id,
+                    tournament_id: registration.tournament_id,
+                    tournament_name: tournament?.name || 'Torneo',
+                    fee_amount: Number(registration.fee_amount || 0),
+                    is_paid: Boolean(registration.is_paid),
+                    created_at: tournament?.end_date || tournament?.start_date || registration.registered_at || new Date().toISOString(),
+                    status: registration.status,
+                } as PaymentRecord;
+            });
 
             setPayments(formatted);
+            setCachedValue(cacheKey, formatted, 60_000);
         } catch (error) {
             setPayments([]);
         } finally {

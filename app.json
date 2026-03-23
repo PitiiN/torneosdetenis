@@ -2,7 +2,7 @@
   "expo": {
     "name": "SweetSpot",
     "slug": "torneosdetenis",
-    "version": "1.0.0",
+    "version": "3.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -16,7 +16,6 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.pitin.torneosdetenis",
       "infoPlist": {
-        "NSCameraUsageDescription": "Necesitamos acceso a la camara para actualizar tu foto de perfil.",
         "NSPhotoLibraryUsageDescription": "Necesitamos acceso a la galeria para elegir imagenes de perfil y organizacion.",
         "NSUserNotificationsUsageDescription": "Usamos notificaciones para avisarte de cambios en torneos y partidos."
       }
@@ -26,7 +25,12 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.pitin.torneosdetenis"
+      "package": "com.pitin.torneosdetenis",
+      "versionCode": 4,
+      "blockedPermissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -42,8 +46,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Necesitamos acceso a tu galeria para seleccionar imagenes.",
-          "cameraPermission": "Necesitamos acceso a la camara para tomar una foto de perfil."
+          "photosPermission": "Necesitamos acceso a tu galeria para seleccionar imagenes."
         }
       ],
       [
@@ -52,10 +55,17 @@
           "icon": "./assets/LogoSweetSpot.png",
           "color": "#0f172a"
         }
-      ]
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "74e9c55f-97e5-47f7-894c-54286eef00f9"
+      }
     }
   }
 }

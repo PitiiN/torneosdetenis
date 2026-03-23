@@ -8,6 +8,7 @@ import * as SecureStore from 'expo-secure-store';
 import { useRouter } from 'expo-router';
 import { canAccessAdminArea, getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
+import { getCachedValue, setCachedValue } from '@/services/runtimeCache';
 
 type Tournament = {
     id: string;
@@ -26,8 +27,8 @@ export default function FinanceScreen() {
     const [loading, setLoading] = useState(true);
     const [organizationId, setOrganizationId] = useState<string | null>(null);
     const [organizationName, setOrganizationName] = useState('');
-    const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
-    const [selectedYear, setSelectedYear] = useState<number | null>(null);
+    const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
+    const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
     const [tournaments, setTournaments] = useState<Tournament[]>([]);
     
     // Super Admin States
@@ -58,12 +59,20 @@ export default function FinanceScreen() {
     };
 
     const fetchAllOrganizations = async () => {
+        const cacheKey = 'finance:allOrganizations';
+        const cached = getCachedValue<any[]>(cacheKey);
+        if (cached) {
+            setAllOrganizations(cached);
+            return;
+        }
+
         const { data, error } = await supabase
-            .from('organizations')
+            .from('organizations_public')
             .select('id, name')
             .order('name');
         if (data && !error) {
             setAllOrganizations(data);
+            setCachedValue(cacheKey, data, 5 * 60_000);
         }
     };
 
@@ -145,29 +154,34 @@ export default function FinanceScreen() {
                 return;
             }
 
+            const cacheKey = `finance:tournaments:${storedOrgId}:${selectedYear}:${selectedMonth}`;
+            const cachedTournaments = getCachedValue<Tournament[]>(cacheKey);
+            if (cachedTournaments) {
+                setTournaments(cachedTournaments);
+                setLoading(false);
+            }
+
             let query = supabase
                 .from('tournaments')
                 .select('id, name, start_date')
                 .eq('organization_id', storedOrgId)
                 .order('start_date', { ascending: false });
 
-            if (selectedYear !== null) {
-                const yearStart = `${selectedYear}-01-01`;
-                const yearEnd = `${selectedYear}-12-31`;
-                query = query.gte('start_date', yearStart).lte('start_date', yearEnd);
+            const yearStart = `${selectedYear}-01-01`;
+            const yearEnd = `${selectedYear}-12-31`;
+            query = query.gte('start_date', yearStart).lte('start_date', yearEnd);
 
-                if (selectedMonth !== null) {
-                    const monthStart = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-01`;
-                    const monthEndDate = new Date(selectedYear, selectedMonth + 1, 0);
-                    const monthEnd = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(monthEndDate.getDate()).padStart(2, '0')}`;
-                    query = query.gte('start_date', monthStart).lte('start_date', monthEnd);
-                }
-            }
+            const monthStart = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-01`;
+            const monthEndDate = new Date(selectedYear, selectedMonth + 1, 0);
+            const monthEnd = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(monthEndDate.getDate()).padStart(2, '0')}`;
+            query = query.gte('start_date', monthStart).lte('start_date', monthEnd);
 
             const { data, error } = await query;
 
             if (error) throw error;
-            setTournaments(data || []);
+            const nextTournaments = data || [];
+            setTournaments(nextTournaments);
+            setCachedValue(cacheKey, nextTournaments, 60_000);
         } catch (error) {
             setTournaments([]);
         } finally {
@@ -212,15 +226,6 @@ export default function FinanceScreen() {
                 <View style={styles.filterGroup}>
                                         <Text style={styles.filterLabel}>Año</Text>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carouselContent}>
-                        <TouchableOpacity
-                            style={[styles.filterChip, selectedYear === null && styles.filterChipActive]}
-                            onPress={() => {
-                                setSelectedYear(null);
-                                setSelectedMonth(null);
-                            }}
-                        >
-                            <Text style={[styles.filterChipText, selectedYear === null && styles.filterChipTextActive]}>Todos</Text>
-                        </TouchableOpacity>
                         {YEARS.map((year) => (
                             <TouchableOpacity
                                 key={year}
@@ -237,22 +242,11 @@ export default function FinanceScreen() {
                 <View style={styles.filterGroup}>
                                         <Text style={styles.filterLabel}>Mes</Text>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carouselContent}>
-                        <TouchableOpacity
-                            style={[styles.filterChip, selectedMonth === null && styles.filterChipActive]}
-                            onPress={() => setSelectedMonth(null)}
-                        >
-                            <Text style={[styles.filterChipText, selectedMonth === null && styles.filterChipTextActive]}>Todos</Text>
-                        </TouchableOpacity>
                         {MONTHS.map((month, index) => (
                             <TouchableOpacity
                                 key={month}
                                 style={[styles.filterChip, selectedMonth === index && styles.filterChipActive]}
-                                onPress={() => {
-                                    if (selectedYear === null) {
-                                        setSelectedYear(new Date().getFullYear());
-                                    }
-                                    setSelectedMonth(index);
-                                }}
+                                onPress={() => setSelectedMonth(index)}
                             >
                                 <Text style={[styles.filterChipText, selectedMonth === index && styles.filterChipTextActive]}>{month}</Text>
                             </TouchableOpacity>

@@ -325,25 +325,37 @@ export default function SettingsScreen() {
     };
 
     const handleCreateOrganization = async () => {
-        if (!newOrgName.trim()) {
+        const normalizedName = newOrgName.trim().slice(0, 80);
+        const normalizedEmail = newOrgEmail.trim().toLowerCase().slice(0, 120);
+        const normalizedWhatsapp = newOrgWhatsapp.trim().slice(0, 30);
+        const normalizedSocial = newOrgSocial.trim().slice(0, 500);
+        const normalizedDrive = newOrgDrive.trim().slice(0, 500);
+
+        if (!normalizedName) {
             Alert.alert('Error', 'El nombre de la organización es obligatorio.');
             return;
         }
         setSaving(true);
         try {
-            const { data, error } = await supabase
-                .from('organizations')
-                .insert([{
-                    name: newOrgName.trim(),
-                    contact_email: newOrgEmail.trim() || null,
-                    contact_whatsapp: newOrgWhatsapp.trim() || null,
-                    social_links: newOrgSocial.trim() || null,
-                    photos_drive_url: newOrgDrive.trim() || null,
-                }])
-                .select()
-                .single();
+            const fullPayload = {
+                name: normalizedName,
+                contact_email: normalizedEmail || null,
+                contact_whatsapp: normalizedWhatsapp || null,
+                social_links: normalizedSocial || null,
+                photos_drive_url: normalizedDrive || null,
+            };
 
-            if (error) throw error;
+            const { error } = await supabase
+                .from('organizations')
+                .insert([fullPayload]);
+
+            if (error) {
+                const { error: fallbackError } = await supabase
+                    .from('organizations')
+                    .insert([{ name: normalizedName }]);
+
+                if (fallbackError) throw fallbackError;
+            }
 
             Alert.alert('Éxito', 'Organización creada correctamente.');
             setShowCreateOrgModal(false);
@@ -357,9 +369,6 @@ export default function SettingsScreen() {
 
             // Refresh list and select the new one
             await fetchAllOrganizations();
-            if (data) {
-                await fetchOrgDetails(data.id);
-            }
         } catch (error) {
             console.error('Error creating organization:', error);
             Alert.alert('Error', 'No se pudo crear la organización.');

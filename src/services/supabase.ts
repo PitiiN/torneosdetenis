@@ -14,11 +14,17 @@ const ExpoSecureStoreAdapter = {
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim();
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim();
 
-if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('Missing Supabase environment variables.');
-}
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+export const supabaseConfigError = isSupabaseConfigured
+    ? null
+    : 'Missing Supabase environment variables: EXPO_PUBLIC_SUPABASE_URL and/or EXPO_PUBLIC_SUPABASE_ANON_KEY';
 
-export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
+// Keep the app alive even if env vars are missing so we can show a controlled
+// error screen instead of crashing on startup in production builds.
+export const supabase = createClient(
+    supabaseUrl || 'https://invalid.supabase.local',
+    supabaseAnonKey || 'invalid-anon-key',
+    {
     auth: {
         storage: ExpoSecureStoreAdapter,
         autoRefreshToken: true,
