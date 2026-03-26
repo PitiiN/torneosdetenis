@@ -131,7 +131,6 @@ export default function InicioScreen() {
                 .from('tournaments')
                 .select('organization_id, comuna, start_date, status')
                 .eq('status', 'open');
-            if (tournamentsError) throw tournamentsError;
 
             const enrichedOrganizations = await Promise.all(
                 ((orgData || []) as Organization[]).map(async (organization) => ({
@@ -150,7 +149,7 @@ export default function InicioScreen() {
             const nextPayload: HomeCachePayload = {
                 savedAt: Date.now(),
                 organizations: enrichedOrganizations,
-                openTournaments: (tournamentData || []) as OpenTournamentRef[],
+                openTournaments: tournamentsError ? [] : ((tournamentData || []) as OpenTournamentRef[]),
             };
 
             setSourceOrganizations(nextPayload.organizations);
