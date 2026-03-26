@@ -30,6 +30,7 @@ export default function FinanceScreen() {
     const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
     const [tournaments, setTournaments] = useState<Tournament[]>([]);
+    const [pendingRequestCountByTournament, setPendingRequestCountByTournament] = useState<Record<string, number>>({});
     
     // Super Admin States
     const [isSuperAdmin, setIsSuperAdmin] = useState(false);
@@ -165,6 +166,7 @@ export default function FinanceScreen() {
                 .from('tournaments')
                 .select('id, name, start_date')
                 .eq('organization_id', storedOrgId)
+                .eq('is_tournament_master', false)
                 .order('start_date', { ascending: false });
 
             const yearStart = `${selectedYear}-01-01`;
@@ -182,8 +184,30 @@ export default function FinanceScreen() {
             const nextTournaments = data || [];
             setTournaments(nextTournaments);
             setCachedValue(cacheKey, nextTournaments, 60_000);
+
+            const tournamentIds = nextTournaments.map((tournament) => tournament.id);
+            if (tournamentIds.length === 0) {
+                setPendingRequestCountByTournament({});
+            } else {
+                const { data: pendingRows, error: pendingError } = await supabase
+                    .from('tournament_registration_requests')
+                    .select('tournament_id')
+                    .eq('status', 'pending')
+                    .in('tournament_id', tournamentIds);
+
+                if (pendingError) throw pendingError;
+
+                const nextPendingMap = (pendingRows || []).reduce((acc: Record<string, number>, row: any) => {
+                    const tournamentId = String(row?.tournament_id || '');
+                    if (!tournamentId) return acc;
+                    acc[tournamentId] = (acc[tournamentId] || 0) + 1;
+                    return acc;
+                }, {});
+                setPendingRequestCountByTournament(nextPendingMap);
+            }
         } catch (error) {
             setTournaments([]);
+            setPendingRequestCountByTournament({});
         } finally {
             setLoading(false);
         }
@@ -278,7 +302,14 @@ export default function FinanceScreen() {
                                         </Text>
                                     </View>
                                 </View>
-                                <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+                                <View style={styles.cardRight}>
+                                    {pendingRequestCountByTournament[tournament.id] > 0 && (
+                                        <View style={styles.pendingBadge}>
+                                            <Text style={styles.pendingBadgeText}>{pendingRequestCountByTournament[tournament.id]}</Text>
+                                        </View>
+                                    )}
+                                    <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+                                </View>
                             </TouchableOpacity>
                         )) : (
                             <View style={styles.emptyContainer}>
@@ -445,6 +476,25 @@ const getStyles = (colors: any) => StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: spacing.md,
+    },
+    cardRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+    },
+    pendingBadge: {
+        minWidth: 20,
+        height: 20,
+        borderRadius: 10,
+        paddingHorizontal: 6,
+        backgroundColor: '#dc2626',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    pendingBadgeText: {
+        color: '#fff',
+        fontSize: 11,
+        fontWeight: '900',
     },
     tournamentIcon: {
         width: 40,

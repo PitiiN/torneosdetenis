@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { SingleEliminationBracket } from '@/components/brackets/SingleEliminationBracket';
 import { RoundRobinTable } from '@/components/brackets/RoundRobinTable';
 import { TournamentFinals } from '@/components/brackets/TournamentFinals';
@@ -11,8 +12,37 @@ import { supabase } from '@/services/supabase';
 import { getRoundRobinGroupNames, getRoundRobinSlots, hasConsolationBracket, isRoundRobinFormat } from '@/services/tournamentStructure';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { resolveStorageAssetUrl } from '@/services/storage';
+import { RegistrationProofModal } from '@/components/tournaments/RegistrationProofModal';
+import {
+    TournamentRegistrationRequest,
+    getRequestStatusLabel,
+    isRegistrationWindowClosed,
+    submitTournamentRegistrationRequest,
+} from '@/services/registrationRequests';
 
 const { width } = Dimensions.get('window');
+const OPEN_STATUSES = new Set(['open', 'ongoing', 'in_progress']);
+
+const getReadableRequestError = (error: unknown) => {
+    const raw = String((error as any)?.message || '').trim();
+    const normalized = raw.toLowerCase();
+
+    if (!raw) return 'No se pudo enviar el comprobante.';
+    if (normalized.includes('duplicate') || normalized.includes('pending_uidx')) {
+        return 'Ya tienes una solicitud pendiente para este torneo.';
+    }
+    if (normalized.includes('registration request deadline reached')) {
+        return 'Se cumplio la fecha de cierre de inscripciones.';
+    }
+    if (normalized.includes('registration request window is closed')) {
+        return 'Este torneo ya no acepta solicitudes.';
+    }
+    if (normalized.includes('invalid proof_path')) {
+        return 'El comprobante no cumple el formato permitido. Usa JPG, PNG, WEBP, HEIC o HEIF.';
+    }
+
+    return raw;
+};
 
 export default function TournamentDetailScreen() {
     const { id } = useLocalSearchParams();
@@ -25,7 +55,12 @@ export default function TournamentDetailScreen() {
     const [tournament, setTournament] = useState<any>(null);
     const [matches, setMatches] = useState<any[]>([]);
     const [isRegistered, setIsRegistered] = useState(false);
+    const [latestRequest, setLatestRequest] = useState<TournamentRegistrationRequest | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [showProofModal, setShowProofModal] = useState(false);
+    const [selectedProofUri, setSelectedProofUri] = useState<string | null>(null);
+    const [selectedProofMimeType, setSelectedProofMimeType] = useState<string | null>(null);
+    const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
 
     useEffect(() => {
         if (tournamentId) {
@@ -46,12 +81,17 @@ export default function TournamentDetailScreen() {
             // Fetch Tournament
             const { data: tourData, error: tourErr } = await supabase
                 .from('tournaments')
-                .select('id, name, status, format, level, set_type, surface, start_date, address, comuna, registration_fee, max_players, description, modality')
+                .select('id, name, status, format, level, set_type, surface, start_date, address, comuna, registration_fee, max_players, description, modality, organization_id, registration_close_at, is_tournament_master')
                 .eq('id', tournamentId)
                 .single();
             
             if (tourErr) throw tourErr;
             setTournament(tourData);
+
+            if (tourData?.is_tournament_master) {
+                router.replace(`/(tabs)/tournaments/master/${tourData.id}`);
+                return;
+            }
 
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user?.id) {
@@ -61,8 +101,20 @@ export default function TournamentDetailScreen() {
                     .eq('tournament_id', tournamentId)
                     .eq('player_id', session.user.id);
                 setIsRegistered(Boolean(count && count > 0));
+
+                const { data: requestRows, error: requestError } = await supabase
+                    .from('tournament_registration_requests')
+                    .select('id, tournament_id, player_id, status, rejection_reason, proof_path, created_at, updated_at')
+                    .eq('tournament_id', tournamentId)
+                    .eq('player_id', session.user.id)
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+
+                if (requestError) throw requestError;
+                setLatestRequest((requestRows || [])[0] || null);
             } else {
                 setIsRegistered(false);
+                setLatestRequest(null);
             }
 
             // Fetch Matches
@@ -210,43 +262,89 @@ export default function TournamentDetailScreen() {
     };
 
     const handleJoin = async () => {
+        if (!tournamentId) {
+            Alert.alert('Error', 'No se encontro el torneo.');
+            return;
+        }
+
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+            Alert.alert('Sesion requerida', 'Debes iniciar sesion para inscribirte.');
+            return;
+        }
+
+        if (!OPEN_STATUSES.has(tournament?.status)) {
+            Alert.alert('Aviso', 'Este torneo ya no acepta solicitudes.');
+            return;
+        }
+
+        if (isRegistrationWindowClosed(tournament?.registration_close_at)) {
+            Alert.alert('Inscripcion cerrada', 'Se cumplio la fecha de cierre de inscripciones.');
+            return;
+        }
+
+        if (latestRequest?.status === 'pending') {
+            Alert.alert('Solicitud pendiente', 'Ya enviaste un comprobante. Espera la revision del admin.');
+            return;
+        }
+
+        setSelectedProofUri(null);
+        setSelectedProofMimeType(null);
+        setShowProofModal(true);
+    };
+
+    const handlePickProof = async () => {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permiso requerido', 'Debes permitir acceso a tu galeria para adjuntar el comprobante.');
+            return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            quality: 0.8,
+        });
+
+        if (result.canceled || !result.assets?.[0]) return;
+        const asset = result.assets[0];
+        setSelectedProofUri(asset.uri);
+        setSelectedProofMimeType(asset.mimeType || null);
+    };
+
+    const handleSubmitJoinRequest = async () => {
+        if (!tournamentId || !tournament || !selectedProofUri) return;
+
+        setIsSubmittingRequest(true);
         try {
-            if (!tournamentId) {
-                Alert.alert('Error', 'No se encontro el torneo.');
-                return;
-            }
             const { data: { session } } = await supabase.auth.getSession();
-            if (!session) {
-                Alert.alert('Sesión requerida', 'Debes iniciar sesión para inscribirte.');
+            if (!session?.user?.id) {
+                Alert.alert('Sesion requerida', 'Debes iniciar sesion para inscribirte.');
                 return;
             }
 
-            if (tournament?.status !== 'open') {
-                Alert.alert('Aviso', 'Este torneo ya no acepta inscripciones.');
-                return;
-            }
+            await submitTournamentRegistrationRequest({
+                tournamentId,
+                organizationId: tournament.organization_id,
+                playerId: session.user.id,
+                assetUri: selectedProofUri,
+                mimeType: selectedProofMimeType,
+            });
 
-            const { error: regError } = await supabase
-                .from('registrations')
-                .insert({
-                    tournament_id: tournamentId,
-                });
-
-            if (regError) {
-                if (regError.code === '23505') {
-                    Alert.alert('Aviso', 'Ya estás inscrito en este torneo.');
-                    setIsRegistered(true);
-                } else {
-                    throw regError;
-                }
-                return;
-            }
-
-            Alert.alert('¡Éxito!', 'Te has inscrito correctamente en el torneo.');
-            setIsRegistered(true);
-            loadTournamentData();
+            Alert.alert('Solicitud enviada', 'Tu comprobante fue enviado para revision.');
+            setShowProofModal(false);
+            setSelectedProofUri(null);
+            setSelectedProofMimeType(null);
+            await loadTournamentData();
         } catch (error) {
-            Alert.alert('Error', 'No se pudo realizar la inscripción.');
+            const readableMessage = getReadableRequestError(error);
+            if (readableMessage.toLowerCase().includes('solicitud pendiente') || readableMessage.toLowerCase().includes('ya tienes una solicitud pendiente')) {
+                Alert.alert('Solicitud pendiente', readableMessage);
+            } else {
+                Alert.alert('Error', readableMessage);
+            }
+        } finally {
+            setIsSubmittingRequest(false);
         }
     };
 
@@ -266,6 +364,16 @@ export default function TournamentDetailScreen() {
         [matches, roundRobinGroupNames]
     );
     const finalsMatches = matches.filter(match => !String(match.round || '').includes('Grupo'));
+    const latestRequestStatus = latestRequest?.status;
+    const registrationClosed = isRegistrationWindowClosed(tournament?.registration_close_at);
+    const isOpenForRequests = OPEN_STATUSES.has(String(tournament?.status || ''));
+    const shouldShowRequestFooter = isOpenForRequests && !isRegistered && latestRequestStatus !== 'approved';
+    const canRequestRegistration = shouldShowRequestFooter && latestRequestStatus !== 'pending' && !registrationClosed;
+    const requestButtonLabel = latestRequestStatus === 'rejected'
+        ? 'Reenviar comprobante'
+        : (latestRequestStatus === 'pending'
+            ? 'Solicitud pendiente'
+            : (registrationClosed ? 'Inscripcion cerrada' : 'Inscribirse al Torneo'));
 
     const createStandings = (groupName: string, groupMatches: any[]) => {
         const fallbackSlots = getRoundRobinSlots(tournamentMaxPlayers, groupName, tournamentFormat, tournament?.description);
@@ -438,6 +546,17 @@ export default function TournamentDetailScreen() {
                     </View>
                 </View>
 
+                {latestRequest && (
+                    <View style={styles.requestCard}>
+                        <Text style={styles.requestCardTitle}>
+                            Estado de solicitud: {getRequestStatusLabel(latestRequest.status)}
+                        </Text>
+                        {latestRequest.status === 'rejected' && latestRequest.rejection_reason && (
+                            <Text style={styles.requestCardReason}>Motivo: {latestRequest.rejection_reason}</Text>
+                        )}
+                    </View>
+                )}
+
                 {isRoundRobin ? (
                     activeTab === 'finales' ? (
                         <TournamentFinals
@@ -514,17 +633,31 @@ export default function TournamentDetailScreen() {
                 )}
             </ScrollView>
 
-            {tournament.status === 'open' && !isRegistered && (
+            {shouldShowRequestFooter && (
                 <View style={[styles.footerActions, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
                     <TouchableOpacity
-                        style={styles.joinButton}
+                        style={[styles.joinButton, !canRequestRegistration && styles.joinButtonDisabled]}
                         onPress={handleJoin}
+                        disabled={!canRequestRegistration}
                     >
-                        <Text style={styles.joinButtonText}>Inscribirse al Torneo</Text>
+                        <Text style={styles.joinButtonText}>{requestButtonLabel}</Text>
                         <Ionicons name="enter-outline" size={20} color="#fff" />
                     </TouchableOpacity>
                 </View>
             )}
+
+            <RegistrationProofModal
+                visible={showProofModal}
+                tournamentName={tournament.name}
+                selectedImageUri={selectedProofUri}
+                submitting={isSubmittingRequest}
+                onClose={() => {
+                    if (isSubmittingRequest) return;
+                    setShowProofModal(false);
+                }}
+                onPickImage={handlePickProof}
+                onSubmit={handleSubmitJoinRequest}
+            />
         </View>
     );
 }
@@ -621,6 +754,27 @@ const getStyles = (colors: any) => StyleSheet.create({
         color: colors.textSecondary,
         lineHeight: 18,
     },
+    requestCard: {
+        marginHorizontal: spacing.xl,
+        marginTop: -spacing.lg,
+        backgroundColor: colors.surface,
+        borderRadius: borderRadius.lg,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: spacing.md,
+        gap: spacing.xs,
+    },
+    requestCardTitle: {
+        color: colors.text,
+        fontSize: 12,
+        fontWeight: '800',
+    },
+    requestCardReason: {
+        color: colors.error,
+        fontSize: 11,
+        lineHeight: 16,
+        fontWeight: '600',
+    },
     bracketContainer: {
         flex: 1,
     },
@@ -700,6 +854,9 @@ const getStyles = (colors: any) => StyleSheet.create({
         shadowOpacity: 0.3,
         shadowRadius: 8,
         elevation: 5,
+    },
+    joinButtonDisabled: {
+        opacity: 0.6,
     },
     joinButtonText: {
         color: '#fff',

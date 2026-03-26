@@ -16,6 +16,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.pitin.torneosdetenis",
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "Necesitamos acceso a la galeria para elegir imagenes de perfil y organizacion.",
         "NSUserNotificationsUsageDescription": "Usamos notificaciones para avisarte de cambios en torneos y partidos."
       }

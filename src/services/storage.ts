@@ -1,8 +1,8 @@
 import { supabase } from './supabase';
 
 const STORAGE_BUCKET = 'organizations';
-const ALLOWED_ASSET_PREFIXES = new Set(['avatars', 'logos']);
-const ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp']);
+const ALLOWED_ASSET_PREFIXES = new Set(['avatars', 'logos', 'payment-proofs']);
+const ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LEGACY_OWNER_PATTERN = /^[A-Za-z0-9_-]{1,80}$/;
 const PUBLIC_OBJECT_PREFIX = `/storage/v1/object/public/${STORAGE_BUCKET}/`;
@@ -28,8 +28,19 @@ export function isAllowedStorageAssetPath(path: string) {
 
     const [rootPrefix, ownerKey, ...fileSegments] = segments;
     if (!ALLOWED_ASSET_PREFIXES.has(rootPrefix)) return false;
-    if (!UUID_PATTERN.test(ownerKey) && !LEGACY_OWNER_PATTERN.test(ownerKey)) return false;
-    if (fileSegments.length === 0) return false;
+
+    if (rootPrefix === 'payment-proofs') {
+        if (segments.length < 5) return false;
+        const tournamentId = segments[2];
+        const playerId = segments[3];
+        if (!UUID_PATTERN.test(ownerKey)) return false;
+        if (!UUID_PATTERN.test(tournamentId)) return false;
+        if (!UUID_PATTERN.test(playerId)) return false;
+        if (fileSegments.length < 3) return false;
+    } else {
+        if (!UUID_PATTERN.test(ownerKey) && !LEGACY_OWNER_PATTERN.test(ownerKey)) return false;
+        if (fileSegments.length === 0) return false;
+    }
 
     const fileName = fileSegments[fileSegments.length - 1];
     const extension = getFileExtension(fileName);

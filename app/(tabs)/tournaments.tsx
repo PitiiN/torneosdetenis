@@ -32,6 +32,8 @@ interface Tournament {
     address?: string;
     comuna?: string;
     modality?: 'singles' | 'dobles' | string | null;
+    is_tournament_master?: boolean;
+    parent_tournament_id?: string | null;
 }
 
 type OrganizationInfo = {
@@ -264,6 +266,55 @@ export default function TorneosScreen() {
                 });
             }
 
+            const { data: requestUpdates } = await supabase
+                .from('tournament_registration_requests')
+                .select('id, tournament_id, status, rejection_reason, updated_at')
+                .eq('player_id', currentUserId)
+                .in('status', ['approved', 'rejected'])
+                .order('updated_at', { ascending: false })
+                .limit(8);
+
+            const requestTournamentIds = [...new Set(
+                (requestUpdates || [])
+                    .map((request: any) => String(request?.tournament_id || ''))
+                    .filter(Boolean)
+            )];
+
+            let requestTournamentNameById: Record<string, string> = {};
+            if (requestTournamentIds.length > 0) {
+                const { data: requestTournaments } = await supabase
+                    .from('tournaments')
+                    .select('id, name, organization_id')
+                    .in('id', requestTournamentIds);
+
+                requestTournamentNameById = (requestTournaments || [])
+                    .filter((tournament: any) => tournament.organization_id === targetOrgId)
+                    .reduce((acc: Record<string, string>, tournament: any) => {
+                        acc[tournament.id] = decodeEscapedUnicode(tournament.name || 'Torneo');
+                        return acc;
+                    }, {});
+            }
+
+            (requestUpdates || []).forEach((request: any) => {
+                const tournamentName = requestTournamentNameById[request.tournament_id];
+                if (!tournamentName) return;
+
+                if (request.status === 'approved') {
+                    items.push({
+                        id: `req-ok-${request.id}`,
+                        title: 'Inscripcion aprobada',
+                        body: `Tu comprobante de ${tournamentName} fue aprobado.`,
+                    });
+                    return;
+                }
+
+                items.push({
+                    id: `req-no-${request.id}`,
+                    title: 'Inscripcion rechazada',
+                    body: `Tu comprobante de ${tournamentName} fue rechazado: ${request.rejection_reason || 'sin motivo indicado'}.`,
+                });
+            });
+
             setNotifications(items);
         } catch (error) {
             setNotifications([]);
@@ -329,8 +380,9 @@ export default function TorneosScreen() {
 
             let query = supabase
                 .from('tournaments')
-                .select('id, name, description, status, surface, format, start_date, organization_id, registration_fee, address, comuna, modality')
+                .select('id, name, description, status, surface, format, start_date, organization_id, registration_fee, address, comuna, modality, is_tournament_master, parent_tournament_id')
                 .eq('organization_id', targetOrgId)
+                .is('parent_tournament_id', null)
                 .order('start_date', { ascending: false });
 
             if (!canManageOrg) {
@@ -556,19 +608,28 @@ export default function TorneosScreen() {
                             <Text style={styles.resultsCount}>{filteredTournaments.length} resultados</Text>
                         </View>
                         {filteredTournaments.map((tournament) => {
-                            const isRegistered = registeredTournamentIds.has(tournament.id);
+                            const isMasterTournament = Boolean(tournament.is_tournament_master);
+                            const isRegistered = !isMasterTournament && registeredTournamentIds.has(tournament.id);
                             return (
                             <TouchableOpacity 
                                 key={tournament.id} 
                                 style={styles.tournamentCard}
                                 onPress={() => {
                                     if (canManage) {
-                                        router.push({
-                                            pathname: '/(admin)/tournaments/[id]',
-                                            params: { id: tournament.id }
-                                        });
+                                        if (isMasterTournament) {
+                                            router.push(`/(admin)/tournaments/master/${tournament.id}`);
+                                        } else {
+                                            router.push({
+                                                pathname: '/(admin)/tournaments/[id]',
+                                                params: { id: tournament.id }
+                                            });
+                                        }
                                     } else {
-                                        router.push(`/(tabs)/tournaments/${tournament.id}`);
+                                        if (isMasterTournament) {
+                                            router.push(`/(tabs)/tournaments/master/${tournament.id}`);
+                                        } else {
+                                            router.push(`/(tabs)/tournaments/${tournament.id}`);
+                                        }
                                     }
                                 }}
                             >
@@ -599,20 +660,24 @@ export default function TorneosScreen() {
                                             </View>
                                             <View style={styles.metaItem}>
                                                 <Ionicons name="ribbon-outline" size={12} color={colors.textTertiary} />
-                                                <Text style={styles.metaText}>{tournament.format}</Text>
+                                                <Text style={styles.metaText}>{isMasterTournament ? 'Torneo Completo' : tournament.format}</Text>
                                             </View>
-                                            <View style={styles.metaItem}>
-                                                <Ionicons name="tennisball-outline" size={12} color={colors.textTertiary} />
-                                                <Text style={styles.metaText}>
-                                                    {`Modalidad: ${String(tournament.modality || '').toLowerCase() === 'dobles' ? 'Dobles' : 'Singles'}`}
-                                                </Text>
-                                            </View>
-                                            <View style={styles.metaItem}>
-                                                <Ionicons name="cash-outline" size={12} color={colors.primary[500]} />
-                                                <Text style={[styles.metaText, { color: colors.primary[500], fontWeight: '700' }]}>
-                                                    ${tournament.registration_fee || 0}
-                                                </Text>
-                                            </View>
+                                            {!isMasterTournament && (
+                                                <View style={styles.metaItem}>
+                                                    <Ionicons name="tennisball-outline" size={12} color={colors.textTertiary} />
+                                                    <Text style={styles.metaText}>
+                                                        {`Modalidad: ${String(tournament.modality || '').toLowerCase() === 'dobles' ? 'Dobles' : 'Singles'}`}
+                                                    </Text>
+                                                </View>
+                                            )}
+                                            {!isMasterTournament && (
+                                                <View style={styles.metaItem}>
+                                                    <Ionicons name="cash-outline" size={12} color={colors.primary[500]} />
+                                                    <Text style={[styles.metaText, { color: colors.primary[500], fontWeight: '700' }]}>
+                                                        ${tournament.registration_fee || 0}
+                                                    </Text>
+                                                </View>
+                                            )}
                                             {(tournament.address || tournament.comuna) && (
                                                 <View style={styles.metaItem}>
                                                     <Ionicons name="location-outline" size={12} color={colors.textTertiary} />
@@ -626,7 +691,11 @@ export default function TorneosScreen() {
                                 </View>
                                 <View style={styles.cardFooter}>
                                     <View style={styles.detailsButton}>
-                                        <Text style={styles.detailsButtonText}>{isRegistered ? 'Estás inscrito! Ver detalles' : 'Ver detalles e inscribirse'}</Text>
+                                        <Text style={styles.detailsButtonText}>
+                                            {isMasterTournament
+                                                ? 'Ver campeonatos e inscribirse'
+                                                : (isRegistered ? 'Estas inscrito! Ver detalles' : 'Ver detalles e inscribirse')}
+                                        </Text>
                                         <Ionicons name="chevron-forward" size={16} color={colors.primary[500]} />
                                     </View>
                                 </View>

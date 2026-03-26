@@ -123,6 +123,12 @@ export default function TabsLayout() {
                     href: null,
                 }}
             />
+            <Tabs.Screen
+                name="tournaments/master/[id]"
+                options={{
+                    href: null,
+                }}
+            />
         </Tabs>
     );
 }
