@@ -12,6 +12,24 @@ const SIGNED_OBJECT_PREFIX = `/storage/v1/object/sign/${STORAGE_BUCKET}/`;
 const trimLeadingSlashes = (value: string) => value.replace(/^\/+/, '');
 const hasPathTraversal = (value: string) => value.includes('..');
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const stripQueryAndHash = (value: string) => value.split('#')[0].split('?')[0];
+
+const safeDecodeURIComponent = (value: string) => {
+    try {
+        return decodeURIComponent(value);
+    } catch {
+        return value;
+    }
+};
+
+const normalizeStoragePathCandidate = (value: string) => {
+    const decoded = trimLeadingSlashes(safeDecodeURIComponent(stripQueryAndHash(value)));
+    const bucketPrefix = `${STORAGE_BUCKET.toLowerCase()}/`;
+    if (decoded.toLowerCase().startsWith(bucketPrefix)) {
+        return decoded.slice(STORAGE_BUCKET.length + 1);
+    }
+    return decoded;
+};
 
 const getFileExtension = (fileName: string) => {
     const dot = fileName.lastIndexOf('.');
@@ -54,7 +72,7 @@ export function extractStoragePath(pathOrUrl?: string | null): string | null {
     if (!value) return null;
 
     if (!value.startsWith('http://') && !value.startsWith('https://')) {
-        return trimLeadingSlashes(value);
+        return normalizeStoragePathCandidate(value);
     }
 
     try {
@@ -65,8 +83,13 @@ export function extractStoragePath(pathOrUrl?: string | null): string | null {
         for (const marker of markers) {
             const index = pathname.indexOf(marker);
             if (index >= 0) {
-                return trimLeadingSlashes(decodeURIComponent(pathname.slice(index + marker.length)));
+                return normalizeStoragePathCandidate(pathname.slice(index + marker.length));
             }
+        }
+
+        const fallbackMarkerMatch = pathname.match(/\/storage\/v1\/object\/(?:public|authenticated|sign)\/(.+)$/i);
+        if (fallbackMarkerMatch?.[1]) {
+            return normalizeStoragePathCandidate(fallbackMarkerMatch[1]);
         }
     } catch {
         return null;

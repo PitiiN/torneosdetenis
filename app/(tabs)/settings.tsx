@@ -14,12 +14,14 @@ import { clearCachedValue } from '@/services/runtimeCache';
 const ROLE_OPTIONS = ['player', 'admin'] as const;
 const PROTECTED_SUPER_ADMIN_ROLE = 'super_admin';
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-const ALLOWED_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp']);
+const ALLOWED_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif']);
 const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
     jpg: 'image/jpeg',
     jpeg: 'image/jpeg',
     png: 'image/png',
     webp: 'image/webp',
+    heic: 'image/heic',
+    heif: 'image/heif',
 };
 
 const normalizeAssignableRole = (role: string | null | undefined): (typeof ROLE_OPTIONS)[number] =>
@@ -39,6 +41,42 @@ const getExtensionFromUri = (uri: string) => {
     const dotIndex = sanitized.lastIndexOf('.');
     if (dotIndex < 0 || dotIndex === sanitized.length - 1) return '';
     return sanitized.slice(dotIndex + 1).toLowerCase();
+};
+
+const BASE64_CHAR_MAP = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+const sanitizeBase64Payload = (value: string) => value.replace(/\s/g, '');
+
+const estimateBase64ByteSize = (value: string) => {
+    const sanitized = sanitizeBase64Payload(value);
+    if (!sanitized) return 0;
+    const paddingMatches = sanitized.match(/=+$/);
+    const paddingLength = paddingMatches ? paddingMatches[0].length : 0;
+    return Math.floor((sanitized.length * 3) / 4) - paddingLength;
+};
+
+const decodeBase64ToUint8Array = (value: string) => {
+    const sanitized = sanitizeBase64Payload(value);
+    if (!sanitized) return new Uint8Array(0);
+
+    const bytes: number[] = [];
+    let buffer = 0;
+    let bits = 0;
+
+    for (const char of sanitized) {
+        if (char === '=') break;
+        const currentIndex = BASE64_CHAR_MAP.indexOf(char);
+        if (currentIndex < 0) continue;
+
+        buffer = (buffer << 6) | currentIndex;
+        bits += 6;
+
+        if (bits >= 8) {
+            bits -= 8;
+            bytes.push((buffer >> bits) & 0xff);
+        }
+    }
+
+    return Uint8Array.from(bytes);
 };
 
 const buildOrganizationSlug = (value: string) => {
@@ -193,10 +231,14 @@ export default function SettingsScreen() {
         }
 
         const signedLogoUrl = await resolveStorageAssetUrlWithRetry(resolvedOrg.logo_url, { attempts: 4, baseDelayMs: 350 });
+        const rawLogoUrl = String(resolvedOrg.logo_url || '').trim();
+        const storageUrlFallback = /^https?:\/\//i.test(rawLogoUrl) && rawLogoUrl.includes('/storage/v1/object/')
+            ? rawLogoUrl
+            : '';
         setOrganization(resolvedOrg);
         setOrgName(resolvedOrg.name || '');
         setLogoPath(resolvedOrg.logo_url || '');
-        setLogoUrl(signedLogoUrl || '');
+        setLogoUrl(signedLogoUrl || storageUrlFallback);
         setContactEmail(resolvedOrg.contact_email || '');
         setContactWhatsapp(resolvedOrg.contact_whatsapp || '');
         setSocialLinks(resolvedOrg.social_links || '');
@@ -218,54 +260,67 @@ export default function SettingsScreen() {
     const handlePickImage = async () => {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
-            Alert.alert('Permiso denegado', 'Necesitamos permiso para acceder a tu galería.');
+            Alert.alert('Permiso denegado', 'Necesitamos permiso para acceder a tu galeria.');
             return;
         }
 
-        let result = await ImagePicker.launchImageLibraryAsync({
+        const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: 'images',
             allowsEditing: true,
             aspect: [1, 1],
             quality: 0.5,
+            base64: true,
         });
 
-        if (!result.canceled) {
-            uploadImage(result.assets[0].uri);
+        if (!result.canceled && result.assets?.[0]) {
+            uploadImage(result.assets[0]);
         }
     };
 
-    const uploadImage = async (uri: string) => {
+    const uploadImage = async (asset: ImagePicker.ImagePickerAsset) => {
         if (!organization) return;
+        const uri = asset.uri;
         setSavingLogo(true);
         try {
-            const response = await fetch(uri);
-            const fileBytes = typeof response.arrayBuffer === 'function'
-                ? await response.arrayBuffer()
-                : await (await response.blob()).arrayBuffer();
-            const fileSize = fileBytes.byteLength;
-            if (!fileSize || fileSize > MAX_IMAGE_BYTES) {
-                Alert.alert('Error', 'La imagen supera el tamaño máximo permitido (5MB).');
-                return;
-            }
-
-            const headerMimeType = (response.headers.get('content-type') || '')
+            const normalizedMimeType = String(asset.mimeType || '')
                 .split(';')[0]
                 .trim()
                 .toLowerCase();
             const extensionFromUri = getExtensionFromUri(uri);
-            const extensionFromMime = headerMimeType.startsWith('image/')
-                ? headerMimeType.replace('image/', '').toLowerCase()
+            const extensionFromMime = normalizedMimeType.startsWith('image/')
+                ? normalizedMimeType.replace('image/', '').toLowerCase()
                 : '';
             const fileExt = ALLOWED_IMAGE_EXTENSIONS.has(extensionFromMime)
                 ? extensionFromMime
-                : (ALLOWED_IMAGE_EXTENSIONS.has(extensionFromUri) ? extensionFromUri : 'jpg');
+                : extensionFromUri;
 
             if (!ALLOWED_IMAGE_EXTENSIONS.has(fileExt)) {
-                Alert.alert('Error', 'Formato de imagen no permitido.');
+                Alert.alert('Error', 'Formato de imagen no permitido. Usa JPG, PNG, WEBP, HEIC o HEIF.');
                 return;
             }
 
-            const mimeType = IMAGE_MIME_BY_EXTENSION[fileExt] || 'image/jpeg';
+            let fileBytes: ArrayBuffer | Uint8Array;
+            if (asset.base64) {
+                const estimatedBytes = estimateBase64ByteSize(asset.base64);
+                if (!estimatedBytes || estimatedBytes > MAX_IMAGE_BYTES) {
+                    Alert.alert('Error', 'La imagen supera el tamano maximo permitido (5MB).');
+                    return;
+                }
+                fileBytes = decodeBase64ToUint8Array(asset.base64);
+            } else {
+                const response = await fetch(uri);
+                fileBytes = typeof response.arrayBuffer === 'function'
+                    ? await response.arrayBuffer()
+                    : await (await response.blob()).arrayBuffer();
+            }
+
+            const fileSize = Number(asset.fileSize || (fileBytes as any)?.byteLength || 0);
+            if (!fileSize || fileSize > MAX_IMAGE_BYTES) {
+                Alert.alert('Error', 'La imagen supera el tamano maximo permitido (5MB).');
+                return;
+            }
+
+            const mimeType = IMAGE_MIME_BY_EXTENSION[fileExt] || normalizedMimeType || 'image/jpeg';
             const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 12)}.${fileExt}`;
             const filePath = `logos/${organization.id}/${fileName}`;
 
@@ -290,8 +345,14 @@ export default function SettingsScreen() {
             setLogoPath(filePath);
             setLogoUrl(signedLogoUrl || uri);
             setOrganization((current: any) => current ? { ...current, logo_url: filePath } : current);
-        } catch (error) {
-            Alert.alert('Error', 'No se pudo subir la imagen.');
+        } catch (error: any) {
+            const detail = String(error?.message || '').trim();
+            Alert.alert(
+                'Error',
+                detail
+                    ? `No se pudo subir la imagen. ${detail}`
+                    : 'No se pudo subir la imagen.'
+            );
         } finally {
             setSavingLogo(false);
         }
@@ -1174,3 +1235,4 @@ const getStyles = (colors: any) => StyleSheet.create({
         fontWeight: '800',
     },
 });
+

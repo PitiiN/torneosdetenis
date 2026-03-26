@@ -133,10 +133,18 @@ export default function InicioScreen() {
                 .eq('status', 'open');
 
             const enrichedOrganizations = await Promise.all(
-                ((orgData || []) as Organization[]).map(async (organization) => ({
-                    ...organization,
-                    logo_signed_url: await resolveStorageAssetUrl(organization.logo_url, 900),
-                }))
+                ((orgData || []) as Organization[]).map(async (organization) => {
+                    const signedLogo = await resolveStorageAssetUrl(organization.logo_url, 900);
+                    const rawLogoUrl = String(organization.logo_url || '').trim();
+                    const storageUrlFallback = /^https?:\/\//i.test(rawLogoUrl) && rawLogoUrl.includes('/storage/v1/object/')
+                        ? rawLogoUrl
+                        : null;
+
+                    return {
+                        ...organization,
+                        logo_signed_url: signedLogo || storageUrlFallback,
+                    };
+                })
             );
 
             await Promise.allSettled(

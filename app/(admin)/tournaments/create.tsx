@@ -9,6 +9,7 @@ import { DateField } from '@/components/DateField';
 import { CHILEAN_COMUNAS, TOURNAMENT_SURFACES } from '@/constants/tournamentOptions';
 import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
+import * as SecureStore from 'expo-secure-store';
 
 const STATUS_OPTIONS = ['Publicado', 'No Publicado'];
 const STATUS_MAP: Record<string, string> = {
@@ -58,6 +59,7 @@ export default function CreateTournamentScreen() {
       }
 
       setActiveOrgId(resolvedOrgId);
+      await SecureStore.setItemAsync('selected_org_id', resolvedOrgId);
       if (!canManageOrganization(access, resolvedOrgId)) {
         router.replace('/(tabs)/tournaments');
       }
@@ -103,6 +105,7 @@ export default function CreateTournamentScreen() {
 
       if (error || !createdTournamentId) throw error || new Error('No se obtuvo id del torneo creado.');
 
+      await SecureStore.setItemAsync('selected_org_id', activeOrgId);
       Alert.alert('Exito', 'Torneo completo creado. Ahora agrega los campeonatos por categoria y modalidad.');
       router.replace(`/(admin)/tournaments/master/${createdTournamentId}`);
     } catch (error: any) {

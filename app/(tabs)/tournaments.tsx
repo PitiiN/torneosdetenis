@@ -77,6 +77,10 @@ export default function TorneosScreen() {
     const styles = getStyles(colors);
     const { orgId } = useLocalSearchParams<{ orgId: string }>();
     const routeOrgId = Array.isArray(orgId) ? orgId[0] : orgId;
+    const normalizedRouteOrgId =
+        routeOrgId && routeOrgId !== 'undefined' && routeOrgId !== 'null'
+            ? routeOrgId
+            : null;
     
     const [activeFilter, setActiveFilter] = useState('Pr\u00F3ximos');
     const [role, setRole] = useState<string | null>(null);
@@ -90,7 +94,7 @@ export default function TorneosScreen() {
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
     const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
     const [userOrgId, setUserOrgId] = useState<string | null>(null);
-    const [activeOrgId, setActiveOrgId] = useState<string | null>(routeOrgId || null);
+    const [activeOrgId, setActiveOrgId] = useState<string | null>(normalizedRouteOrgId || null);
     const [notifications, setNotifications] = useState<Array<{ id: string; title: string; body: string }>>([]);
     const [isNotificationsVisible, setIsNotificationsVisible] = useState(false);
 
@@ -99,7 +103,7 @@ export default function TorneosScreen() {
     useFocusEffect(
         useCallback(() => {
             bootstrapScreen();
-        }, [routeOrgId])
+        }, [normalizedRouteOrgId])
     );
 
     async function bootstrapScreen() {
@@ -108,7 +112,7 @@ export default function TorneosScreen() {
         setOrganizationInfo(null);
         const access = await fetchUserData();
         if (!access) {
-            setActiveOrgId(routeOrgId || null);
+            setActiveOrgId(normalizedRouteOrgId || null);
             setTournaments([]);
             setRegisteredTournamentIds(new Set());
             setOrgName('Torneos');
@@ -120,9 +124,32 @@ export default function TorneosScreen() {
         let nextOrgId: string | null = null;
 
         if (access.isSuperAdmin) {
-            nextOrgId = routeOrgId || storedOrgId || null;
+            nextOrgId = normalizedRouteOrgId || storedOrgId || null;
         } else {
-            nextOrgId = routeOrgId || storedOrgId || access.profile.org_id || null;
+            nextOrgId = normalizedRouteOrgId || storedOrgId || access.profile.org_id || null;
+        }
+
+        if (!nextOrgId && access.isSuperAdmin) {
+            const { data: privateOrganizations } = await supabase
+                .from('organizations')
+                .select('id')
+                .order('created_at', { ascending: true })
+                .limit(1);
+
+            nextOrgId = privateOrganizations?.[0]?.id || null;
+
+            if (!nextOrgId) {
+                const { data: publicOrganizations } = await supabase
+                    .from('organizations_public')
+                    .select('id')
+                    .order('created_at', { ascending: true })
+                    .limit(1);
+                nextOrgId = publicOrganizations?.[0]?.id || null;
+            }
+        }
+
+        if (nextOrgId) {
+            await SecureStore.setItemAsync('selected_org_id', String(nextOrgId));
         }
 
         setActiveOrgId(nextOrgId);

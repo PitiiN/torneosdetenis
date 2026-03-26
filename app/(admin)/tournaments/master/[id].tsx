@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert,
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import { borderRadius, spacing, useTheme } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { DateField } from '@/components/DateField';
@@ -131,6 +132,7 @@ export default function MasterTournamentAdminScreen() {
       }
 
       setMasterTournament(masterRow);
+      await SecureStore.setItemAsync('selected_org_id', String(masterRow.organization_id));
 
       const { data: championshipRows, error: championshipError } = await supabase
         .from('tournaments')
@@ -139,9 +141,16 @@ export default function MasterTournamentAdminScreen() {
 
       if (championshipError) throw championshipError;
       setChampionships(sortChampionships((championshipRows || []) as Championship[]));
-    } catch (error) {
-      Alert.alert('Error', 'No se pudo cargar la configuracion del torneo completo.');
-      router.back();
+    } catch (error: any) {
+      const detail = String(error?.message || '').trim();
+      Alert.alert(
+        'Error',
+        detail
+          ? `No se pudo cargar la configuracion del torneo completo. ${detail}`
+          : 'No se pudo cargar la configuracion del torneo completo.'
+      );
+      setMasterTournament(null);
+      setChampionships([]);
     } finally {
       setLoading(false);
     }
