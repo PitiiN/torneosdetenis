@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Dimensions, Image, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Dimensions, Image, Modal, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
@@ -423,6 +423,46 @@ export default function TorneosScreen() {
         }
     }
 
+    const handleDeleteMasterTournament = (tournamentId: string, tournamentName: string) => {
+        Alert.alert(
+            'Confirmar eliminación',
+            `Vas a eliminar el torneo completo "${tournamentName}". Esto eliminará también todos sus campeonatos, cuadros, partidos e inscripciones asociadas.`,
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Continuar',
+                    style: 'destructive',
+                    onPress: () => {
+                        Alert.alert(
+                            'Confirmación final',
+                            'Esta acción es irreversible. ¿Deseas eliminar definitivamente este torneo completo y todos sus torneos hijos?',
+                            [
+                                { text: 'Cancelar', style: 'cancel' },
+                                {
+                                    text: 'Eliminar todo',
+                                    style: 'destructive',
+                                    onPress: async () => {
+                                        try {
+                                            const { error } = await supabase
+                                                .from('tournaments')
+                                                .delete()
+                                                .eq('id', tournamentId);
+
+                                            if (error) throw error;
+                                            await bootstrapScreen();
+                                        } catch (error) {
+                                            Alert.alert('Error', 'No se pudo eliminar el torneo completo.');
+                                        }
+                                    }
+                                }
+                            ]
+                        );
+                    }
+                }
+            ]
+        );
+    };
+
     const canManage = isSuperAdmin || ((role === 'admin' || role === 'organizer') && userOrgId === activeOrgId);
     const hasOrganizationInfoDetails = Boolean(
         organizationInfo?.contact_email ||
@@ -441,6 +481,9 @@ export default function TorneosScreen() {
         if (!canManage && !isVisibleToPlayer) return false;
 
         if (activeFilter === 'Pr\u00F3ximos') {
+            if (canManage) {
+                return normalizedStatus === 'open' || normalizedStatus === 'pending' || normalizedStatus === 'draft';
+            }
             return normalizedStatus === 'open' || normalizedStatus === 'pending';
         }
         if (activeFilter === 'En Curso') return normalizedStatus === 'in_progress';
@@ -699,13 +742,33 @@ export default function TorneosScreen() {
                                     </View>
                                 </View>
                                 <View style={styles.cardFooter}>
-                                    <View style={styles.detailsButton}>
-                                        <Text style={styles.detailsButtonText}>
-                                            {isMasterTournament
-                                                ? 'Ver campeonatos e inscribirse'
-                                                : (isRegistered ? 'Estas inscrito! Ver detalles' : 'Ver detalles e inscribirse')}
-                                        </Text>
-                                        <Ionicons name="chevron-forward" size={16} color={colors.primary[500]} />
+                                    <View style={styles.footerActions}>
+                                        <View style={styles.detailsButton}>
+                                            <Text style={styles.detailsButtonText}>
+                                                {isMasterTournament
+                                                    ? 'Ver campeonatos e inscribirse'
+                                                    : (isRegistered ? 'Estas inscrito! Ver detalles' : 'Ver detalles e inscribirse')}
+                                            </Text>
+                                            <Ionicons name="chevron-forward" size={16} color={colors.primary[500]} />
+                                        </View>
+                                        {canManage && isMasterTournament && (
+                                            <View style={styles.adminActions}>
+                                                <TouchableOpacity
+                                                    style={styles.adminActionButton}
+                                                    onPress={() => router.push(`/(admin)/tournaments/edit/${tournament.id}`)}
+                                                >
+                                                    <Ionicons name="create-outline" size={15} color={colors.textSecondary} />
+                                                    <Text style={styles.adminActionText}>Editar</Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                    style={[styles.adminActionButton, styles.adminActionDanger]}
+                                                    onPress={() => handleDeleteMasterTournament(tournament.id, tournament.name)}
+                                                >
+                                                    <Ionicons name="trash-outline" size={15} color={colors.error} />
+                                                    <Text style={[styles.adminActionText, { color: colors.error }]}>Eliminar</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        )}
                                     </View>
                                 </View>
                             </TouchableOpacity>
@@ -1004,12 +1067,39 @@ const getStyles = (colors: any) => StyleSheet.create({
         borderTopWidth: 1,
         borderTopColor: colors.border,
         paddingTop: spacing.md,
+        gap: spacing.sm,
+    },
+    footerActions: {
+        gap: spacing.sm,
         alignItems: 'flex-end',
     },
     detailsButton: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
+    },
+    adminActions: {
+        flexDirection: 'row',
+        gap: spacing.xs,
+    },
+    adminActionButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 8,
+        paddingVertical: 6,
+        borderRadius: borderRadius.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.background,
+    },
+    adminActionDanger: {
+        borderColor: colors.error + '50',
+    },
+    adminActionText: {
+        color: colors.textSecondary,
+        fontSize: 11,
+        fontWeight: '700',
     },
     detailsButtonText: {
         color: colors.primary[500],

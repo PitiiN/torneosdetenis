@@ -74,7 +74,7 @@ export default function EditTournamentScreen() {
 
             const { data, error } = await supabase
                 .from('tournaments')
-                .select('id, organization_id, name, status, level, surface, max_players, format, set_type, description, start_date, end_date, registration_fee, address, comuna')
+                .select('id, organization_id, parent_tournament_id, is_tournament_master, name, status, level, modality, surface, max_players, format, set_type, description, start_date, end_date, registration_fee, registration_close_at, address, comuna')
                 .eq('id', id)
                 .single();
             if (error) throw error;
@@ -107,12 +107,14 @@ export default function EditTournamentScreen() {
     };
 
     const handleSave = async () => {
-        if (!startDate || !endDate) {
+        const isMasterTournament = Boolean(tournamentData?.is_tournament_master);
+
+        if (isMasterTournament && (!startDate || !endDate)) {
             Alert.alert('Error', 'Debes definir fecha de inicio y fecha de fin.');
             return;
         }
 
-        if (endDate < startDate) {
+        if (isMasterTournament && endDate < startDate) {
             Alert.alert('Error', 'La fecha de fin no puede ser menor que la fecha de inicio.');
             return;
         }
@@ -128,23 +130,28 @@ export default function EditTournamentScreen() {
             const maxPlayersValue = parseInt(maxPlayers) || 8;
             const tournamentFormat = buildTournamentFormatLabel(format, { groupCount: parseInt(groupCount) || 2 });
             const tournamentDescription = buildTournamentDescription(parseInt(groupCount) || 2, tournamentData?.description);
+            const updatePayload: any = {
+                name: tournamentName,
+                level,
+                format: tournamentFormat,
+                description: tournamentDescription,
+                set_type: setType,
+                max_players: maxPlayersValue,
+                registration_fee: parseInt(registrationFee) || 0,
+            };
+
+            if (isMasterTournament) {
+                updatePayload.status = STATUS_MAP_TO_DB[status] || 'draft';
+                updatePayload.surface = surface;
+                updatePayload.start_date = startDate;
+                updatePayload.end_date = endDate;
+                updatePayload.address = address;
+                updatePayload.comuna = comuna;
+            }
+
             const { error } = await supabase
                 .from('tournaments')
-                .update({
-                    name: tournamentName,
-                    status: STATUS_MAP_TO_DB[status] || 'draft',
-                    level,
-                    surface,
-                    format: tournamentFormat,
-                    description: tournamentDescription,
-                    set_type: setType,
-                    max_players: maxPlayersValue,
-                    start_date: startDate,
-                    end_date: endDate,
-                    registration_fee: parseInt(registrationFee) || 0,
-                    address: address,
-                    comuna: comuna
-                })
+                .update(updatePayload)
                 .eq('id', id);
 
             if (error) throw error;
@@ -199,13 +206,15 @@ export default function EditTournamentScreen() {
         );
     }
 
+    const isMasterTournament = Boolean(tournamentData?.is_tournament_master);
+
     return (
         <View style={[styles.container, { paddingTop: insets.top }]}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                     <Ionicons name="arrow-back" size={24} color={colors.text} />
                 </TouchableOpacity>
-                <Text style={styles.title}>Editar Torneo</Text>
+                <Text style={styles.title}>{isMasterTournament ? 'Editar Torneo Completo' : 'Editar Campeonato'}</Text>
                 <View style={{ width: 40 }} />
             </View>
 
@@ -258,36 +267,40 @@ export default function EditTournamentScreen() {
                         />
                     </View>
 
-                    {/* Address */}
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.label}>
-                            <Ionicons name="location-outline" size={18} color={colors.primary[500]} />
-                            {' '}Dirección
-                        </Text>
-                        <TextInput
-                            style={styles.textInput}
-                            value={address}
-                            onChangeText={setAddress}
-                            placeholder="Ej. Avenida Principal 123"
-                            placeholderTextColor={colors.textTertiary}
-                        />
-                    </View>
+                    {isMasterTournament && (
+                        <>
+                            {/* Address */}
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>
+                                    <Ionicons name="location-outline" size={18} color={colors.primary[500]} />
+                                    {' '}Dirección
+                                </Text>
+                                <TextInput
+                                    style={styles.textInput}
+                                    value={address}
+                                    onChangeText={setAddress}
+                                    placeholder="Ej. Avenida Principal 123"
+                                    placeholderTextColor={colors.textTertiary}
+                                />
+                            </View>
 
-                    {/* Comuna */}
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.label}>
-                            <Ionicons name="map-outline" size={18} color={colors.primary[500]} />
-                            {' '}Comuna
-                        </Text>
-                        <TouchableOpacity style={styles.dropdown} onPress={() => setShowComunaModal(true)}>
-                            <Text style={styles.dropdownText}>{comuna || 'Seleccionar comuna...'}</Text>
-                            <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
-                        </TouchableOpacity>
-                    </View>
+                            {/* Comuna */}
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>
+                                    <Ionicons name="map-outline" size={18} color={colors.primary[500]} />
+                                    {' '}Comuna
+                                </Text>
+                                <TouchableOpacity style={styles.dropdown} onPress={() => setShowComunaModal(true)}>
+                                    <Text style={styles.dropdownText}>{comuna || 'Seleccionar comuna...'}</Text>
+                                    <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+                                </TouchableOpacity>
+                            </View>
 
-                    <DateField label="Fecha de Inicio" value={startDate} onChange={setStartDate} />
+                            <DateField label="Fecha de Inicio" value={startDate} onChange={setStartDate} />
 
-                    <DateField label="Fecha de Fin" value={endDate} onChange={setEndDate} />
+                            <DateField label="Fecha de Fin" value={endDate} onChange={setEndDate} />
+                        </>
+                    )}
 
                     {/* Format */}
                     <View style={styles.inputGroup}>
@@ -342,29 +355,33 @@ export default function EditTournamentScreen() {
                         </TouchableOpacity>
                     </View>
 
-                    {/* Surface */}
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.label}>
-                            <Ionicons name="tennisball" size={18} color={colors.primary[500]} />
-                            {' '}Superficie
-                        </Text>
-                        <TouchableOpacity style={styles.dropdown} onPress={() => setShowSurfaceModal(true)}>
-                            <Text style={styles.dropdownText}>{surface}</Text>
-                            <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
-                        </TouchableOpacity>
-                    </View>
+                    {isMasterTournament && (
+                        <>
+                            {/* Surface */}
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>
+                                    <Ionicons name="tennisball" size={18} color={colors.primary[500]} />
+                                    {' '}Superficie
+                                </Text>
+                                <TouchableOpacity style={styles.dropdown} onPress={() => setShowSurfaceModal(true)}>
+                                    <Text style={styles.dropdownText}>{surface}</Text>
+                                    <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+                                </TouchableOpacity>
+                            </View>
 
-                    {/* Status */}
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.label}>
-                            <Ionicons name="eye" size={18} color={colors.primary[500]} />
-                            {' '}Estado de Publicación
-                        </Text>
-                        <TouchableOpacity style={styles.dropdown} onPress={() => setShowStatusModal(true)}>
-                            <Text style={styles.dropdownText}>{status}</Text>
-                            <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
-                        </TouchableOpacity>
-                    </View>
+                            {/* Status */}
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>
+                                    <Ionicons name="eye" size={18} color={colors.primary[500]} />
+                                    {' '}Estado de Publicación
+                                </Text>
+                                <TouchableOpacity style={styles.dropdown} onPress={() => setShowStatusModal(true)}>
+                                    <Text style={styles.dropdownText}>{status}</Text>
+                                    <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+                                </TouchableOpacity>
+                            </View>
+                        </>
+                    )}
                 </View>
             </ScrollView>
 

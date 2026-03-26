@@ -387,7 +387,7 @@ export default function MasterTournamentAdminScreen() {
         <KeyboardAvoidingView
           style={styles.modalContainer}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? Math.max(insets.top, spacing.md) : 0}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? Math.max(insets.top, spacing.md) : 82}
         >
           <View style={[styles.modalContainer, { paddingTop: Math.max(insets.top, spacing.md) }]}>
           <View style={styles.modalHeader}>
@@ -765,7 +765,7 @@ const getStyles = (colors: any) => StyleSheet.create({
   },
   modalContent: {
     padding: spacing.xl,
-    paddingBottom: 120,
+    paddingBottom: 240,
     gap: spacing.md,
   },
   inputGroup: {
