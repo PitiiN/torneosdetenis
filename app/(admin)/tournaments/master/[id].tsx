@@ -17,6 +17,7 @@ import { buildDescriptionWithRankingPoints, DEFAULT_RANKING_POINTS } from '@/ser
 import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
 import { getModalityLabel, sortChampionships } from '@/services/championshipSorting';
 import { TennisSpinner } from '@/components/TennisSpinner';
+import { AdminQuickActionsBar } from '@/components/navigation/AdminQuickActionsBar';
 
 type MasterTournament = {
   id: string;
@@ -214,6 +215,9 @@ export default function MasterTournamentAdminScreen() {
     requestAnimationFrame(() => {
       modalScrollRef.current?.scrollToEnd({ animated: true });
     });
+    setTimeout(() => {
+      modalScrollRef.current?.scrollToEnd({ animated: true });
+    }, 220);
   }, []);
 
   const handleCreateChampionship = async () => {
@@ -359,7 +363,6 @@ export default function MasterTournamentAdminScreen() {
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.masterCard}>
-          <Text style={styles.masterTitle}>Torneo Completo</Text>
           <Text style={styles.masterText}>Inicio: {masterTournament.start_date || 'Sin fecha'}</Text>
           <Text style={styles.masterText}>Termino: {masterTournament.end_date || 'Sin fecha'}</Text>
           <Text style={styles.masterText}>
@@ -407,6 +410,8 @@ export default function MasterTournamentAdminScreen() {
           </View>
         )}
       </ScrollView>
+
+      <AdminQuickActionsBar active="tournaments" organizationId={masterTournament.organization_id} />
 
       <Modal visible={showCreateModal} animationType="slide" onRequestClose={() => !creating && setShowCreateModal(false)}>
         <KeyboardAvoidingView
@@ -669,7 +674,7 @@ const getStyles = (colors: any) => StyleSheet.create({
   },
   content: {
     padding: spacing.xl,
-    paddingBottom: 44,
+    paddingBottom: 124,
     gap: spacing.md,
   },
   masterCard: {

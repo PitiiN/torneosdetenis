@@ -17,6 +17,31 @@ const STATUS_MAP: Record<string, string> = {
   'No Publicado': 'draft',
 };
 
+const formatCloseTimeInput = (value: string) => {
+  const digits = value.replace(/\D/g, '').slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+};
+
+const normalizeCloseTimeForSubmit = (value: string) => {
+  const trimmed = value.trim();
+  const compactDigits = trimmed.replace(/\D/g, '');
+  if (compactDigits.length === 4) {
+    return `${compactDigits.slice(0, 2)}:${compactDigits.slice(2)}`;
+  }
+  if (/^\d{2}:\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+  return null;
+};
+
+const isValidCloseTime = (value: string) => {
+  const [hoursRaw, minutesRaw] = value.split(':');
+  const hours = Number(hoursRaw);
+  const minutes = Number(minutesRaw);
+  return Number.isInteger(hours) && Number.isInteger(minutes) && hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
+};
+
 export default function CreateTournamentScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -81,9 +106,9 @@ export default function CreateTournamentScreen() {
       return;
     }
 
-    const normalizedCloseTime = registrationCloseTime.trim();
-    if (!/^\d{2}:\d{2}$/.test(normalizedCloseTime)) {
-      Alert.alert('Error', 'La hora de cierre debe tener formato HH:MM.');
+    const normalizedCloseTime = normalizeCloseTimeForSubmit(registrationCloseTime);
+    if (!normalizedCloseTime || !isValidCloseTime(normalizedCloseTime)) {
+      Alert.alert('Error', 'La hora de cierre debe ser valida. Ejemplo: 1600 o 16:00.');
       return;
     }
 
@@ -178,7 +203,7 @@ export default function CreateTournamentScreen() {
             <TextInput
               style={styles.textInput}
               value={registrationCloseTime}
-              onChangeText={setRegistrationCloseTime}
+              onChangeText={(nextValue) => setRegistrationCloseTime(formatCloseTimeInput(nextValue))}
               placeholder="Ej. 21:30"
               placeholderTextColor={colors.textTertiary}
               keyboardType="number-pad"

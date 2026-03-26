@@ -12,6 +12,31 @@ import { canManageOrganization, getCurrentUserAccessContext } from '@/services/a
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { normalizeTournamentStatus } from '@/services/tournamentStatus';
 
+const formatCloseTimeInput = (value: string) => {
+    const digits = value.replace(/\D/g, '').slice(0, 4);
+    if (digits.length <= 2) return digits;
+    return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+};
+
+const normalizeCloseTimeForSubmit = (value: string) => {
+    const trimmed = value.trim();
+    const compactDigits = trimmed.replace(/\D/g, '');
+    if (compactDigits.length === 4) {
+        return `${compactDigits.slice(0, 2)}:${compactDigits.slice(2)}`;
+    }
+    if (/^\d{2}:\d{2}$/.test(trimmed)) {
+        return trimmed;
+    }
+    return null;
+};
+
+const isValidCloseTime = (value: string) => {
+    const [hoursRaw, minutesRaw] = value.split(':');
+    const hours = Number(hoursRaw);
+    const minutes = Number(minutesRaw);
+    return Number.isInteger(hours) && Number.isInteger(minutes) && hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
+};
+
 export default function EditTournamentScreen() {
     const { id } = useLocalSearchParams();
     const insets = useSafeAreaInsets();
@@ -112,7 +137,7 @@ export default function EditTournamentScreen() {
 
     const handleSave = async () => {
         const isMasterTournament = Boolean(tournamentData?.is_tournament_master);
-        const normalizedCloseTime = registrationCloseTime.trim();
+        const normalizedCloseTime = normalizeCloseTimeForSubmit(registrationCloseTime) || '';
 
         if (isMasterTournament && (!startDate || !endDate)) {
             Alert.alert('Error', 'Debes definir fecha de inicio y fecha de fin.');
@@ -124,8 +149,8 @@ export default function EditTournamentScreen() {
             return;
         }
 
-        if (isMasterTournament && !/^\d{2}:\d{2}$/.test(normalizedCloseTime)) {
-            Alert.alert('Error', 'La hora de cierre debe tener formato HH:MM.');
+        if (isMasterTournament && !isValidCloseTime(normalizedCloseTime)) {
+            Alert.alert('Error', 'La hora de cierre debe ser valida. Ejemplo: 1600 o 16:00.');
             return;
         }
 
@@ -177,6 +202,15 @@ export default function EditTournamentScreen() {
 
             if (error) throw error;
 
+            if (isMasterTournament && updatePayload.status) {
+                const { error: syncChildrenStatusError } = await supabase
+                    .from('tournaments')
+                    .update({ status: updatePayload.status })
+                    .eq('parent_tournament_id', id);
+
+                if (syncChildrenStatusError) throw syncChildrenStatusError;
+            }
+
             const structureChanged =
                 !isMasterTournament &&
                 tournamentData &&
@@ -212,7 +246,11 @@ export default function EditTournamentScreen() {
                 }
             }
 
-            router.back();
+            if (isMasterTournament) {
+                router.replace(`/(admin)/tournaments/master/${id}` as any);
+            } else {
+                router.back();
+            }
         } catch (error) {
             Alert.alert('Error', 'No se pudo actualizar el torneo');
         } finally {
@@ -336,7 +374,7 @@ export default function EditTournamentScreen() {
                                 <TextInput
                                     style={styles.textInput}
                                     value={registrationCloseTime}
-                                    onChangeText={setRegistrationCloseTime}
+                                    onChangeText={(nextValue) => setRegistrationCloseTime(formatCloseTimeInput(nextValue))}
                                     keyboardType="number-pad"
                                     placeholder="Ej. 21:30"
                                     placeholderTextColor={colors.textTertiary}

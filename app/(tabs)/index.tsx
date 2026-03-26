@@ -235,7 +235,9 @@ export default function InicioScreen() {
                 </View>
 
                 {loading ? (
-                    <TennisSpinner size={34} style={{ marginTop: 40 }} />
+                    <View style={styles.loadingState}>
+                        <TennisSpinner size={34} />
+                    </View>
                 ) : (
                     <View style={styles.orgGrid}>
                         {organizations.map((org) => (
@@ -455,6 +457,11 @@ const getStyles = (colors: any) => StyleSheet.create({
         fontSize: 14,
         textAlign: 'center',
         marginTop: spacing.md,
+    },
+    loadingState: {
+        minHeight: 260,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     modalOverlay: {
         flex: 1,

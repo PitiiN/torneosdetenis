@@ -201,7 +201,9 @@ export default function PaymentsScreen() {
                 </View>
 
                 {loading && !refreshing ? (
-                    <TennisSpinner size={34} style={{ marginTop: 40 }} />
+                    <View style={styles.loadingState}>
+                        <TennisSpinner size={34} />
+                    </View>
                 ) : filteredPayments.length > 0 ? (
                     <View style={styles.list}>
                         {filteredPayments.map((p) => (
@@ -395,6 +397,11 @@ const getStyles = (colors: any) => StyleSheet.create({
     emptyState: {
         alignItems: 'center',
         paddingVertical: 60,
+    },
+    loadingState: {
+        minHeight: 260,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     emptyText: {
         color: colors.textTertiary,

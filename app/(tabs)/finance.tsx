@@ -281,7 +281,9 @@ export default function FinanceScreen() {
 
             <ScrollView contentContainerStyle={styles.content}>
                 {loading ? (
-                    <TennisSpinner size={34} style={{ marginTop: spacing.xl }} />
+                    <View style={styles.loadingState}>
+                        <TennisSpinner size={34} />
+                    </View>
                 ) : (
                     <View style={styles.section}>
                         <Text style={styles.sectionTitle}>Torneos del período ({tournaments.length})</Text>
@@ -524,6 +526,11 @@ const getStyles = (colors: any) => StyleSheet.create({
         color: colors.textTertiary,
         textAlign: 'center',
         fontSize: 14,
+    },
+    loadingState: {
+        minHeight: 260,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     modalOverlay: {
         flex: 1,

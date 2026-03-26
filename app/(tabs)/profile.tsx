@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions, Alert, ActivityIndicator, TextInput, Modal, BackHandler, Platform, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions, Alert, TextInput, Modal, BackHandler, Platform, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
@@ -11,6 +11,7 @@ import { adminModeService } from '@/services/adminMode';
 import { notificationService } from '@/services/notificationService';
 import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
 import { getCurrentUserAccessContext } from '@/services/accessControl';
+import { TennisSpinner } from '@/components/TennisSpinner';
 
 const { width } = Dimensions.get('window');
 const BACKHAND_FIELD = 'rev\u00E9s';
@@ -533,7 +534,7 @@ export default function ProfileScreen() {
     if (loading || !user) {
         return (
             <View style={[styles.container, styles.center]}>
-                <ActivityIndicator size="large" color={colors.primary[500]} />
+                <TennisSpinner size={34} />
             </View>
         );
     }
@@ -580,7 +581,7 @@ export default function ProfileScreen() {
                                 style={styles.avatar}
                             />
                             <View style={styles.avatarEditBtn}>
-                                {updating ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="camera" size={14} color="#fff" />}
+                                {updating ? <TennisSpinner size={14} color="#fff" /> : <Ionicons name="camera" size={14} color="#fff" />}
                             </View>
                         </TouchableOpacity>
                         <View style={styles.profileInfo}>
@@ -665,7 +666,7 @@ export default function ProfileScreen() {
                                     disabled={updating}
                                 >
                                     {updating ? (
-                                        <ActivityIndicator size="small" color="#fff" />
+                                        <TennisSpinner size={16} color="#fff" />
                                     ) : (
                                         <Text style={styles.miniSaveBtnText}>Guardar cambios</Text>
                                     )}

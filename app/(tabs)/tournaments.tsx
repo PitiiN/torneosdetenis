@@ -700,7 +700,9 @@ export default function TorneosScreen() {
                         </TouchableOpacity>
                     </View>
                 ) : loading ? (
-                    <TennisSpinner size={36} style={{ marginTop: 40 }} />
+                    <View style={styles.loadingState}>
+                        <TennisSpinner size={36} />
+                    </View>
                 ) : (
                     <View style={styles.tournamentList}>
                         <View style={styles.sectionHeader}>
@@ -762,10 +764,12 @@ export default function TorneosScreen() {
                                                 <Ionicons name="calendar-outline" size={12} color={colors.textTertiary} />
                                                 <Text style={styles.metaText} numberOfLines={1}>{new Date(tournament.start_date).toLocaleDateString('es-ES')}</Text>
                                             </View>
-                                            <View style={styles.metaItem}>
-                                                <Ionicons name="ribbon-outline" size={12} color={colors.textTertiary} />
-                                                <Text style={styles.metaText}>{isMasterTournament ? 'Torneo Completo' : tournament.format}</Text>
-                                            </View>
+                                            {!isMasterTournament && (
+                                                <View style={styles.metaItem}>
+                                                    <Ionicons name="ribbon-outline" size={12} color={colors.textTertiary} />
+                                                    <Text style={styles.metaText}>{tournament.format}</Text>
+                                                </View>
+                                            )}
                                             {isMasterTournament && formatRegistrationDeadline(tournament.registration_close_at, tournament.registration_close_time) && (
                                                 <View style={styles.metaItem}>
                                                     <Ionicons name="hourglass-outline" size={12} color={colors.textTertiary} />
@@ -1169,6 +1173,11 @@ const getStyles = (colors: any) => StyleSheet.create({
     emptyState: {
         alignItems: 'center',
         paddingVertical: 60,
+    },
+    loadingState: {
+        minHeight: 260,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     emptyText: {
         color: colors.textTertiary,

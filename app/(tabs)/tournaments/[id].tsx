@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert, Image, BackHandler } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert, Image, BackHandler, Keyboard } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
@@ -19,9 +19,10 @@ import {
     isRegistrationWindowClosed,
     submitTournamentRegistrationRequest,
 } from '@/services/registrationRequests';
+import { normalizeTournamentStatus } from '@/services/tournamentStatus';
 
 const { width } = Dimensions.get('window');
-const OPEN_STATUSES = new Set(['open', 'ongoing', 'in_progress']);
+const OPEN_STATUSES = new Set(['open', 'in_progress']);
 
 const getReadableRequestError = (error: unknown) => {
     const raw = String((error as any)?.message || '').trim();
@@ -38,7 +39,7 @@ const getReadableRequestError = (error: unknown) => {
         return 'Este torneo ya no acepta solicitudes.';
     }
     if (normalized.includes('invalid proof_path')) {
-        return 'El comprobante no cumple el formato permitido. Usa JPG, PNG, WEBP, HEIC o HEIF.';
+        return 'El comprobante no cumple el formato permitido. Usa JPG, PNG o WEBP.';
     }
 
     return raw;
@@ -72,18 +73,35 @@ export default function TournamentDetailScreen() {
     const [selectedProofMimeType, setSelectedProofMimeType] = useState<string | null>(null);
     const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
 
+    const goBackToParentOrTournaments = React.useCallback(() => {
+        if (tournament?.parent_tournament_id) {
+            router.replace(`/(tabs)/tournaments/master/${tournament.parent_tournament_id}`);
+            return;
+        }
+
+        if (tournament?.organization_id) {
+            router.replace({
+                pathname: '/(tabs)/tournaments',
+                params: { orgId: tournament.organization_id },
+            } as any);
+            return;
+        }
+
+        router.back();
+    }, [router, tournament?.organization_id, tournament?.parent_tournament_id]);
+
     useEffect(() => {
         if (tournamentId) {
             loadTournamentData();
         }
 
         const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-            router.back();
+            goBackToParentOrTournaments();
             return true;
         });
 
         return () => backHandler.remove();
-    }, [tournamentId]);
+    }, [goBackToParentOrTournaments, tournamentId]);
 
     const loadTournamentData = async () => {
         setIsLoading(true);
@@ -99,10 +117,11 @@ export default function TournamentDetailScreen() {
             let effectiveRegistrationCloseAt = tourData?.registration_close_at || null;
             let effectiveRegistrationCloseTime = tourData?.registration_close_time || null;
 
+            let effectiveStatus = normalizeTournamentStatus(tourData?.status || 'draft');
             if (tourData?.parent_tournament_id) {
                 const { data: parentDeadlineData } = await supabase
                     .from('tournaments')
-                    .select('registration_close_at, registration_close_time')
+                    .select('registration_close_at, registration_close_time, status')
                     .eq('id', tourData.parent_tournament_id)
                     .maybeSingle();
 
@@ -110,12 +129,17 @@ export default function TournamentDetailScreen() {
                     effectiveRegistrationCloseAt = parentDeadlineData.registration_close_at;
                     effectiveRegistrationCloseTime = parentDeadlineData.registration_close_time || null;
                 }
+                if (parentDeadlineData?.status) {
+                    effectiveStatus = normalizeTournamentStatus(parentDeadlineData.status);
+                }
             }
 
             setTournament({
                 ...tourData,
+                status: normalizeTournamentStatus(tourData?.status),
                 effective_registration_close_at: effectiveRegistrationCloseAt,
                 effective_registration_close_time: effectiveRegistrationCloseTime,
+                effective_status: effectiveStatus,
             });
 
             if (tourData?.is_tournament_master) {
@@ -303,7 +327,7 @@ export default function TournamentDetailScreen() {
             return;
         }
 
-        if (!OPEN_STATUSES.has(tournament?.status)) {
+        if (!OPEN_STATUSES.has(tournament?.effective_status || tournament?.status)) {
             Alert.alert('Aviso', 'Este torneo ya no acepta solicitudes.');
             return;
         }
@@ -335,7 +359,7 @@ export default function TournamentDetailScreen() {
 
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
+            allowsEditing: false,
             quality: 0.8,
         });
 
@@ -365,6 +389,7 @@ export default function TournamentDetailScreen() {
             });
 
             Alert.alert('Solicitud enviada', 'Tu comprobante fue enviado para revision.');
+            Keyboard.dismiss();
             setShowProofModal(false);
             setSelectedProofUri(null);
             setSelectedProofMimeType(null);
@@ -402,9 +427,10 @@ export default function TournamentDetailScreen() {
         tournament?.effective_registration_close_at || tournament?.registration_close_at,
         tournament?.effective_registration_close_time || tournament?.registration_close_time
     );
-    const isOpenForRequests = OPEN_STATUSES.has(String(tournament?.status || ''));
+    const isOpenForRequests = OPEN_STATUSES.has(String(tournament?.effective_status || tournament?.status || ''));
     const shouldShowRequestFooter = isOpenForRequests && !isRegistered && latestRequestStatus !== 'approved';
     const canRequestRegistration = shouldShowRequestFooter && latestRequestStatus !== 'pending' && !registrationClosed;
+    const canViewBracket = isRegistered || latestRequestStatus === 'approved';
     const requestButtonLabel = latestRequestStatus === 'rejected'
         ? 'Reenviar comprobante'
         : (latestRequestStatus === 'pending'
@@ -479,7 +505,7 @@ export default function TournamentDetailScreen() {
         return (
             <View style={[styles.container, styles.centerAll, { paddingTop: insets.top }]}>
                 <Text style={styles.errorText}>Torneo no encontrado</Text>
-                <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 20 }}>
+                <TouchableOpacity onPress={goBackToParentOrTournaments} style={{ marginTop: 20 }}>
                     <Text style={{ color: colors.primary[500] }}>Volver</Text>
                 </TouchableOpacity>
             </View>
@@ -490,7 +516,7 @@ export default function TournamentDetailScreen() {
         <View style={styles.container}>
             <View style={[styles.header, { paddingTop: Math.max(insets.top, spacing.md) }]}>
                 <View style={styles.headerContent}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.iconButton}>
+                    <TouchableOpacity onPress={goBackToParentOrTournaments} style={styles.iconButton}>
                         <Ionicons name="arrow-back" size={24} color={colors.text} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle} numberOfLines={1}>{tournament.name}</Text>
@@ -607,84 +633,102 @@ export default function TournamentDetailScreen() {
                     </View>
                 )}
 
-                {isRoundRobin ? (
-                    activeTab === 'finales' ? (
-                        <TournamentFinals
-                            summary={{
-                                groupALeader: standingsByGroup[roundRobinGroupNames[0] || 'A']?.[0]?.name || `Cupo ${roundRobinGroupNames[0] || 'A'}1`,
-                                groupBLeader: standingsByGroup[roundRobinGroupNames[1] || roundRobinGroupNames[0] || 'A']?.[0]?.name || `Cupo ${(roundRobinGroupNames[1] || roundRobinGroupNames[0] || 'A')}1`,
-                            }}
-                            matches={finalsMatches.map((match, index) => ({
-                                title: match.round || `Final ${index + 1}`,
-                                player1: {
-                                    name: match.player_a?.name || 'Por definir',
-                                    group: 'CLASIFICADO',
-                                    image: match.player_a?.avatar_url || null,
-                                },
-                                player2: {
-                                    name: match.player_b?.name || 'Por definir',
-                                    group: 'CLASIFICADO',
-                                    image: match.player_b?.avatar_url || null,
-                                },
-                                time: match.score || 'Por definir',
-                                isGrandFinal: String(match.round || '').includes('Gran Final'),
-                            }))}
-                        />
-                    ) : (
-                        <View style={styles.roundRobinContainer}>
-                            <RoundRobinTable
-                                groupName={`Grupo ${currentGroupName}`}
-                                standings={standingsByGroup[currentGroupName] || []}
+                {canViewBracket ? (
+                    isRoundRobin ? (
+                        activeTab === 'finales' ? (
+                            <TournamentFinals
+                                summary={{
+                                    groupALeader: standingsByGroup[roundRobinGroupNames[0] || 'A']?.[0]?.name || `Cupo ${roundRobinGroupNames[0] || 'A'}1`,
+                                    groupBLeader: standingsByGroup[roundRobinGroupNames[1] || roundRobinGroupNames[0] || 'A']?.[0]?.name || `Cupo ${(roundRobinGroupNames[1] || roundRobinGroupNames[0] || 'A')}1`,
+                                }}
+                                matches={finalsMatches.map((match, index) => ({
+                                    title: match.round || `Final ${index + 1}`,
+                                    player1: {
+                                        name: match.player_a?.name || 'Por definir',
+                                        group: 'CLASIFICADO',
+                                        image: match.player_a?.avatar_url || null,
+                                    },
+                                    player2: {
+                                        name: match.player_b?.name || 'Por definir',
+                                        group: 'CLASIFICADO',
+                                        image: match.player_b?.avatar_url || null,
+                                    },
+                                    time: match.score || 'Por definir',
+                                    isGrandFinal: String(match.round || '').includes('Gran Final'),
+                                }))}
                             />
-                            <View style={styles.groupMatchesCard}>
-                                <Text style={styles.groupMatchesTitle}>
-                                    {`Proximos Partidos - Grupo ${currentGroupName}`}
-                                </Text>
-                                {(groupMatchesByName[currentGroupName] || []).map(match => (
-                                    <View key={match.id} style={{ gap: 4 }}>
-                                        <View style={styles.groupMatchRow}>
-                                            <View style={styles.groupMatchPlayer}>
-                                                {renderPlayerAvatar(match.player_a?.name || 'Por definir', match.player_a?.avatar_url || null)}
-                                                <Text style={styles.groupMatchName} numberOfLines={1}>{match.player_a?.name || 'Por definir'}</Text>
+                        ) : (
+                            <View style={styles.roundRobinContainer}>
+                                <RoundRobinTable
+                                    groupName={`Grupo ${currentGroupName}`}
+                                    standings={standingsByGroup[currentGroupName] || []}
+                                />
+                                <View style={styles.groupMatchesCard}>
+                                    <Text style={styles.groupMatchesTitle}>
+                                        {`Proximos Partidos - Grupo ${currentGroupName}`}
+                                    </Text>
+                                    {(groupMatchesByName[currentGroupName] || []).map(match => (
+                                        <View key={match.id} style={{ gap: 4 }}>
+                                            <View style={styles.groupMatchRow}>
+                                                <View style={styles.groupMatchPlayer}>
+                                                    {renderPlayerAvatar(match.player_a?.name || 'Por definir', match.player_a?.avatar_url || null)}
+                                                    <Text style={styles.groupMatchName} numberOfLines={1}>{match.player_a?.name || 'Por definir'}</Text>
+                                                </View>
+                                                <Text style={styles.groupMatchScore}>{match.score || 'VS'}</Text>
+                                                <View style={[styles.groupMatchPlayer, { justifyContent: 'flex-end' }]}>
+                                                    <Text style={[styles.groupMatchName, { textAlign: 'right' }]} numberOfLines={1}>{match.player_b?.name || 'Por definir'}</Text>
+                                                    {renderPlayerAvatar(match.player_b?.name || 'Por definir', match.player_b?.avatar_url || null)}
+                                                </View>
                                             </View>
-                                            <Text style={styles.groupMatchScore}>{match.score || 'VS'}</Text>
-                                            <View style={[styles.groupMatchPlayer, { justifyContent: 'flex-end' }]}>
-                                                <Text style={[styles.groupMatchName, { textAlign: 'right' }]} numberOfLines={1}>{match.player_b?.name || 'Por definir'}</Text>
-                                                {renderPlayerAvatar(match.player_b?.name || 'Por definir', match.player_b?.avatar_url || null)}
-                                            </View>
+                                            {(match.scheduled_at || match.court) && (
+                                                <View style={{ flexDirection: 'row', justifyContent: 'center', gap: spacing.lg, marginBottom: spacing.sm }}>
+                                                    {match.scheduled_at && (
+                                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                            <Ionicons name="time-outline" size={12} color={colors.textTertiary} />
+                                                            <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '600' }}>
+                                                                {new Date(match.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                            </Text>
+                                                        </View>
+                                                    )}
+                                                    {match.court && (
+                                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                            <Ionicons name="location-outline" size={12} color={colors.textTertiary} />
+                                                            <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '600' }}>{match.court}</Text>
+                                                        </View>
+                                                    )}
+                                                </View>
+                                            )}
                                         </View>
-                                        {(match.scheduled_at || match.court) && (
-                                            <View style={{ flexDirection: 'row', justifyContent: 'center', gap: spacing.lg, marginBottom: spacing.sm }}>
-                                                {match.scheduled_at && (
-                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                                                        <Ionicons name="time-outline" size={12} color={colors.textTertiary} />
-                                                        <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '600' }}>
-                                                            {new Date(match.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                        </Text>
-                                                    </View>
-                                                )}
-                                                {match.court && (
-                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                                                        <Ionicons name="location-outline" size={12} color={colors.textTertiary} />
-                                                        <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '600' }}>{match.court}</Text>
-                                                    </View>
-                                                )}
-                                            </View>
-                                        )}
-                                    </View>
-                                ))}
+                                    ))}
+                                </View>
                             </View>
+                        )
+                    ) : (
+                        <View style={styles.bracketContainer}>
+                            <SingleEliminationBracket rounds={rounds} />
                         </View>
                     )
                 ) : (
-                    <View style={styles.bracketContainer}>
-                        <SingleEliminationBracket rounds={rounds} />
+                    <View style={styles.lockedBracketCard}>
+                        <Ionicons name="lock-closed-outline" size={24} color={colors.textTertiary} />
+                        <Text style={styles.lockedBracketTitle}>Cuadro bloqueado</Text>
+                        <Text style={styles.lockedBracketText}>
+                            Debes tener la inscripcion aprobada para acceder a "Ver cuadro".
+                        </Text>
                     </View>
                 )}
             </ScrollView>
 
             {shouldShowRequestFooter && (
-                <View style={[styles.footerActions, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+                <View
+                    style={[
+                        styles.footerActions,
+                        {
+                            bottom: 65 + insets.bottom,
+                            paddingBottom: spacing.md,
+                        },
+                    ]}
+                >
                     <TouchableOpacity
                         style={[styles.joinButton, !canRequestRegistration && styles.joinButtonDisabled]}
                         onPress={handleJoin}
@@ -703,6 +747,7 @@ export default function TournamentDetailScreen() {
                 submitting={isSubmittingRequest}
                 onClose={() => {
                     if (isSubmittingRequest) return;
+                    Keyboard.dismiss();
                     setShowProofModal(false);
                 }}
                 onPickImage={handlePickProof}
@@ -922,6 +967,27 @@ const getStyles = (colors: any) => StyleSheet.create({
     errorText: {
         color: colors.textSecondary,
         fontSize: 16,
+    },
+    lockedBracketCard: {
+        marginHorizontal: spacing.xl,
+        backgroundColor: colors.surface,
+        borderRadius: borderRadius.xl,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: spacing.xl,
+        alignItems: 'center',
+        gap: spacing.sm,
+    },
+    lockedBracketTitle: {
+        color: colors.text,
+        fontSize: 15,
+        fontWeight: '800',
+    },
+    lockedBracketText: {
+        color: colors.textSecondary,
+        fontSize: 12,
+        textAlign: 'center',
+        lineHeight: 18,
     },
 });
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Image, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Image, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -636,7 +636,17 @@ export default function SettingsScreen() {
                 <Text style={styles.subtitle}>{isGlobalAdmin ? 'Panel de Super Admin' : 'Gestiona tu organización'}</Text>
             </View>
             
-            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            <KeyboardAvoidingView
+                style={{ flex: 1 }}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
+            >
+            <ScrollView
+                contentContainerStyle={styles.content}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+            >
                 
                 {/* GLOBAL ADMIN SECTION: Organization Selector */}
                 {isGlobalAdmin && (
@@ -811,10 +821,16 @@ export default function SettingsScreen() {
                     </View>
                 )}
             </ScrollView>
+            </KeyboardAvoidingView>
 
             {/* Create Organization Modal */}
             <Modal visible={showCreateOrgModal} transparent animationType="slide">
                 <View style={styles.modalOverlay}>
+                    <KeyboardAvoidingView
+                        style={{ width: '100%' }}
+                        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
+                    >
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>Nueva Organización</Text>
@@ -822,7 +838,7 @@ export default function SettingsScreen() {
                                 <Ionicons name="close" size={24} color={colors.text} />
                             </TouchableOpacity>
                         </View>
-                        <ScrollView showsVerticalScrollIndicator={false}>
+                        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                             <View style={styles.inputGroup}>
                                 <Text style={styles.label}>Nombre *</Text>
                                 <TextInput
@@ -884,12 +900,18 @@ export default function SettingsScreen() {
                             <View style={{ height: 40 }} />
                         </ScrollView>
                     </View>
+                    </KeyboardAvoidingView>
                 </View>
             </Modal>
 
             {/* User Edit Modal */}
             <Modal visible={showUserModal} transparent animationType="slide">
                 <View style={styles.modalOverlay}>
+                    <KeyboardAvoidingView
+                        style={{ width: '100%' }}
+                        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
+                    >
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>Editar Usuario</Text>
@@ -899,7 +921,7 @@ export default function SettingsScreen() {
                         </View>
 
                         {selectedUser && (
-                            <ScrollView>
+                            <ScrollView keyboardShouldPersistTaps="handled">
                                 {isProtectedSuperAdmin(selectedUser) ? (
                                     <View style={styles.protectedNotice}>
                                         <Text style={styles.protectedNoticeText}>
@@ -925,7 +947,7 @@ export default function SettingsScreen() {
 
                                         <View style={styles.inputGroup}>
                                             <Text style={styles.label}>Organización Asignada</Text>
-                                            <ScrollView style={styles.orgSmallList}>
+                                            <ScrollView style={styles.orgSmallList} keyboardShouldPersistTaps="handled">
                                                 <TouchableOpacity 
                                                     style={[styles.orgItem, !selectedUser.org_id && styles.orgItemActive]}
                                                     onPress={() => setSelectedUser({...selectedUser, org_id: null})}
@@ -956,6 +978,7 @@ export default function SettingsScreen() {
                             </ScrollView>
                         )}
                     </View>
+                    </KeyboardAvoidingView>
                 </View>
             </Modal>
         </View>

@@ -334,7 +334,9 @@ export default function PlayersScreen() {
                 </ScrollView>
 
                 {loading ? (
-                    <TennisSpinner size={34} style={{ marginTop: spacing.xl }} />
+                    <View style={styles.loadingState}>
+                        <TennisSpinner size={34} />
+                    </View>
                 ) : !organizationId ? (
                     <View style={styles.emptyState}>
                         <Ionicons name="business-outline" size={64} color={colors.textTertiary} />
@@ -626,6 +628,11 @@ const getStyles = (colors: any) => StyleSheet.create({
     emptyState: {
         alignItems: 'center',
         paddingVertical: 80,
+    },
+    loadingState: {
+        minHeight: 260,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     emptyTitle: {
         color: colors.text,

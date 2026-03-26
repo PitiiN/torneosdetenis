@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 
 const STORAGE_BUCKET = 'organizations';
-const ALLOWED_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif']);
+const ALLOWED_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type TournamentRegistrationRequestStatus = 'pending' | 'approved' | 'rejected';
@@ -47,8 +47,6 @@ const resolveImageExtension = (uri: string, mimeType?: string | null) => {
     const fromMime = normalizedMime.replace('image/', '');
     if (ALLOWED_IMAGE_EXTENSIONS.has(fromMime)) return fromMime;
     if (fromMime === 'jpeg') return 'jpg';
-    if (fromMime === 'x-heic') return 'heic';
-    if (fromMime === 'x-heif') return 'heif';
   }
 
   return null;
@@ -110,7 +108,7 @@ export async function submitTournamentRegistrationRequest(options: {
 
   const extension = resolveImageExtension(assetUri, mimeType);
   if (!extension) {
-    throw new Error('Solo se permiten imagenes JPG, PNG, WEBP, HEIC o HEIF');
+    throw new Error('Solo se permiten imagenes JPG, PNG o WEBP');
   }
 
   const contentType = toImageContentType(extension);

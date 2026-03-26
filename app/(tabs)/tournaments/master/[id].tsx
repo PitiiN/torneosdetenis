@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Keyboard } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -203,6 +203,7 @@ export default function TournamentMasterDetailScreen() {
 
   const closeProofModal = () => {
     if (submitting) return;
+    Keyboard.dismiss();
     setIsProofModalVisible(false);
     setSelectedChampionship(null);
     setSelectedProofUri(null);
@@ -218,7 +219,7 @@ export default function TournamentMasterDetailScreen() {
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
+      allowsEditing: false,
       quality: 0.8,
     });
 
@@ -249,6 +250,7 @@ export default function TournamentMasterDetailScreen() {
       });
 
       Alert.alert('Solicitud enviada', 'Tu comprobante fue enviado al admin. Quedaste pendiente de revision.');
+      Keyboard.dismiss();
       closeProofModal();
       await loadMasterData();
     } catch (error) {
@@ -260,7 +262,7 @@ export default function TournamentMasterDetailScreen() {
       } else if (message.includes('registration request window is closed')) {
         Alert.alert('Error', 'Este torneo ya no acepta solicitudes.');
       } else if (message.includes('invalid proof_path')) {
-        Alert.alert('Error', 'El comprobante no cumple el formato permitido. Usa JPG, PNG, WEBP, HEIC o HEIF.');
+        Alert.alert('Error', 'El comprobante no cumple el formato permitido. Usa JPG, PNG o WEBP.');
       } else {
         Alert.alert('Error', message || 'No se pudo enviar el comprobante. Intenta nuevamente.');
       }
@@ -274,11 +276,12 @@ export default function TournamentMasterDetailScreen() {
       masterTournament?.registration_close_at,
       masterTournament?.registration_close_time
     );
+    const isMasterOpen = OPEN_STATUSES.has(normalizeTournamentStatus(masterTournament?.status));
 
     return championships.map((championship) => {
       const latestRequest = latestRequestsByTournamentId[championship.id];
       const isRegistered = registeredTournamentIds.has(championship.id);
-      const isOpen = OPEN_STATUSES.has(championship.status);
+      const isOpen = isMasterOpen;
 
       let canRequest = true;
       let requestButtonText = 'Inscribirse';
@@ -305,6 +308,7 @@ export default function TournamentMasterDetailScreen() {
         championship,
         latestRequest,
         canRequest,
+        canViewBracket: isRegistered || latestRequest?.status === 'approved',
         requestButtonText,
         helperText,
       };
@@ -314,6 +318,7 @@ export default function TournamentMasterDetailScreen() {
     latestRequestsByTournamentId,
     masterTournament?.registration_close_at,
     masterTournament?.registration_close_time,
+    masterTournament?.status,
     registeredTournamentIds,
   ]);
 
@@ -357,7 +362,6 @@ export default function TournamentMasterDetailScreen() {
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.masterInfoCard}>
-          <Text style={styles.masterInfoTitle}>Torneo Completo</Text>
           <Text style={styles.masterInfoText}>
             {masterTournament.start_date
               ? `Inicio: ${new Date(masterTournament.start_date).toLocaleDateString('es-ES')}`
@@ -382,9 +386,18 @@ export default function TournamentMasterDetailScreen() {
           <Text style={styles.sectionCount}>{championships.length}</Text>
         </View>
 
-        {cardRows.map(({ championship, latestRequest, canRequest, requestButtonText, helperText }) => (
+        {cardRows.map(({ championship, latestRequest, canRequest, canViewBracket, requestButtonText, helperText }) => (
           <View key={championship.id} style={styles.championshipCard}>
-            <TouchableOpacity onPress={() => router.push(`/(tabs)/tournaments/${championship.id}`)} activeOpacity={0.85}>
+            <TouchableOpacity
+              onPress={() => {
+                if (!canViewBracket) {
+                  Alert.alert('Acceso restringido', 'Debes tener la inscripcion aprobada para ver el cuadro.');
+                  return;
+                }
+                router.push(`/(tabs)/tournaments/${championship.id}`);
+              }}
+              activeOpacity={0.85}
+            >
               <View style={styles.cardHeader}>
                 <Text style={styles.cardName} numberOfLines={1}>{championship.name}</Text>
                 <View style={styles.modalityChip}>
@@ -419,10 +432,16 @@ export default function TournamentMasterDetailScreen() {
                 <Text style={styles.requestButtonText}>{requestButtonText}</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.detailsButton}
-                onPress={() => router.push(`/(tabs)/tournaments/${championship.id}`)}
+                style={[styles.detailsButton, !canViewBracket && styles.requestButtonDisabled]}
+                onPress={() => {
+                  if (!canViewBracket) {
+                    Alert.alert('Acceso restringido', 'Debes tener la inscripcion aprobada para ver el cuadro.');
+                    return;
+                  }
+                  router.push(`/(tabs)/tournaments/${championship.id}`);
+                }}
               >
-                <Text style={styles.detailsButtonText}>Ver cuadro</Text>
+                <Text style={styles.detailsButtonText}>{canViewBracket ? 'Ver cuadro' : 'Sin acceso'}</Text>
               </TouchableOpacity>
             </View>
           </View>

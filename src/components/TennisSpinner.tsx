@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleProp, ViewStyle } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkTheme, useOptionalTheme } from '@/theme';
 
 type TennisSpinnerProps = {
@@ -33,9 +33,21 @@ export const TennisSpinner = ({ size = 28, color, style }: TennisSpinnerProps) =
   });
 
   return (
-    <Animated.View style={[{ transform: [{ rotate: rotation }] }, style]}>
-      <Ionicons
-        name="tennisball"
+    <Animated.View
+      style={[
+        {
+          width: size,
+          height: size,
+          alignSelf: 'center',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transform: [{ rotate: rotation }],
+        },
+        style,
+      ]}
+    >
+      <MaterialCommunityIcons
+        name="tennis-ball"
         size={size}
         color={color || theme?.colors.primary[500] || darkTheme.primary[500]}
       />

@@ -9,6 +9,7 @@ import { BackHandler } from 'react-native';
 import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { resolveStorageAssetUrl } from '@/services/storage';
+import { AdminQuickActionsBar } from '@/components/navigation/AdminQuickActionsBar';
 
 type Registration = {
   id: string;
@@ -55,6 +56,7 @@ export default function TournamentFinanceDetail() {
 
   const [rejectTarget, setRejectTarget] = useState<RegistrationRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [expandedProofUrl, setExpandedProofUrl] = useState<string | null>(null);
 
   const navigateBack = useCallback(() => {
     router.replace('/(tabs)/finance');
@@ -222,6 +224,21 @@ export default function TournamentFinanceDetail() {
 
       if (error) throw error;
 
+      // Limpieza post-revision: el comprobante ya no se necesita almacenado.
+      if (request.proof_path) {
+        await supabase.storage
+          .from('organizations')
+          .remove([request.proof_path]);
+      }
+
+      // La solicitud deja de existir una vez revisada (aprobada o rechazada).
+      const { error: deleteRequestError } = await supabase
+        .from('tournament_registration_requests')
+        .delete()
+        .eq('id', request.id);
+
+      if (deleteRequestError) throw deleteRequestError;
+
       setRejectTarget(null);
       setRejectReason('');
       await loadTournamentFinance();
@@ -293,12 +310,26 @@ export default function TournamentFinanceDetail() {
                   </View>
 
                   {request.proof_signed_url ? (
-                    <Image source={{ uri: request.proof_signed_url }} style={styles.proofImage} />
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      style={styles.proofPreviewCard}
+                      onPress={() => setExpandedProofUrl(request.proof_signed_url)}
+                    >
+                      <Image source={{ uri: request.proof_signed_url }} style={styles.proofImage} />
+                      <Text style={styles.proofHintText}>Tocar para ampliar</Text>
+                    </TouchableOpacity>
                   ) : (
-                    <View style={styles.noProofRow}>
-                      <Ionicons name="warning-outline" size={16} color={colors.error} />
-                      <Text style={styles.noProofText}>No se pudo cargar el comprobante.</Text>
-                    </View>
+                    request.status === 'pending' ? (
+                      <View style={styles.noProofRow}>
+                        <Ionicons name="warning-outline" size={16} color={colors.error} />
+                        <Text style={styles.noProofText}>No se pudo cargar el comprobante.</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.archivedProofRow}>
+                        <Ionicons name="archive-outline" size={14} color={colors.textTertiary} />
+                        <Text style={styles.archivedProofText}>Comprobante archivado tras revisión.</Text>
+                      </View>
+                    )
                   )}
 
                   {request.status === 'rejected' && request.rejection_reason && (
@@ -353,18 +384,56 @@ export default function TournamentFinanceDetail() {
                     <View style={styles.playerInfo}>
                       <Text style={styles.playerName}>{registration.player_name || 'Jugador'}</Text>
                       <View style={[styles.paidBadge, registration.is_paid ? styles.paidBadgeActive : styles.unpaidBadge]}>
-                        <Text style={styles.paidBadgeText}>{registration.is_paid ? 'PAGADO' : 'PENDIENTE'}</Text>
+                        <Text
+                          style={[
+                            styles.paidBadgeText,
+                            { color: registration.is_paid ? colors.success : colors.error },
+                          ]}
+                        >
+                          {registration.is_paid ? 'PAGADO' : 'NO PAGADO'}
+                        </Text>
                       </View>
                     </View>
-                    <TouchableOpacity
-                      style={[styles.toggleBtn, registration.is_paid ? styles.toggleBtnPaid : styles.toggleBtnUnpaid]}
-                      onPress={() => handleUpdateRegistration(registration.id, { is_paid: !registration.is_paid })}
-                      disabled={!!savingRegistration}
-                    >
-                      <Text style={styles.toggleBtnText}>
-                        {savingRegistration === registration.id ? '...' : (registration.is_paid ? 'Marcar Deuda' : 'Marcar Pagado')}
-                      </Text>
-                    </TouchableOpacity>
+                    <View style={styles.paymentToggleGroup}>
+                      <TouchableOpacity
+                        style={[
+                          styles.paymentToggleButton,
+                          styles.paymentTogglePaid,
+                          registration.is_paid && styles.paymentTogglePaidActive,
+                          savingRegistration === registration.id && styles.paymentToggleDisabled,
+                        ]}
+                        onPress={() => handleUpdateRegistration(registration.id, { is_paid: true })}
+                        disabled={savingRegistration === registration.id}
+                      >
+                        <Text
+                          style={[
+                            styles.paymentToggleText,
+                            registration.is_paid && styles.paymentToggleTextActive,
+                          ]}
+                        >
+                          Pagado
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.paymentToggleButton,
+                          styles.paymentToggleUnpaid,
+                          !registration.is_paid && styles.paymentToggleUnpaidActive,
+                          savingRegistration === registration.id && styles.paymentToggleDisabled,
+                        ]}
+                        onPress={() => handleUpdateRegistration(registration.id, { is_paid: false })}
+                        disabled={savingRegistration === registration.id}
+                      >
+                        <Text
+                          style={[
+                            styles.paymentToggleText,
+                            !registration.is_paid && styles.paymentToggleTextActive,
+                          ]}
+                        >
+                          No Pagado
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
 
                   <View style={styles.feeRow}>
@@ -398,6 +467,8 @@ export default function TournamentFinanceDetail() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <AdminQuickActionsBar active="finance" organizationId={tournament?.organization_id || null} />
 
       <Modal visible={!!rejectTarget} transparent animationType="fade" onRequestClose={() => setRejectTarget(null)}>
         <View style={styles.modalOverlay}>
@@ -433,6 +504,35 @@ export default function TournamentFinanceDetail() {
               </TouchableOpacity>
             </View>
           </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={!!expandedProofUrl}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setExpandedProofUrl(null)}
+      >
+        <View style={styles.previewOverlay}>
+          <TouchableOpacity
+            style={styles.previewCloseButton}
+            onPress={() => setExpandedProofUrl(null)}
+          >
+            <Ionicons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.previewBackdrop}
+            activeOpacity={1}
+            onPress={() => setExpandedProofUrl(null)}
+          >
+            {expandedProofUrl ? (
+              <Image
+                source={{ uri: expandedProofUrl }}
+                style={styles.previewImage}
+                resizeMode="contain"
+              />
+            ) : null}
+          </TouchableOpacity>
         </View>
       </Modal>
     </View>
@@ -485,7 +585,7 @@ function getStyles(colors: any) {
     },
     content: {
       padding: spacing.xl,
-      paddingBottom: 40,
+      paddingBottom: 120,
       gap: spacing.xl,
     },
     summaryGrid: {
@@ -518,15 +618,15 @@ function getStyles(colors: any) {
       color: colors.text,
     },
     requestList: {
-      gap: spacing.md,
+      gap: spacing.sm,
     },
     requestCard: {
       backgroundColor: colors.surface,
       borderRadius: borderRadius.xl,
       borderWidth: 1,
       borderColor: colors.border,
-      padding: spacing.md,
-      gap: spacing.sm,
+      padding: spacing.sm,
+      gap: spacing.xs,
     },
     requestHeader: {
       flexDirection: 'row',
@@ -557,14 +657,23 @@ function getStyles(colors: any) {
       fontSize: 10,
       fontWeight: '900',
     },
+    proofPreviewCard: {
+      gap: 6,
+      alignSelf: 'flex-start',
+    },
     proofImage: {
-      width: '100%',
-      height: 220,
+      width: 132,
+      height: 132,
       borderRadius: borderRadius.lg,
       resizeMode: 'cover',
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.background,
+    },
+    proofHintText: {
+      color: colors.textTertiary,
+      fontSize: 10,
+      fontWeight: '700',
     },
     noProofRow: {
       flexDirection: 'row',
@@ -574,6 +683,16 @@ function getStyles(colors: any) {
     noProofText: {
       color: colors.error,
       fontSize: 12,
+      fontWeight: '600',
+    },
+    archivedProofRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    archivedProofText: {
+      color: colors.textTertiary,
+      fontSize: 11,
       fontWeight: '600',
     },
     rejectReasonText: {
@@ -614,20 +733,20 @@ function getStyles(colors: any) {
       fontWeight: '700',
     },
     playersList: {
-      gap: spacing.md,
+      gap: spacing.xs,
     },
     playerCard: {
       backgroundColor: colors.surface,
       borderRadius: borderRadius.xl,
       borderWidth: 1,
       borderColor: colors.border,
-      padding: spacing.lg,
-      gap: spacing.md,
+      padding: spacing.sm,
+      gap: spacing.xs,
     },
     playerHeader: {
       flexDirection: 'row',
       justifyContent: 'space-between',
-      alignItems: 'flex-start',
+      alignItems: 'center',
     },
     playerInfo: {
       flex: 1,
@@ -635,7 +754,7 @@ function getStyles(colors: any) {
     },
     playerName: {
       color: colors.text,
-      fontSize: 16,
+      fontSize: 14,
       fontWeight: '800',
     },
     paidBadge: {
@@ -651,41 +770,59 @@ function getStyles(colors: any) {
       backgroundColor: colors.error + '15',
     },
     paidBadgeText: {
-      fontSize: 10,
+      fontSize: 9,
       fontWeight: '900',
       color: colors.success,
     },
-    toggleBtn: {
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
+    paymentToggleGroup: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    paymentToggleButton: {
+      height: 30,
+      minWidth: 76,
+      paddingHorizontal: spacing.sm,
       borderRadius: borderRadius.lg,
-    },
-    toggleBtnPaid: {
-      backgroundColor: colors.error + '20',
       borderWidth: 1,
-      borderColor: colors.error,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surfaceSecondary,
     },
-    toggleBtnUnpaid: {
-      backgroundColor: colors.success + '20',
-      borderWidth: 1,
+    paymentTogglePaid: {
       borderColor: colors.success,
     },
-    toggleBtnText: {
-      fontSize: 12,
+    paymentToggleUnpaid: {
+      borderColor: colors.error,
+    },
+    paymentTogglePaidActive: {
+      backgroundColor: colors.success + '20',
+    },
+    paymentToggleUnpaidActive: {
+      backgroundColor: colors.error + '20',
+    },
+    paymentToggleText: {
+      fontSize: 10,
       fontWeight: '800',
+      color: colors.textSecondary,
+    },
+    paymentToggleTextActive: {
       color: colors.text,
+    },
+    paymentToggleDisabled: {
+      opacity: 0.7,
     },
     feeRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingTop: spacing.md,
-      borderTopWidth: 1,
+      paddingTop: spacing.xs,
+      borderTopWidth: 0,
       borderTopColor: colors.border,
     },
     feeLabel: {
       color: colors.textSecondary,
-      fontSize: 14,
+      fontSize: 12,
       fontWeight: '600',
     },
     feeInputWrapper: {
@@ -705,10 +842,10 @@ function getStyles(colors: any) {
     feeInput: {
       color: colors.text,
       paddingHorizontal: spacing.xs,
-      paddingVertical: 8,
-      fontSize: 14,
+      paddingVertical: 5,
+      fontSize: 12,
       fontWeight: '800',
-      width: 90,
+      width: 70,
       textAlign: 'right',
     },
     emptyContainer: {
@@ -783,6 +920,32 @@ function getStyles(colors: any) {
       color: '#fff',
       fontWeight: '800',
       fontSize: 13,
+    },
+    previewOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.9)',
+    },
+    previewBackdrop: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: spacing.lg,
+      paddingBottom: spacing.lg,
+    },
+    previewImage: {
+      width: '100%',
+      height: '82%',
+    },
+    previewCloseButton: {
+      alignSelf: 'flex-end',
+      marginTop: spacing.xl,
+      marginRight: spacing.lg,
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: 'rgba(255,255,255,0.15)',
     },
   });
 }
