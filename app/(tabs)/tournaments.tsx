@@ -10,6 +10,7 @@ import * as SecureStore from 'expo-secure-store';
 import { getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { getCachedValue, setCachedValue } from '@/services/runtimeCache';
+import { normalizeTournamentStatus } from '@/services/tournamentStatus';
 
 const { width } = Dimensions.get('window');
 
@@ -57,12 +58,11 @@ const SURFACE_MAP: { [key: string]: string } = {
 
 const STATUS_DISPLAY: { [key: string]: string } = {
     'open': 'PUBLICADO',
-    'ongoing': 'EN PROGRESO',
     'in_progress': 'EN PROGRESO',
-    'completed': 'FINALIZADO',
-    'finalized': 'FINALIZADO',
+    'finished': 'FINALIZADO',
     'pending': 'PENDIENTE',
-    'draft': 'BORRADOR'
+    'draft': 'BORRADOR',
+    'cancelled': 'CANCELADO'
 };
 
 const decodeEscapedUnicode = (value: unknown) =>
@@ -78,7 +78,7 @@ export default function TorneosScreen() {
     const { orgId } = useLocalSearchParams<{ orgId: string }>();
     const routeOrgId = Array.isArray(orgId) ? orgId[0] : orgId;
     
-    const [activeFilter, setActiveFilter] = useState('Próximos');
+    const [activeFilter, setActiveFilter] = useState('Pr\u00F3ximos');
     const [role, setRole] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [tournaments, setTournaments] = useState<Tournament[]>([]);
@@ -94,7 +94,7 @@ export default function TorneosScreen() {
     const [notifications, setNotifications] = useState<Array<{ id: string; title: string; body: string }>>([]);
     const [isNotificationsVisible, setIsNotificationsVisible] = useState(false);
 
-    const filters = ['Próximos', 'En Curso', 'Finalizados'];
+    const filters = ['Pr\u00F3ximos', 'En Curso', 'Finalizados'];
 
     useFocusEffect(
         useCallback(() => {
@@ -394,6 +394,7 @@ export default function TorneosScreen() {
             setTournaments(
                 (data || []).map((tournament: any) => ({
                     ...tournament,
+                    status: normalizeTournamentStatus(tournament.status),
                     name: decodeEscapedUnicode(tournament.name || ''),
                     description: decodeEscapedUnicode(tournament.description || ''),
                     format: decodeEscapedUnicode(tournament.format || ''),
@@ -406,6 +407,7 @@ export default function TorneosScreen() {
                 tournamentsCacheKey,
                 (data || []).map((tournament: any) => ({
                     ...tournament,
+                    status: normalizeTournamentStatus(tournament.status),
                     name: decodeEscapedUnicode(tournament.name || ''),
                     description: decodeEscapedUnicode(tournament.description || ''),
                     format: decodeEscapedUnicode(tournament.format || ''),
@@ -432,15 +434,18 @@ export default function TorneosScreen() {
 
     const filteredTournaments = tournaments.filter(t => {
         // Determine if tournament should be visible based on role and filter
-        const isVisibleToPlayer = ['open', 'ongoing', 'in_progress', 'completed', 'finalized', 'finished'].includes(t.status);
+        const normalizedStatus = normalizeTournamentStatus(t.status);
+        const isVisibleToPlayer = ['open', 'in_progress', 'finished'].includes(normalizedStatus);
         
         // If not admin and not a visible status, hide
         if (!canManage && !isVisibleToPlayer) return false;
 
-        if (activeFilter === 'Próximos') return t.status === 'open' || t.status === 'pending';
-        if (activeFilter === 'En Curso') return t.status === 'ongoing' || t.status === 'in_progress';
+        if (activeFilter === 'Pr\u00F3ximos') {
+            return normalizedStatus === 'open' || normalizedStatus === 'pending';
+        }
+        if (activeFilter === 'En Curso') return normalizedStatus === 'in_progress';
         if (activeFilter === 'Finalizados') {
-            const isFinalized = t.status === 'completed' || t.status === 'finalized' || t.status === 'finished';
+            const isFinalized = normalizedStatus === 'finished';
             if (!isFinalized) return false;
 
             const tDate = new Date(t.start_date || '');
@@ -637,13 +642,17 @@ export default function TorneosScreen() {
                                     <View style={styles.typeBadge}>
                                         <Text style={styles.typeText}>{SURFACE_MAP[tournament.surface]?.toUpperCase() || tournament.surface.toUpperCase()}</Text>
                                     </View>
-                                    <View style={[styles.statusBadge, { 
-                                        backgroundColor: tournament.status === 'open' ? colors.success + '1A' : colors.surfaceSecondary 
+                                    <View style={[styles.statusBadge, {
+                                        backgroundColor: normalizeTournamentStatus(tournament.status) === 'open'
+                                            ? colors.success + '1A'
+                                            : colors.surfaceSecondary
                                     }]}>
-                                        <Text style={[styles.statusText, { 
-                                            color: tournament.status === 'open' ? colors.success : colors.textSecondary 
+                                        <Text style={[styles.statusText, {
+                                            color: normalizeTournamentStatus(tournament.status) === 'open'
+                                                ? colors.success
+                                                : colors.textSecondary
                                         }]}>
-                                            {STATUS_DISPLAY[tournament.status] || tournament.status.toUpperCase()}
+                                            {STATUS_DISPLAY[normalizeTournamentStatus(tournament.status)] || tournament.status.toUpperCase()}
                                         </Text>
                                     </View>
                                 </View>

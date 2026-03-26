@@ -10,6 +10,7 @@ import { buildTournamentDescription, buildTournamentFormatLabel, createInitialMa
 import { TOURNAMENT_CATEGORIES, CHILEAN_COMUNAS, TOURNAMENT_SURFACES, TOURNAMENT_SET_TYPES } from '@/constants/tournamentOptions';
 import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
+import { normalizeTournamentStatus } from '@/services/tournamentStatus';
 
 export default function EditTournamentScreen() {
     const { id } = useLocalSearchParams();
@@ -84,7 +85,8 @@ export default function EditTournamentScreen() {
 
             setTournamentData(data);
             setTournamentName(data.name || '');
-            setStatus(STATUS_MAP_TO_UI[data.status] || 'No Publicado');
+            const normalizedStatus = normalizeTournamentStatus(data.status);
+            setStatus(STATUS_MAP_TO_UI[normalizedStatus] || 'No Publicado');
             setLevel(data.level || TOURNAMENT_CATEGORIES[0]);
             setSurface(data.surface || TOURNAMENT_SURFACES[0]);
             setMaxPlayers(String(data.max_players || '8'));

@@ -14,6 +14,7 @@ import {
   submitTournamentRegistrationRequest,
 } from '@/services/registrationRequests';
 import { RegistrationProofModal } from '@/components/tournaments/RegistrationProofModal';
+import { normalizeTournamentStatus } from '@/services/tournamentStatus';
 
 type MasterTournament = {
   id: string;
@@ -46,13 +47,14 @@ type LatestRequest = {
   updated_at: string;
 };
 
-const OPEN_STATUSES = new Set(['open', 'ongoing', 'in_progress']);
+const OPEN_STATUSES = new Set(['open', 'in_progress']);
 
 const formatStatus = (status?: string | null) => {
-  if (status === 'open') return 'Inscripciones abiertas';
-  if (status === 'ongoing' || status === 'in_progress') return 'En curso';
-  if (status === 'completed' || status === 'finished' || status === 'finalized') return 'Finalizado';
-  if (status === 'draft') return 'No publicado';
+  const normalizedStatus = normalizeTournamentStatus(status);
+  if (normalizedStatus === 'open') return 'Inscripciones abiertas';
+  if (normalizedStatus === 'in_progress') return 'En curso';
+  if (normalizedStatus === 'finished') return 'Finalizado';
+  if (normalizedStatus === 'draft') return 'No publicado';
   return String(status || 'Sin estado');
 };
 
@@ -96,7 +98,10 @@ export default function TournamentMasterDetailScreen() {
 
       if (masterError) throw masterError;
 
-      const masterRow = masterData as MasterTournament;
+      const masterRow = {
+        ...(masterData as MasterTournament),
+        status: normalizeTournamentStatus((masterData as MasterTournament).status),
+      };
       if (!masterRow?.is_tournament_master) {
         router.replace(`/(tabs)/tournaments/${masterTournamentId}`);
         return;
@@ -111,7 +116,12 @@ export default function TournamentMasterDetailScreen() {
 
       if (championshipsError) throw championshipsError;
 
-      const loadedChampionships = sortChampionships((championshipsData || []) as Championship[]);
+      const loadedChampionships = sortChampionships(
+        (championshipsData || []).map((championship: any) => ({
+          ...championship,
+          status: normalizeTournamentStatus(championship.status),
+        })) as Championship[]
+      );
       setChampionships(loadedChampionships);
 
       const { data: authData } = await supabase.auth.getSession();
