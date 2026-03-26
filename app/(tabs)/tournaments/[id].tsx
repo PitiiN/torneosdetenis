@@ -44,6 +44,16 @@ const getReadableRequestError = (error: unknown) => {
     return raw;
 };
 
+const formatRegistrationDeadline = (dateValue?: string | null, timeValue?: string | null) => {
+    if (!dateValue) return null;
+    const parsedDate = new Date(`${dateValue}T00:00:00`);
+    const dateLabel = Number.isNaN(parsedDate.getTime())
+        ? dateValue
+        : parsedDate.toLocaleDateString('es-ES');
+    const timeLabel = String(timeValue || '').slice(0, 5) || '23:59';
+    return `${dateLabel} ${timeLabel}`;
+};
+
 export default function TournamentDetailScreen() {
     const { id } = useLocalSearchParams();
     const tournamentId = Array.isArray(id) ? id[0] : id;
@@ -81,12 +91,32 @@ export default function TournamentDetailScreen() {
             // Fetch Tournament
             const { data: tourData, error: tourErr } = await supabase
                 .from('tournaments')
-                .select('id, name, status, format, level, set_type, surface, start_date, address, comuna, registration_fee, max_players, description, modality, organization_id, registration_close_at, is_tournament_master')
+                .select('id, name, status, format, level, set_type, surface, start_date, address, comuna, registration_fee, max_players, description, modality, organization_id, parent_tournament_id, registration_close_at, registration_close_time, is_tournament_master')
                 .eq('id', tournamentId)
                 .single();
             
             if (tourErr) throw tourErr;
-            setTournament(tourData);
+            let effectiveRegistrationCloseAt = tourData?.registration_close_at || null;
+            let effectiveRegistrationCloseTime = tourData?.registration_close_time || null;
+
+            if (tourData?.parent_tournament_id) {
+                const { data: parentDeadlineData } = await supabase
+                    .from('tournaments')
+                    .select('registration_close_at, registration_close_time')
+                    .eq('id', tourData.parent_tournament_id)
+                    .maybeSingle();
+
+                if (parentDeadlineData?.registration_close_at) {
+                    effectiveRegistrationCloseAt = parentDeadlineData.registration_close_at;
+                    effectiveRegistrationCloseTime = parentDeadlineData.registration_close_time || null;
+                }
+            }
+
+            setTournament({
+                ...tourData,
+                effective_registration_close_at: effectiveRegistrationCloseAt,
+                effective_registration_close_time: effectiveRegistrationCloseTime,
+            });
 
             if (tourData?.is_tournament_master) {
                 router.replace(`/(tabs)/tournaments/master/${tourData.id}`);
@@ -278,7 +308,10 @@ export default function TournamentDetailScreen() {
             return;
         }
 
-        if (isRegistrationWindowClosed(tournament?.registration_close_at)) {
+        if (isRegistrationWindowClosed(
+            tournament?.effective_registration_close_at || tournament?.registration_close_at,
+            tournament?.effective_registration_close_time || tournament?.registration_close_time
+        )) {
             Alert.alert('Inscripcion cerrada', 'Se cumplio la fecha de cierre de inscripciones.');
             return;
         }
@@ -365,7 +398,10 @@ export default function TournamentDetailScreen() {
     );
     const finalsMatches = matches.filter(match => !String(match.round || '').includes('Grupo'));
     const latestRequestStatus = latestRequest?.status;
-    const registrationClosed = isRegistrationWindowClosed(tournament?.registration_close_at);
+    const registrationClosed = isRegistrationWindowClosed(
+        tournament?.effective_registration_close_at || tournament?.registration_close_at,
+        tournament?.effective_registration_close_time || tournament?.registration_close_time
+    );
     const isOpenForRequests = OPEN_STATUSES.has(String(tournament?.status || ''));
     const shouldShowRequestFooter = isOpenForRequests && !isRegistered && latestRequestStatus !== 'approved';
     const canRequestRegistration = shouldShowRequestFooter && latestRequestStatus !== 'pending' && !registrationClosed;
@@ -544,6 +580,20 @@ export default function TournamentDetailScreen() {
                             Inscripción: ${tournament.registration_fee || 0}
                         </Text>
                     </View>
+                    {formatRegistrationDeadline(
+                        tournament.effective_registration_close_at || tournament.registration_close_at,
+                        tournament.effective_registration_close_time || tournament.registration_close_time
+                    ) && (
+                        <View style={[styles.infoRow, { marginTop: 4 }]}>
+                            <Ionicons name="hourglass-outline" size={16} color={colors.textSecondary} />
+                            <Text style={styles.infoSubtitle}>
+                                Cierre inscripciones: {formatRegistrationDeadline(
+                                    tournament.effective_registration_close_at || tournament.registration_close_at,
+                                    tournament.effective_registration_close_time || tournament.registration_close_time
+                                )}
+                            </Text>
+                        </View>
+                    )}
                 </View>
 
                 {latestRequest && (

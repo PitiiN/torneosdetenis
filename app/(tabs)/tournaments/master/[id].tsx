@@ -22,6 +22,8 @@ type MasterTournament = {
   name: string;
   status: string;
   start_date: string | null;
+  registration_close_at: string | null;
+  registration_close_time: string | null;
   address: string | null;
   comuna: string | null;
   surface: string | null;
@@ -36,7 +38,6 @@ type Championship = {
   modality: string | null;
   format: string | null;
   registration_fee: number | null;
-  registration_close_at: string | null;
   start_date: string | null;
 };
 
@@ -66,6 +67,16 @@ const toErrorMessage = (error: unknown) => {
   return 'Error desconocido';
 };
 
+const formatRegistrationDeadline = (dateValue?: string | null, timeValue?: string | null) => {
+  if (!dateValue) return 'Sin definir';
+  const parsedDate = new Date(`${dateValue}T00:00:00`);
+  const dateLabel = Number.isNaN(parsedDate.getTime())
+    ? dateValue
+    : parsedDate.toLocaleDateString('es-ES');
+  const timeLabel = String(timeValue || '').slice(0, 5) || '23:59';
+  return `${dateLabel} ${timeLabel}`;
+};
+
 export default function TournamentMasterDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string | string[] }>();
   const masterTournamentId = Array.isArray(id) ? id[0] : id;
@@ -92,7 +103,7 @@ export default function TournamentMasterDetailScreen() {
     try {
       const { data: masterData, error: masterError } = await supabase
         .from('tournaments')
-        .select('id, organization_id, name, status, start_date, address, comuna, surface, is_tournament_master')
+        .select('id, organization_id, name, status, start_date, registration_close_at, registration_close_time, address, comuna, surface, is_tournament_master')
         .eq('id', masterTournamentId)
         .single();
 
@@ -111,7 +122,7 @@ export default function TournamentMasterDetailScreen() {
 
       const { data: championshipsData, error: championshipsError } = await supabase
         .from('tournaments')
-        .select('id, name, status, level, modality, format, registration_fee, registration_close_at, start_date')
+        .select('id, name, status, level, modality, format, registration_fee, start_date')
         .eq('parent_tournament_id', masterRow.id);
 
       if (championshipsError) throw championshipsError;
@@ -259,10 +270,14 @@ export default function TournamentMasterDetailScreen() {
   };
 
   const cardRows = useMemo(() => {
+    const isDeadlineReached = isRegistrationWindowClosed(
+      masterTournament?.registration_close_at,
+      masterTournament?.registration_close_time
+    );
+
     return championships.map((championship) => {
       const latestRequest = latestRequestsByTournamentId[championship.id];
       const isRegistered = registeredTournamentIds.has(championship.id);
-      const isDeadlineReached = isRegistrationWindowClosed(championship.registration_close_at);
       const isOpen = OPEN_STATUSES.has(championship.status);
 
       let canRequest = true;
@@ -294,7 +309,13 @@ export default function TournamentMasterDetailScreen() {
         helperText,
       };
     });
-  }, [championships, latestRequestsByTournamentId, registeredTournamentIds]);
+  }, [
+    championships,
+    latestRequestsByTournamentId,
+    masterTournament?.registration_close_at,
+    masterTournament?.registration_close_time,
+    registeredTournamentIds,
+  ]);
 
   if (loading) {
     return (
@@ -316,7 +337,15 @@ export default function TournamentMasterDetailScreen() {
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top, spacing.md) }]}>
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.iconButton}>
+          <TouchableOpacity
+            onPress={() =>
+              router.push({
+                pathname: '/(tabs)/tournaments',
+                params: { orgId: masterTournament.organization_id },
+              })
+            }
+            style={styles.iconButton}
+          >
             <Ionicons name="arrow-back" size={22} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>{masterTournament.name}</Text>
@@ -333,6 +362,9 @@ export default function TournamentMasterDetailScreen() {
             {masterTournament.start_date
               ? `Inicio: ${new Date(masterTournament.start_date).toLocaleDateString('es-ES')}`
               : 'Inicio por confirmar'}
+          </Text>
+          <Text style={styles.masterInfoText}>
+            Cierre inscripciones: {formatRegistrationDeadline(masterTournament.registration_close_at, masterTournament.registration_close_time)}
           </Text>
           {(masterTournament.address || masterTournament.comuna) && (
             <Text style={styles.masterInfoText}>

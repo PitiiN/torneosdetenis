@@ -70,10 +70,21 @@ const ensureUuid = (value: string, fieldName: string) => {
   }
 };
 
-export const isRegistrationWindowClosed = (registrationCloseAt?: string | null) => {
+const normalizeTimeFragment = (value?: string | null) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '23:59:59';
+  if (/^\d{2}:\d{2}$/.test(raw)) return `${raw}:00`;
+  if (/^\d{2}:\d{2}:\d{2}$/.test(raw)) return raw;
+  return '23:59:59';
+};
+
+export const isRegistrationWindowClosed = (
+  registrationCloseAt?: string | null,
+  registrationCloseTime?: string | null
+) => {
   if (!registrationCloseAt) return false;
 
-  const closeDate = new Date(`${registrationCloseAt}T23:59:59`);
+  const closeDate = new Date(`${registrationCloseAt}T${normalizeTimeFragment(registrationCloseTime)}`);
   if (Number.isNaN(closeDate.getTime())) return false;
   return closeDate.getTime() < Date.now();
 };

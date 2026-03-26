@@ -29,6 +29,8 @@ export default function EditTournamentScreen() {
     const [groupCount, setGroupCount] = useState('2');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
+    const [registrationCloseAt, setRegistrationCloseAt] = useState('');
+    const [registrationCloseTime, setRegistrationCloseTime] = useState('');
     const [registrationFee, setRegistrationFee] = useState('0');
     const [address, setAddress] = useState('');
     const [comuna, setComuna] = useState('');
@@ -74,7 +76,7 @@ export default function EditTournamentScreen() {
 
             const { data, error } = await supabase
                 .from('tournaments')
-                .select('id, organization_id, parent_tournament_id, is_tournament_master, name, status, level, modality, surface, max_players, format, set_type, description, start_date, end_date, registration_fee, registration_close_at, address, comuna')
+                .select('id, organization_id, parent_tournament_id, is_tournament_master, name, status, level, modality, surface, max_players, format, set_type, description, start_date, end_date, registration_fee, registration_close_at, registration_close_time, address, comuna')
                 .eq('id', id)
                 .single();
             if (error) throw error;
@@ -95,6 +97,8 @@ export default function EditTournamentScreen() {
             setGroupCount(String(getRoundRobinGroupCount(data.format, data.description)));
             setStartDate(data.start_date || '');
             setEndDate(data.end_date || '');
+            setRegistrationCloseAt(data.registration_close_at || '');
+            setRegistrationCloseTime(String(data.registration_close_time || '').slice(0, 5));
             setRegistrationFee(String(data.registration_fee || '0'));
             setAddress(data.address || '');
             setComuna(data.comuna || '');
@@ -108,14 +112,30 @@ export default function EditTournamentScreen() {
 
     const handleSave = async () => {
         const isMasterTournament = Boolean(tournamentData?.is_tournament_master);
+        const normalizedCloseTime = registrationCloseTime.trim();
 
         if (isMasterTournament && (!startDate || !endDate)) {
             Alert.alert('Error', 'Debes definir fecha de inicio y fecha de fin.');
             return;
         }
 
+        if (isMasterTournament && (!registrationCloseAt || !normalizedCloseTime)) {
+            Alert.alert('Error', 'Debes definir fecha y hora para cierre de inscripciones.');
+            return;
+        }
+
+        if (isMasterTournament && !/^\d{2}:\d{2}$/.test(normalizedCloseTime)) {
+            Alert.alert('Error', 'La hora de cierre debe tener formato HH:MM.');
+            return;
+        }
+
         if (isMasterTournament && endDate < startDate) {
             Alert.alert('Error', 'La fecha de fin no puede ser menor que la fecha de inicio.');
+            return;
+        }
+
+        if (isMasterTournament && registrationCloseAt > startDate) {
+            Alert.alert('Error', 'El cierre de inscripciones debe ser en la fecha de inicio o antes.');
             return;
         }
 
@@ -130,23 +150,24 @@ export default function EditTournamentScreen() {
             const maxPlayersValue = parseInt(maxPlayers) || 8;
             const tournamentFormat = buildTournamentFormatLabel(format, { groupCount: parseInt(groupCount) || 2 });
             const tournamentDescription = buildTournamentDescription(parseInt(groupCount) || 2, tournamentData?.description);
-            const updatePayload: any = {
-                name: tournamentName,
-                level,
-                format: tournamentFormat,
-                description: tournamentDescription,
-                set_type: setType,
-                max_players: maxPlayersValue,
-                registration_fee: parseInt(registrationFee) || 0,
-            };
+            const updatePayload: any = { name: tournamentName };
 
             if (isMasterTournament) {
                 updatePayload.status = STATUS_MAP_TO_DB[status] || 'draft';
                 updatePayload.surface = surface;
                 updatePayload.start_date = startDate;
                 updatePayload.end_date = endDate;
+                updatePayload.registration_close_at = registrationCloseAt;
+                updatePayload.registration_close_time = normalizedCloseTime;
                 updatePayload.address = address;
                 updatePayload.comuna = comuna;
+            } else {
+                updatePayload.level = level;
+                updatePayload.format = tournamentFormat;
+                updatePayload.description = tournamentDescription;
+                updatePayload.set_type = setType;
+                updatePayload.max_players = maxPlayersValue;
+                updatePayload.registration_fee = parseInt(registrationFee) || 0;
             }
 
             const { error } = await supabase
@@ -157,6 +178,7 @@ export default function EditTournamentScreen() {
             if (error) throw error;
 
             const structureChanged =
+                !isMasterTournament &&
                 tournamentData &&
                 (Number(tournamentData.max_players || 0) !== maxPlayersValue ||
                     buildTournamentFormatLabel(format, { groupCount: parseInt(groupCount) || 2 }) !== tournamentData.format);
@@ -235,6 +257,8 @@ export default function EditTournamentScreen() {
                         />
                     </View>
 
+                    {!isMasterTournament && (
+                        <>
                     {/* Registration Fee */}
                     <View style={styles.inputGroup}>
                         <Text style={styles.label}>
@@ -266,6 +290,8 @@ export default function EditTournamentScreen() {
                             placeholderTextColor={colors.textTertiary}
                         />
                     </View>
+                        </>
+                    )}
 
                     {isMasterTournament && (
                         <>
@@ -299,9 +325,29 @@ export default function EditTournamentScreen() {
                             <DateField label="Fecha de Inicio" value={startDate} onChange={setStartDate} />
 
                             <DateField label="Fecha de Fin" value={endDate} onChange={setEndDate} />
+
+                            <DateField label="Cierre de Inscripciones" value={registrationCloseAt} onChange={setRegistrationCloseAt} />
+
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>
+                                    <Ionicons name="time-outline" size={18} color={colors.primary[500]} />
+                                    {' '}Hora Cierre Inscripciones (HH:MM)
+                                </Text>
+                                <TextInput
+                                    style={styles.textInput}
+                                    value={registrationCloseTime}
+                                    onChangeText={setRegistrationCloseTime}
+                                    keyboardType="number-pad"
+                                    placeholder="Ej. 21:30"
+                                    placeholderTextColor={colors.textTertiary}
+                                    maxLength={5}
+                                />
+                            </View>
                         </>
                     )}
 
+                    {!isMasterTournament && (
+                        <>
                     {/* Format */}
                     <View style={styles.inputGroup}>
                         <Text style={styles.label}>
@@ -354,6 +400,8 @@ export default function EditTournamentScreen() {
                             <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
                         </TouchableOpacity>
                     </View>
+                        </>
+                    )}
 
                     {isMasterTournament && (
                         <>

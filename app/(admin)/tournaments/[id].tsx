@@ -491,8 +491,8 @@ export default function AdminTournamentDetailScreen() {
         const nextSlotField2 = currentIndex % 2 === 0 ? 'player_a2_id' : 'player_b2_id';
         
         const updateData: any = { [nextSlotField]: winnerId };
-        if (winner2Id) {
-            updateData[nextSlotField2] = winner2Id;
+        if (IS_DOUBLES) {
+            updateData[nextSlotField2] = winner2Id || null;
         }
 
         const { error } = await supabase
@@ -505,36 +505,49 @@ export default function AdminTournamentDetailScreen() {
     };
 
     async function checkAndProcessByes(allMatches: any[]) {
+        if (isRoundRobinFormat(tournament?.format)) return;
+
         const pendingMatches = allMatches.filter(m => m.status === 'pending');
         
         for (const m of pendingMatches) {
             const nameA = getDisplayName(m, 1);
-            const nameB = getDisplayName(m, 2);
+            const nameA2 = IS_DOUBLES ? getDisplayName(m, 2) : '';
+            const nameB = getDisplayName(m, 3);
+            const nameB2 = IS_DOUBLES ? getDisplayName(m, 4) : '';
 
-            const isABye = nameA === 'BYE';
-            const isBBye = nameB === 'BYE';
+            const isABye = [nameA, nameA2].some(name => String(name || '').toUpperCase() === 'BYE');
+            const isBBye = [nameB, nameB2].some(name => String(name || '').toUpperCase() === 'BYE');
 
-            // If one is BYE and the other is a real player
-            if (isABye || isBBye) {
-                let winnerId = null;
-                let score = 'W.O.';
+            if (isABye === isBBye) continue;
 
-                if (isABye && m.player_b_id && m.player_b_id !== 'BYE') {
-                    winnerId = m.player_b_id;
-                } else if (isBBye && m.player_a_id && m.player_a_id !== 'BYE') {
-                    winnerId = m.player_a_id;
-                }
+            let winnerId: string | null = null;
+            let winner2Id: string | null = null;
+            if (isABye) {
+                winnerId = m.player_b_id && m.player_b_id !== 'BYE' ? m.player_b_id : null;
+                winner2Id = m.player_b2_id && m.player_b2_id !== 'BYE' ? m.player_b2_id : null;
+            } else {
+                winnerId = m.player_a_id && m.player_a_id !== 'BYE' ? m.player_a_id : null;
+                winner2Id = m.player_a2_id && m.player_a2_id !== 'BYE' ? m.player_a2_id : null;
+            }
 
-                if (winnerId) {
-                    const { error } = await supabase
-                        .from('matches')
-                        .update({ score, winner_id: winnerId, status: 'finished' })
-                        .eq('id', m.id);
-                    
-                    if (!error) {
-                        await propagateWinnerToNextMatch(m, winnerId);
-                    }
-                }
+            if (!winnerId) continue;
+
+            const updatePayload: any = {
+                score: 'W.O.',
+                winner_id: winnerId,
+                status: 'finished',
+            };
+            if (IS_DOUBLES) {
+                updatePayload.winner_2_id = winner2Id;
+            }
+
+            const { error } = await supabase
+                .from('matches')
+                .update(updatePayload)
+                .eq('id', m.id);
+            
+            if (!error) {
+                await propagateWinnerToNextMatch(m, winnerId, winner2Id);
             }
         }
     }

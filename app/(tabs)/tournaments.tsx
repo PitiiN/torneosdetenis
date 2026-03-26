@@ -35,6 +35,8 @@ interface Tournament {
     modality?: 'singles' | 'dobles' | string | null;
     is_tournament_master?: boolean;
     parent_tournament_id?: string | null;
+    registration_close_at?: string | null;
+    registration_close_time?: string | null;
 }
 
 type OrganizationInfo = {
@@ -69,6 +71,16 @@ const decodeEscapedUnicode = (value: unknown) =>
     String(value ?? '').replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) =>
         String.fromCharCode(parseInt(hex, 16))
     );
+
+const formatRegistrationDeadline = (dateValue?: string | null, timeValue?: string | null) => {
+    if (!dateValue) return null;
+    const parsedDate = new Date(`${dateValue}T00:00:00`);
+    const dateLabel = Number.isNaN(parsedDate.getTime())
+        ? dateValue
+        : parsedDate.toLocaleDateString('es-ES');
+    const timeLabel = String(timeValue || '').slice(0, 5) || '23:59';
+    return `${dateLabel} ${timeLabel}`;
+};
 
 export default function TorneosScreen() {
     const insets = useSafeAreaInsets();
@@ -146,6 +158,19 @@ export default function TorneosScreen() {
                     .limit(1);
                 nextOrgId = publicOrganizations?.[0]?.id || null;
             }
+        }
+
+        if (!nextOrgId) {
+            const { data: publishedMasterTournament } = await supabase
+                .from('tournaments')
+                .select('organization_id')
+                .is('parent_tournament_id', null)
+                .in('status', ['open', 'ongoing', 'in_progress'])
+                .order('start_date', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            nextOrgId = publishedMasterTournament?.organization_id || null;
         }
 
         if (nextOrgId) {
@@ -407,7 +432,7 @@ export default function TorneosScreen() {
 
             let query = supabase
                 .from('tournaments')
-                .select('id, name, description, status, surface, format, start_date, organization_id, registration_fee, address, comuna, modality, is_tournament_master, parent_tournament_id')
+                .select('id, name, description, status, surface, format, start_date, organization_id, registration_fee, address, comuna, modality, is_tournament_master, parent_tournament_id, registration_close_at, registration_close_time')
                 .eq('organization_id', targetOrgId)
                 .is('parent_tournament_id', null)
                 .order('start_date', { ascending: false });
@@ -741,6 +766,14 @@ export default function TorneosScreen() {
                                                 <Ionicons name="ribbon-outline" size={12} color={colors.textTertiary} />
                                                 <Text style={styles.metaText}>{isMasterTournament ? 'Torneo Completo' : tournament.format}</Text>
                                             </View>
+                                            {isMasterTournament && formatRegistrationDeadline(tournament.registration_close_at, tournament.registration_close_time) && (
+                                                <View style={styles.metaItem}>
+                                                    <Ionicons name="hourglass-outline" size={12} color={colors.textTertiary} />
+                                                    <Text style={styles.metaText}>
+                                                        {`Cierre inscripciones: ${formatRegistrationDeadline(tournament.registration_close_at, tournament.registration_close_time)}`}
+                                                    </Text>
+                                                </View>
+                                            )}
                                             {!isMasterTournament && (
                                                 <View style={styles.metaItem}>
                                                     <Ionicons name="tennisball-outline" size={12} color={colors.textTertiary} />

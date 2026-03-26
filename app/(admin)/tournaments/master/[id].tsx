@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,7 +6,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { borderRadius, spacing, useTheme } from '@/theme';
 import { supabase } from '@/services/supabase';
-import { DateField } from '@/components/DateField';
 import { TOURNAMENT_CATEGORIES, TOURNAMENT_SET_TYPES } from '@/constants/tournamentOptions';
 import {
   buildTournamentDescription,
@@ -26,6 +25,8 @@ type MasterTournament = {
   status: string;
   start_date: string | null;
   end_date: string | null;
+  registration_close_at: string | null;
+  registration_close_time: string | null;
   address: string | null;
   comuna: string | null;
   surface: string | null;
@@ -41,7 +42,6 @@ type Championship = {
   registration_fee: number | null;
   max_players: number | null;
   set_type: string | null;
-  registration_close_at: string | null;
 };
 
 const FORMATS = ['Eliminación Directa', 'Round Robin', 'Eliminación Directa con Repechaje'];
@@ -62,6 +62,16 @@ const DEFAULT_RANKING_ROWS = (): RankingPointRow[] => [
 ];
 
 const createRowId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const formatRegistrationDeadline = (dateValue?: string | null, timeValue?: string | null) => {
+  if (!dateValue) return 'Sin definir';
+  const parsedDate = new Date(`${dateValue}T00:00:00`);
+  const dateLabel = Number.isNaN(parsedDate.getTime())
+    ? dateValue
+    : parsedDate.toLocaleDateString('es-ES');
+  const timeLabel = String(timeValue || '').slice(0, 5) || '23:59';
+  return `${dateLabel} ${timeLabel}`;
+};
 
 const toDbFormatLabel = (uiFormat: string) => {
   const normalized = normalizeTournamentFormat(uiFormat);
@@ -91,8 +101,8 @@ export default function MasterTournamentAdminScreen() {
   const [registrationFee, setRegistrationFee] = useState('');
   const [maxPlayers, setMaxPlayers] = useState('16');
   const [groupCount, setGroupCount] = useState('2');
-  const [registrationCloseAt, setRegistrationCloseAt] = useState('');
   const [rankingPointRows, setRankingPointRows] = useState<RankingPointRow[]>(() => DEFAULT_RANKING_ROWS());
+  const modalScrollRef = useRef<ScrollView | null>(null);
 
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showFormatModal, setShowFormatModal] = useState(false);
@@ -111,7 +121,7 @@ export default function MasterTournamentAdminScreen() {
 
       const { data: masterData, error: masterError } = await supabase
         .from('tournaments')
-        .select('id, organization_id, name, status, start_date, end_date, address, comuna, surface, is_tournament_master')
+        .select('id, organization_id, name, status, start_date, end_date, registration_close_at, registration_close_time, address, comuna, surface, is_tournament_master')
         .eq('id', masterTournamentId)
         .single();
 
@@ -136,7 +146,7 @@ export default function MasterTournamentAdminScreen() {
 
       const { data: championshipRows, error: championshipError } = await supabase
         .from('tournaments')
-        .select('id, name, modality, level, format, registration_fee, max_players, set_type, registration_close_at')
+        .select('id, name, modality, level, format, registration_fee, max_players, set_type')
         .eq('parent_tournament_id', masterRow.id);
 
       if (championshipError) throw championshipError;
@@ -168,7 +178,6 @@ export default function MasterTournamentAdminScreen() {
     setRegistrationFee('');
     setMaxPlayers('16');
     setGroupCount('2');
-    setRegistrationCloseAt('');
     setRankingPointRows(DEFAULT_RANKING_ROWS());
   };
 
@@ -183,6 +192,9 @@ export default function MasterTournamentAdminScreen() {
         isDefault: false,
       },
     ]);
+    setTimeout(() => {
+      modalScrollRef.current?.scrollToEnd({ animated: true });
+    }, 90);
   };
 
   const handleUpdateRankingRow = (
@@ -198,22 +210,18 @@ export default function MasterTournamentAdminScreen() {
     setRankingPointRows((current) => current.filter((row) => row.id !== rowId));
   };
 
+  const handleRankingInputFocus = useCallback(() => {
+    requestAnimationFrame(() => {
+      modalScrollRef.current?.scrollToEnd({ animated: true });
+    });
+  }, []);
+
   const handleCreateChampionship = async () => {
     if (!masterTournament) return;
 
     const maxPlayersValue = Number(maxPlayers);
     if (!Number.isFinite(maxPlayersValue) || maxPlayersValue < 2) {
       Alert.alert('Error', 'Debes ingresar un numero de jugadores valido (minimo 2).');
-      return;
-    }
-
-    if (!registrationCloseAt) {
-      Alert.alert('Error', 'Debes definir la fecha de cierre de inscripciones.');
-      return;
-    }
-
-    if (registrationCloseAt && masterTournament.start_date && registrationCloseAt > masterTournament.start_date) {
-      Alert.alert('Error', 'El cierre de inscripciones debe ser en la fecha de inicio o antes.');
       return;
     }
 
@@ -257,7 +265,7 @@ export default function MasterTournamentAdminScreen() {
         normalizeTournamentFormat(format) === 'round_robin' ? normalizedGroupCount : 2
       );
       const tournamentDescription = buildDescriptionWithRankingPoints(rankingPoints, descriptionWithGroup);
-      const championshipName = `${masterTournament.name} - ${getModalityLabel(modality)} ${category}`;
+      const championshipName = `${category} ${getModalityLabel(modality)}`;
 
       const { data: createdTournamentId, error: createError } = await supabase.rpc('create_championship_tournament', {
         p_master_tournament_id: masterTournament.id,
@@ -268,7 +276,6 @@ export default function MasterTournamentAdminScreen() {
         p_set_type: setType,
         p_max_players: maxPlayersValue,
         p_registration_fee: Number(registrationFee) || 0,
-        p_registration_close_at: registrationCloseAt || null,
         p_description: tournamentDescription,
       });
 
@@ -313,6 +320,12 @@ export default function MasterTournamentAdminScreen() {
   };
 
   const championshipCards = useMemo(() => sortChampionships(championships), [championships]);
+  const handleBackToTournaments = () => {
+    router.push({
+      pathname: '/(tabs)/tournaments',
+      params: { orgId: masterTournament?.organization_id || '' },
+    });
+  };
 
   if (loading) {
     return (
@@ -334,7 +347,7 @@ export default function MasterTournamentAdminScreen() {
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top, spacing.md) }]}>
         <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.iconButton} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.iconButton} onPress={handleBackToTournaments}>
             <Ionicons name="arrow-back" size={22} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>{masterTournament.name}</Text>
@@ -349,6 +362,9 @@ export default function MasterTournamentAdminScreen() {
           <Text style={styles.masterTitle}>Torneo Completo</Text>
           <Text style={styles.masterText}>Inicio: {masterTournament.start_date || 'Sin fecha'}</Text>
           <Text style={styles.masterText}>Termino: {masterTournament.end_date || 'Sin fecha'}</Text>
+          <Text style={styles.masterText}>
+            Cierre inscripciones: {formatRegistrationDeadline(masterTournament.registration_close_at, masterTournament.registration_close_time)}
+          </Text>
           <Text style={styles.masterText}>
             {masterTournament.address || ''}{masterTournament.address && masterTournament.comuna ? ', ' : ''}{masterTournament.comuna || ''}
           </Text>
@@ -395,8 +411,8 @@ export default function MasterTournamentAdminScreen() {
       <Modal visible={showCreateModal} animationType="slide" onRequestClose={() => !creating && setShowCreateModal(false)}>
         <KeyboardAvoidingView
           style={styles.modalContainer}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? Math.max(insets.top, spacing.md) : 82}
+          behavior="padding"
+          keyboardVerticalOffset={Math.max(insets.top, spacing.md)}
         >
           <View style={[styles.modalContainer, { paddingTop: Math.max(insets.top, spacing.md) }]}>
           <View style={styles.modalHeader}>
@@ -408,6 +424,7 @@ export default function MasterTournamentAdminScreen() {
           </View>
 
           <ScrollView
+            ref={modalScrollRef}
             contentContainerStyle={styles.modalContent}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
@@ -491,12 +508,6 @@ export default function MasterTournamentAdminScreen() {
               </TouchableOpacity>
             </View>
 
-            <DateField
-              label="Cierre de Inscripciones"
-              value={registrationCloseAt}
-              onChange={setRegistrationCloseAt}
-            />
-
             <View style={styles.pointsCard}>
               <Text style={styles.pointsTitle}>Puntos para Ranking</Text>
               {rankingPointRows.map((row) => (
@@ -509,6 +520,7 @@ export default function MasterTournamentAdminScreen() {
                         style={styles.pointsPlaceInput}
                         value={row.place}
                         onChangeText={(nextPlace) => handleUpdateRankingRow(row.id, { place: nextPlace })}
+                        onFocus={handleRankingInputFocus}
                         placeholder="Rango (ej. 5 o 5-8)"
                         placeholderTextColor={colors.textTertiary}
                       />
@@ -519,6 +531,7 @@ export default function MasterTournamentAdminScreen() {
                       style={styles.pointsInput}
                       value={row.points}
                       onChangeText={(nextPoints) => handleUpdateRankingRow(row.id, { points: nextPoints })}
+                      onFocus={handleRankingInputFocus}
                       keyboardType="numeric"
                       placeholder="0"
                       placeholderTextColor={colors.textTertiary}
@@ -774,7 +787,7 @@ const getStyles = (colors: any) => StyleSheet.create({
   },
   modalContent: {
     padding: spacing.xl,
-    paddingBottom: 240,
+    paddingBottom: spacing['2xl'],
     gap: spacing.md,
   },
   inputGroup: {
@@ -913,10 +926,6 @@ const getStyles = (colors: any) => StyleSheet.create({
     fontWeight: '700',
   },
   modalFooter: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     backgroundColor: colors.surface,

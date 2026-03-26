@@ -31,6 +31,8 @@ export default function CreateTournamentScreen() {
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [registrationCloseAt, setRegistrationCloseAt] = useState('');
+  const [registrationCloseTime, setRegistrationCloseTime] = useState('');
   const [address, setAddress] = useState('');
   const [comuna, setComuna] = useState('');
   const [surface, setSurface] = useState(TOURNAMENT_SURFACES[0]);
@@ -74,13 +76,24 @@ export default function CreateTournamentScreen() {
       return;
     }
 
-    if (!name.trim() || !startDate || !endDate || !address.trim() || !comuna) {
+    if (!name.trim() || !startDate || !endDate || !registrationCloseAt || !registrationCloseTime || !address.trim() || !comuna) {
       Alert.alert('Error', 'Debes completar todos los campos obligatorios.');
+      return;
+    }
+
+    const normalizedCloseTime = registrationCloseTime.trim();
+    if (!/^\d{2}:\d{2}$/.test(normalizedCloseTime)) {
+      Alert.alert('Error', 'La hora de cierre debe tener formato HH:MM.');
       return;
     }
 
     if (endDate < startDate) {
       Alert.alert('Error', 'La fecha de termino no puede ser menor a la fecha de inicio.');
+      return;
+    }
+
+    if (registrationCloseAt > startDate) {
+      Alert.alert('Error', 'El cierre de inscripciones debe ser en la fecha de inicio o antes.');
       return;
     }
 
@@ -98,6 +111,8 @@ export default function CreateTournamentScreen() {
         p_status: STATUS_MAP[status] || 'open',
         p_start_date: startDate,
         p_end_date: endDate,
+        p_registration_close_at: registrationCloseAt,
+        p_registration_close_time: normalizedCloseTime,
         p_address: address.trim(),
         p_comuna: comuna,
         p_surface: surface,
@@ -156,6 +171,20 @@ export default function CreateTournamentScreen() {
 
           <DateField label="Fecha de Inicio" value={startDate} onChange={setStartDate} />
           <DateField label="Fecha de Termino" value={endDate} onChange={setEndDate} />
+          <DateField label="Cierre de Inscripciones" value={registrationCloseAt} onChange={setRegistrationCloseAt} />
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Hora Cierre Inscripciones (HH:MM)</Text>
+            <TextInput
+              style={styles.textInput}
+              value={registrationCloseTime}
+              onChangeText={setRegistrationCloseTime}
+              placeholder="Ej. 21:30"
+              placeholderTextColor={colors.textTertiary}
+              keyboardType="number-pad"
+              maxLength={5}
+            />
+          </View>
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Direccion</Text>
