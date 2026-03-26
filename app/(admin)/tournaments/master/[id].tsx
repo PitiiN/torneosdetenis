@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -43,8 +43,31 @@ type Championship = {
   registration_close_at: string | null;
 };
 
-const FORMATS = ['Eliminacion Directa', 'Round Robin', 'Eliminacion Directa con Repechaje'];
+const FORMATS = ['Eliminación Directa', 'Round Robin', 'Eliminación Directa con Repechaje'];
 const MODALITIES = ['singles', 'dobles'] as const;
+type RankingPointRow = {
+  id: string;
+  place: string;
+  label: string;
+  points: string;
+  isDefault: boolean;
+};
+
+const DEFAULT_RANKING_ROWS = (): RankingPointRow[] => [
+  { id: 'rank-default-1', place: '1', label: 'Campeon', points: String(DEFAULT_RANKING_POINTS['1']), isDefault: true },
+  { id: 'rank-default-2', place: '2', label: 'Finalista', points: String(DEFAULT_RANKING_POINTS['2']), isDefault: true },
+  { id: 'rank-default-3', place: '3', label: 'Semifinalistas', points: String(DEFAULT_RANKING_POINTS['3']), isDefault: true },
+  { id: 'rank-default-4', place: '4', label: 'Cuartos', points: String(DEFAULT_RANKING_POINTS['4']), isDefault: true },
+];
+
+const createRowId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const toDbFormatLabel = (uiFormat: string) => {
+  const normalized = normalizeTournamentFormat(uiFormat);
+  if (normalized === 'round_robin') return 'Round Robin';
+  if (normalized === 'single_elimination_repechage') return 'Eliminaci\u00F3n Directa con Repechaje';
+  return 'Eliminaci\u00F3n Directa';
+};
 
 export default function MasterTournamentAdminScreen() {
   const { id } = useLocalSearchParams<{ id: string | string[] }>();
@@ -68,10 +91,7 @@ export default function MasterTournamentAdminScreen() {
   const [maxPlayers, setMaxPlayers] = useState('16');
   const [groupCount, setGroupCount] = useState('2');
   const [registrationCloseAt, setRegistrationCloseAt] = useState('');
-  const [rankChampion, setRankChampion] = useState(String(DEFAULT_RANKING_POINTS['1']));
-  const [rankFinalist, setRankFinalist] = useState(String(DEFAULT_RANKING_POINTS['2']));
-  const [rankSemis, setRankSemis] = useState(String(DEFAULT_RANKING_POINTS['3']));
-  const [rankQuarter, setRankQuarter] = useState(String(DEFAULT_RANKING_POINTS['4']));
+  const [rankingPointRows, setRankingPointRows] = useState<RankingPointRow[]>(() => DEFAULT_RANKING_ROWS());
 
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showFormatModal, setShowFormatModal] = useState(false);
@@ -140,10 +160,33 @@ export default function MasterTournamentAdminScreen() {
     setMaxPlayers('16');
     setGroupCount('2');
     setRegistrationCloseAt('');
-    setRankChampion(String(DEFAULT_RANKING_POINTS['1']));
-    setRankFinalist(String(DEFAULT_RANKING_POINTS['2']));
-    setRankSemis(String(DEFAULT_RANKING_POINTS['3']));
-    setRankQuarter(String(DEFAULT_RANKING_POINTS['4']));
+    setRankingPointRows(DEFAULT_RANKING_ROWS());
+  };
+
+  const handleAddManualRankingRow = () => {
+    setRankingPointRows((current) => [
+      ...current,
+      {
+        id: `rank-manual-${createRowId()}`,
+        place: '',
+        label: 'Rango manual',
+        points: '',
+        isDefault: false,
+      },
+    ]);
+  };
+
+  const handleUpdateRankingRow = (
+    rowId: string,
+    patch: Partial<Pick<RankingPointRow, 'place' | 'points'>>
+  ) => {
+    setRankingPointRows((current) =>
+      current.map((row) => (row.id === rowId ? { ...row, ...patch } : row))
+    );
+  };
+
+  const handleRemoveRankingRow = (rowId: string) => {
+    setRankingPointRows((current) => current.filter((row) => row.id !== rowId));
   };
 
   const handleCreateChampionship = async () => {
@@ -167,50 +210,65 @@ export default function MasterTournamentAdminScreen() {
 
     setCreating(true);
     try {
-      const rankingPoints = {
-        '1': Number(rankChampion) || 0,
-        '2': Number(rankFinalist) || 0,
-        '3': Number(rankSemis) || 0,
-        '4': Number(rankQuarter) || 0,
-      };
+      const rankingPoints: Record<string, number> = {};
+      const usedPlaces = new Set<string>();
+      for (const row of rankingPointRows) {
+        const placeKey = row.place.trim();
+        const pointsRaw = row.points.trim();
+        const isEmptyManualRow = !row.isDefault && !placeKey && !pointsRaw;
+        if (isEmptyManualRow) {
+          continue;
+        }
+
+        if (!placeKey) {
+          Alert.alert('Error', 'Completa el rango en los puntos de ranking manuales.');
+          return;
+        }
+
+        const uniqueKey = placeKey.toLowerCase();
+        if (usedPlaces.has(uniqueKey)) {
+          Alert.alert('Error', `El rango "${placeKey}" está duplicado en los puntos para ranking.`);
+          return;
+        }
+        usedPlaces.add(uniqueKey);
+
+        const parsedPoints = Number(pointsRaw || '0');
+        if (!Number.isFinite(parsedPoints)) {
+          Alert.alert('Error', `Los puntos para el rango "${placeKey}" deben ser numéricos.`);
+          return;
+        }
+
+        rankingPoints[placeKey] = parsedPoints;
+      }
 
       const normalizedGroupCount = Math.max(2, Math.min(8, Number(groupCount) || 2));
-      const tournamentFormat = buildTournamentFormatLabel(format, { groupCount: normalizedGroupCount });
+      const uiTournamentFormat = buildTournamentFormatLabel(format, { groupCount: normalizedGroupCount });
+      const tournamentFormat = toDbFormatLabel(uiTournamentFormat);
       const descriptionWithGroup = buildTournamentDescription(
         normalizeTournamentFormat(format) === 'round_robin' ? normalizedGroupCount : 2
       );
       const tournamentDescription = buildDescriptionWithRankingPoints(rankingPoints, descriptionWithGroup);
       const championshipName = `${masterTournament.name} - ${getModalityLabel(modality)} ${category}`;
 
-      const { data: createdTournament, error: createError } = await supabase
-        .from('tournaments')
-        .insert({
-          parent_tournament_id: masterTournament.id,
-          is_tournament_master: false,
-          organization_id: masterTournament.organization_id,
-          name: championshipName,
-          status: masterTournament.status || 'open',
-          start_date: masterTournament.start_date,
-          end_date: masterTournament.end_date,
-          address: masterTournament.address,
-          comuna: masterTournament.comuna,
-          surface: masterTournament.surface,
-          modality,
-          level: category,
-          format: tournamentFormat,
-          set_type: setType,
-          max_players: maxPlayersValue,
-          registration_fee: Number(registrationFee) || 0,
-          registration_close_at: registrationCloseAt || null,
-          description: tournamentDescription,
-        })
-        .select('id')
-        .single();
+      const { data: createdTournamentId, error: createError } = await supabase.rpc('create_championship_tournament', {
+        p_master_tournament_id: masterTournament.id,
+        p_name: championshipName,
+        p_modality: modality,
+        p_level: category,
+        p_format: tournamentFormat,
+        p_set_type: setType,
+        p_max_players: maxPlayersValue,
+        p_registration_fee: Number(registrationFee) || 0,
+        p_registration_close_at: registrationCloseAt || null,
+        p_description: tournamentDescription,
+      });
 
-      if (createError) throw createError;
+      if (createError || !createdTournamentId) {
+        throw createError || new Error('No se obtuvo el id del campeonato creado.');
+      }
 
       const matches = createInitialMatches({
-        tournamentId: createdTournament.id,
+        tournamentId: String(createdTournamentId),
         format: tournamentFormat,
         description: tournamentDescription,
         maxPlayers: maxPlayersValue,
@@ -229,6 +287,11 @@ export default function MasterTournamentAdminScreen() {
       await loadData();
     } catch (error: any) {
       const detail = String(error?.message || '').trim();
+      const normalizedDetail = detail.toLowerCase();
+      if (normalizedDetail.includes('forbidden create championship') || normalizedDetail.includes('row-level security')) {
+        Alert.alert('Permisos insuficientes', 'Tu usuario no tiene permisos para crear campeonatos en este torneo.');
+        return;
+      }
       Alert.alert(
         'Error',
         detail
@@ -321,7 +384,12 @@ export default function MasterTournamentAdminScreen() {
       </ScrollView>
 
       <Modal visible={showCreateModal} animationType="slide" onRequestClose={() => !creating && setShowCreateModal(false)}>
-        <View style={[styles.modalContainer, { paddingTop: Math.max(insets.top, spacing.md) }]}>
+        <KeyboardAvoidingView
+          style={styles.modalContainer}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? Math.max(insets.top, spacing.md) : 0}
+        >
+          <View style={[styles.modalContainer, { paddingTop: Math.max(insets.top, spacing.md) }]}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => !creating && setShowCreateModal(false)} style={styles.iconButton}>
               <Ionicons name="arrow-back" size={22} color={colors.text} />
@@ -330,7 +398,11 @@ export default function MasterTournamentAdminScreen() {
             <View style={{ width: 40 }} />
           </View>
 
-          <ScrollView contentContainerStyle={styles.modalContent}>
+          <ScrollView
+            contentContainerStyle={styles.modalContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          >
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Modalidad</Text>
               <View style={styles.modalityRow}>
@@ -418,22 +490,45 @@ export default function MasterTournamentAdminScreen() {
 
             <View style={styles.pointsCard}>
               <Text style={styles.pointsTitle}>Puntos para Ranking</Text>
-              <View style={styles.pointsRow}>
-                <Text style={styles.pointsLabel}>Campeon</Text>
-                <TextInput style={styles.pointsInput} value={rankChampion} onChangeText={setRankChampion} keyboardType="numeric" />
-              </View>
-              <View style={styles.pointsRow}>
-                <Text style={styles.pointsLabel}>Finalista</Text>
-                <TextInput style={styles.pointsInput} value={rankFinalist} onChangeText={setRankFinalist} keyboardType="numeric" />
-              </View>
-              <View style={styles.pointsRow}>
-                <Text style={styles.pointsLabel}>Semifinales</Text>
-                <TextInput style={styles.pointsInput} value={rankSemis} onChangeText={setRankSemis} keyboardType="numeric" />
-              </View>
-              <View style={styles.pointsRow}>
-                <Text style={styles.pointsLabel}>Cuartos</Text>
-                <TextInput style={styles.pointsInput} value={rankQuarter} onChangeText={setRankQuarter} keyboardType="numeric" />
-              </View>
+              {rankingPointRows.map((row) => (
+                <View key={row.id} style={styles.pointsRow}>
+                  <View style={styles.pointsRowLeft}>
+                    {row.isDefault ? (
+                      <Text style={styles.pointsLabel}>{row.label}</Text>
+                    ) : (
+                      <TextInput
+                        style={styles.pointsPlaceInput}
+                        value={row.place}
+                        onChangeText={(nextPlace) => handleUpdateRankingRow(row.id, { place: nextPlace })}
+                        placeholder="Rango (ej. 5 o 5-8)"
+                        placeholderTextColor={colors.textTertiary}
+                      />
+                    )}
+                  </View>
+                  <View style={styles.pointsRowRight}>
+                    <TextInput
+                      style={styles.pointsInput}
+                      value={row.points}
+                      onChangeText={(nextPoints) => handleUpdateRankingRow(row.id, { points: nextPoints })}
+                      keyboardType="numeric"
+                      placeholder="0"
+                      placeholderTextColor={colors.textTertiary}
+                    />
+                    {!row.isDefault && (
+                      <TouchableOpacity
+                        style={styles.removeManualRankButton}
+                        onPress={() => handleRemoveRankingRow(row.id)}
+                      >
+                        <Ionicons name="close-circle" size={20} color={colors.error} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              ))}
+              <TouchableOpacity style={styles.addRankButton} onPress={handleAddManualRankingRow}>
+                <Ionicons name="add-circle-outline" size={16} color={colors.primary[500]} />
+                <Text style={styles.addRankButtonText}>Agregar rango manual</Text>
+              </TouchableOpacity>
             </View>
           </ScrollView>
 
@@ -484,7 +579,8 @@ export default function MasterTournamentAdminScreen() {
             }}
             onClose={() => setShowSetTypeModal(false)}
           />
-        </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -752,8 +848,27 @@ const getStyles = (colors: any) => StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
+  pointsRowLeft: {
+    flex: 1,
+  },
+  pointsRowRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
   pointsLabel: {
     color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  pointsPlaceInput: {
+    height: 40,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    color: colors.text,
+    paddingHorizontal: spacing.sm,
     fontSize: 13,
     fontWeight: '600',
   },
@@ -767,6 +882,25 @@ const getStyles = (colors: any) => StyleSheet.create({
     color: colors.text,
     textAlign: 'right',
     paddingHorizontal: spacing.sm,
+    fontWeight: '700',
+  },
+  removeManualRankButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addRankButton: {
+    marginTop: spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    alignSelf: 'flex-start',
+  },
+  addRankButtonText: {
+    color: colors.primary[500],
+    fontSize: 13,
     fontWeight: '700',
   },
   modalFooter: {
