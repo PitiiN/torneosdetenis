@@ -6,7 +6,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { DateField } from '@/components/DateField';
-import { CHILEAN_COMUNAS, TOURNAMENT_SURFACES, TOURNAMENT_SET_TYPES } from '@/constants/tournamentOptions';
+import { CHILEAN_COMUNAS, TOURNAMENT_SURFACES } from '@/constants/tournamentOptions';
 import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
 
@@ -15,10 +15,6 @@ const STATUS_MAP: Record<string, string> = {
   Publicado: 'open',
   'No Publicado': 'draft',
 };
-const MASTER_FALLBACK_LEVEL = 'Escalafón';
-const MASTER_FALLBACK_MODALITY = 'singles';
-const MASTER_FALLBACK_FORMAT = 'Eliminacion Directa';
-const MASTER_FALLBACK_SET_TYPE = TOURNAMENT_SET_TYPES[0] || 'Mejor de 3 Sets';
 
 export default function CreateTournamentScreen() {
   const insets = useSafeAreaInsets();
@@ -94,37 +90,28 @@ export default function CreateTournamentScreen() {
         return;
       }
 
-      const { data: createdTournament, error } = await supabase
-        .from('tournaments')
-        .insert({
-          organization_id: activeOrgId,
-          parent_tournament_id: null,
-          is_tournament_master: true,
-          name: name.trim(),
-          status: STATUS_MAP[status] || 'open',
-          start_date: startDate,
-          end_date: endDate,
-          address: address.trim(),
-          comuna,
-          surface,
-          // Backward-compatible placeholders for schemas where these fields are NOT NULL.
-          level: MASTER_FALLBACK_LEVEL,
-          modality: MASTER_FALLBACK_MODALITY,
-          format: MASTER_FALLBACK_FORMAT,
-          set_type: MASTER_FALLBACK_SET_TYPE,
-          max_players: 2,
-          registration_fee: 0,
-          description: 'Torneo completo principal',
-        })
-        .select('id')
-        .single();
+      const { data: createdTournamentId, error } = await supabase.rpc('create_master_tournament', {
+        p_organization_id: activeOrgId,
+        p_name: name.trim(),
+        p_status: STATUS_MAP[status] || 'open',
+        p_start_date: startDate,
+        p_end_date: endDate,
+        p_address: address.trim(),
+        p_comuna: comuna,
+        p_surface: surface,
+      });
 
-      if (error) throw error;
+      if (error || !createdTournamentId) throw error || new Error('No se obtuvo id del torneo creado.');
 
       Alert.alert('Exito', 'Torneo completo creado. Ahora agrega los campeonatos por categoria y modalidad.');
-      router.replace(`/(admin)/tournaments/master/${createdTournament.id}`);
+      router.replace(`/(admin)/tournaments/master/${createdTournamentId}`);
     } catch (error: any) {
       const detail = String(error?.message || '').trim();
+      const normalizedDetail = detail.toLowerCase();
+      if (normalizedDetail.includes('forbidden create tournament') || normalizedDetail.includes('row-level security')) {
+        Alert.alert('Permisos insuficientes', 'Tu usuario no tiene permisos de admin para crear torneos en esta organizacion.');
+        return;
+      }
       Alert.alert(
         'Error',
         detail
