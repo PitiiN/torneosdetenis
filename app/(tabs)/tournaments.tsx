@@ -10,7 +10,7 @@ import * as SecureStore from 'expo-secure-store';
 import { getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { getCachedValue, setCachedValue } from '@/services/runtimeCache';
-import { normalizeTournamentStatus } from '@/services/tournamentStatus';
+import { getEffectiveTournamentStatus, normalizeTournamentStatus } from '@/services/tournamentStatus';
 
 const { width } = Dimensions.get('window');
 
@@ -28,6 +28,7 @@ interface Tournament {
     surface: string;
     format: string;
     start_date: string;
+    end_date?: string | null;
     organization_id?: string;
     registration_fee?: number;
     address?: string;
@@ -81,6 +82,21 @@ const formatRegistrationDeadline = (dateValue?: string | null, timeValue?: strin
     const timeLabel = String(timeValue || '').slice(0, 5) || '23:59';
     return `${dateLabel} ${timeLabel}`;
 };
+
+const getTournamentReferenceDate = (tournament: Tournament) => {
+    const rawDate = String(tournament.end_date || tournament.start_date || '').trim();
+    if (!rawDate) return null;
+    const parsedDate = new Date(`${rawDate}T00:00:00`);
+    if (Number.isNaN(parsedDate.getTime())) return null;
+    return parsedDate;
+};
+
+const getEffectiveStatus = (tournament: Tournament) =>
+    getEffectiveTournamentStatus({
+        status: tournament.status,
+        startDate: tournament.start_date,
+        endDate: tournament.end_date || null
+    });
 
 export default function TorneosScreen() {
     const insets = useSafeAreaInsets();
@@ -432,7 +448,7 @@ export default function TorneosScreen() {
 
             let query = supabase
                 .from('tournaments')
-                .select('id, name, description, status, surface, format, start_date, organization_id, registration_fee, address, comuna, modality, is_tournament_master, parent_tournament_id, registration_close_at, registration_close_time')
+                .select('id, name, description, status, surface, format, start_date, end_date, organization_id, registration_fee, address, comuna, modality, is_tournament_master, parent_tournament_id, registration_close_at, registration_close_time')
                 .eq('organization_id', targetOrgId)
                 .is('parent_tournament_id', null)
                 .order('start_date', { ascending: false });
@@ -446,7 +462,11 @@ export default function TorneosScreen() {
             setTournaments(
                 (data || []).map((tournament: any) => ({
                     ...tournament,
-                    status: normalizeTournamentStatus(tournament.status),
+                    status: getEffectiveTournamentStatus({
+                        status: normalizeTournamentStatus(tournament.status),
+                        startDate: tournament.start_date,
+                        endDate: tournament.end_date || null
+                    }),
                     name: decodeEscapedUnicode(tournament.name || ''),
                     description: decodeEscapedUnicode(tournament.description || ''),
                     format: decodeEscapedUnicode(tournament.format || ''),
@@ -459,7 +479,11 @@ export default function TorneosScreen() {
                 tournamentsCacheKey,
                 (data || []).map((tournament: any) => ({
                     ...tournament,
-                    status: normalizeTournamentStatus(tournament.status),
+                    status: getEffectiveTournamentStatus({
+                        status: normalizeTournamentStatus(tournament.status),
+                        startDate: tournament.start_date,
+                        endDate: tournament.end_date || null
+                    }),
                     name: decodeEscapedUnicode(tournament.name || ''),
                     description: decodeEscapedUnicode(tournament.description || ''),
                     format: decodeEscapedUnicode(tournament.format || ''),
@@ -524,9 +548,22 @@ export default function TorneosScreen() {
     );
     const shouldShowOrganizationInfo = Boolean(activeOrgId && organizationInfo);
 
+    const visibleFinalizedTournaments = tournaments.filter((tournament) => {
+        const normalizedStatus = getEffectiveStatus(tournament);
+        const isVisibleToPlayer = ['open', 'in_progress', 'finished'].includes(normalizedStatus);
+        if (!canManage && !isVisibleToPlayer) return false;
+        return normalizedStatus === 'finished';
+    });
+
+    const hasSelectedPeriodFinalizedTournaments = visibleFinalizedTournaments.some((tournament) => {
+        const referenceDate = getTournamentReferenceDate(tournament);
+        if (!referenceDate) return false;
+        return referenceDate.getFullYear() === selectedYear && referenceDate.getMonth() === selectedMonth;
+    });
+
     const filteredTournaments = tournaments.filter(t => {
         // Determine if tournament should be visible based on role and filter
-        const normalizedStatus = normalizeTournamentStatus(t.status);
+        const normalizedStatus = getEffectiveStatus(t);
         const isVisibleToPlayer = ['open', 'in_progress', 'finished'].includes(normalizedStatus);
         
         // If not admin and not a visible status, hide
@@ -543,10 +580,10 @@ export default function TorneosScreen() {
             const isFinalized = normalizedStatus === 'finished';
             if (!isFinalized) return false;
 
-            const tDate = new Date(t.start_date || '');
-            const yearMatch = tDate.getFullYear() === selectedYear;
-            const monthMatch = tDate.getMonth() === selectedMonth;
-            return yearMatch && monthMatch;
+            const referenceDate = getTournamentReferenceDate(t);
+            if (!referenceDate) return true;
+            if (!hasSelectedPeriodFinalizedTournaments) return true;
+            return referenceDate.getFullYear() === selectedYear && referenceDate.getMonth() === selectedMonth;
         }
         return true;
     });
@@ -740,16 +777,16 @@ export default function TorneosScreen() {
                                         <Text style={styles.typeText}>{SURFACE_MAP[tournament.surface]?.toUpperCase() || tournament.surface.toUpperCase()}</Text>
                                     </View>
                                     <View style={[styles.statusBadge, {
-                                        backgroundColor: normalizeTournamentStatus(tournament.status) === 'open'
+                                        backgroundColor: getEffectiveStatus(tournament) === 'open'
                                             ? colors.success + '1A'
                                             : colors.surfaceSecondary
                                     }]}>
                                         <Text style={[styles.statusText, {
-                                            color: normalizeTournamentStatus(tournament.status) === 'open'
+                                            color: getEffectiveStatus(tournament) === 'open'
                                                 ? colors.success
                                                 : colors.textSecondary
                                         }]}>
-                                            {STATUS_DISPLAY[normalizeTournamentStatus(tournament.status)] || tournament.status.toUpperCase()}
+                                            {STATUS_DISPLAY[getEffectiveStatus(tournament)] || tournament.status.toUpperCase()}
                                         </Text>
                                     </View>
                                 </View>

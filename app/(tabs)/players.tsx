@@ -141,7 +141,7 @@ export default function PlayersScreen() {
             const tournamentIds = completedTournaments.map(tournament => tournament.id);
             const { data: matches, error: matchesError } = await supabase
                 .from('matches')
-                .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, score, status')
+                .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, round_number, match_order, score, status')
                 .in('tournament_id', tournamentIds);
 
             if (matchesError) throw matchesError;

@@ -12,9 +12,25 @@ import { canManageOrganization, getCurrentUserAccessContext } from '@/services/a
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { resolveStorageAssetUrl } from '@/services/storage';
 import { AdminQuickActionsBar } from '@/components/navigation/AdminQuickActionsBar';
+import { getTournamentPlacements } from '@/services/ranking';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const COURT_OPTIONS = Array.from({ length: 20 }, (_current, index) => `Cancha ${index + 1}`);
+type MatchSlot = 1 | 2 | 3 | 4;
+type GroupMember = 1 | 2;
+type ManualParticipantRow = { id: string; name: string };
+type ManualDoublesTeam = { p1Name: string; p2Name: string; p1Id?: string | null; p2Id?: string | null };
+type ManualDoublesTeamRow = {
+    id: string;
+    p1Name: string;
+    p2Name: string;
+    p1Id: string | null;
+    p2Id: string | null;
+    label: string;
+};
+type AssignmentTarget =
+    | { type: 'match'; label: string; matchId: string; slot: MatchSlot }
+    | { type: 'group'; label: string; groupName: string; slotIndex: number; member: GroupMember };
 
 export default function AdminTournamentDetailScreen() {
     const { id: rawId } = useLocalSearchParams();
@@ -48,14 +64,25 @@ export default function AdminTournamentDetailScreen() {
 
     // Player Selection Modal
     const [isPlayerModalVisible, setIsPlayerModalVisible] = useState(false);
-    const [selectedSlot, setSelectedSlot] = useState<{ matchId: string, slot: 1 | 2 | 3 | 4 } | null>(null);
-    const [selectedGroupSlot, setSelectedGroupSlot] = useState<{ groupName: string, slotIndex: number, member: 1 | 2 } | null>(null);
+    const [selectedSlot, setSelectedSlot] = useState<{ matchId: string, slot: MatchSlot } | null>(null);
+    const [selectedGroupSlot, setSelectedGroupSlot] = useState<{ groupName: string, slotIndex: number, member: GroupMember } | null>(null);
+    const [assignmentTargets, setAssignmentTargets] = useState<AssignmentTarget[]>([]);
+    const [activeAssignmentIndex, setActiveAssignmentIndex] = useState(0);
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<any[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [manualPlayerName, setManualPlayerName] = useState('');
+    const [manualPlayerName2, setManualPlayerName2] = useState('');
     const [isManualPlayerModalVisible, setIsManualPlayerModalVisible] = useState(false);
+    const [manualCreationMode, setManualCreationMode] = useState<'assignment' | 'participants'>('assignment');
     const [savingPlayer, setSavingPlayer] = useState(false);
+    const [pendingDoublesTeamIds, setPendingDoublesTeamIds] = useState<string[]>([]);
+    const [isSeeding, setIsSeeding] = useState(false);
+    const [isSeedCountModalVisible, setIsSeedCountModalVisible] = useState(false);
+    const [seedCountInput, setSeedCountInput] = useState('');
+    const [seedCountLimit, setSeedCountLimit] = useState(0);
+    const [isFinalsCountModalVisible, setIsFinalsCountModalVisible] = useState(false);
+    const [finalsCountInput, setFinalsCountInput] = useState('4');
 
     // Scheduling Modal
     const [isScheduleModalVisible, setIsScheduleModalVisible] = useState(false);
@@ -189,6 +216,26 @@ export default function AdminTournamentDetailScreen() {
             player_b2: resolveHydratedProfile(match.player_b2_id, profileMapById),
         }));
 
+    const normalizeManualNameKey = (value?: string | null) =>
+        String(value || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .trim()
+            .toUpperCase();
+
+    const normalizeTeamMemberKey = (name?: string | null, id?: string | null) => {
+        const normalizedId = String(id || '').trim();
+        if (UUID_PATTERN.test(normalizedId)) return normalizedId.toUpperCase();
+        return normalizeManualNameKey(name);
+    };
+
+    const buildManualDoublesTeamKey = (team: ManualDoublesTeam) => {
+        const memberA = normalizeTeamMemberKey(team.p1Name, team.p1Id);
+        const memberB = normalizeTeamMemberKey(team.p2Name, team.p2Id);
+        if (!memberA || !memberB) return '';
+        return [memberA, memberB].sort().join('::');
+    };
+
     const parseManualAssignments = (description?: string | null) => {
         const match = (description || '').match(/\[MANUAL_ASSIGNMENTS:([^\]]+)\]/);
         if (!match?.[1]) {
@@ -208,22 +255,98 @@ export default function AdminTournamentDetailScreen() {
         }
     };
 
-    const buildTournamentDescriptionWithAssignments = (
+    const parseManualParticipants = (description?: string | null) => {
+        const match = (description || '').match(/\[MANUAL_PARTICIPANTS:([^\]]+)\]/);
+        if (!match?.[1]) {
+            return {
+                singles: [],
+                doubles: []
+            } as {
+                singles: string[];
+                doubles: ManualDoublesTeam[];
+            };
+        }
+
+        try {
+            const parsed = JSON.parse(decodeURIComponent(match[1]));
+            const parsedSinglesRaw = Array.isArray(parsed)
+                ? parsed
+                : (Array.isArray(parsed?.singles) ? parsed.singles : []);
+            const parsedDoublesRaw = Array.isArray(parsed?.doubles) ? parsed.doubles : [];
+
+            const seenSingles = new Set<string>();
+            const singles = parsedSinglesRaw
+                .map((entry: any) => String(entry || '').trim())
+                .filter(Boolean)
+                .filter((name: string) => {
+                    const key = normalizeManualNameKey(name);
+                    if (!key || seenSingles.has(key)) return false;
+                    seenSingles.add(key);
+                    return true;
+                });
+
+            const seenTeams = new Set<string>();
+            const doubles = parsedDoublesRaw
+                .map((entry: any) => ({
+                    p1Name: String(entry?.p1Name || '').trim(),
+                    p2Name: String(entry?.p2Name || '').trim(),
+                    p1Id: UUID_PATTERN.test(String(entry?.p1Id || '').trim()) ? String(entry?.p1Id || '').trim() : null,
+                    p2Id: UUID_PATTERN.test(String(entry?.p2Id || '').trim()) ? String(entry?.p2Id || '').trim() : null
+                }))
+                .filter((entry: { p1Name: string; p2Name: string }) => entry.p1Name && entry.p2Name)
+                .filter((entry: ManualDoublesTeam) => {
+                    const teamKey = buildManualDoublesTeamKey(entry);
+                    if (!teamKey || seenTeams.has(teamKey)) return false;
+                    seenTeams.add(teamKey);
+                    return true;
+                });
+
+            return { singles, doubles };
+        } catch {
+            return { singles: [], doubles: [] };
+        }
+    };
+
+    const buildTournamentDescriptionWithMetadata = (
         description: string | null | undefined,
         assignments: {
             rrSlots?: Record<string, Record<string, { name: string }>>;
             matchSlots?: Record<string, Record<string, { name: string }>>;
+        },
+        manualParticipants: {
+            singles?: string[];
+            doubles?: ManualDoublesTeam[];
         }
     ) => {
-        const baseDescription = (description || '').replace(/\s*\[MANUAL_ASSIGNMENTS:[^\]]+\]/g, '').trim();
+        const baseDescription = (description || '')
+            .replace(/\s*\[MANUAL_ASSIGNMENTS:[^\]]+\]/g, '')
+            .replace(/\s*\[MANUAL_PARTICIPANTS:[^\]]+\]/g, '')
+            .trim();
         const hasAssignments =
             Object.keys(assignments.rrSlots || {}).length > 0 ||
             Object.keys(assignments.matchSlots || {}).length > 0;
+        const hasManualParticipants =
+            (manualParticipants?.singles?.length || 0) > 0 ||
+            (manualParticipants?.doubles?.length || 0) > 0;
 
-        if (!hasAssignments) return baseDescription || null;
+        if (!hasAssignments && !hasManualParticipants) return baseDescription || null;
 
-        const encodedAssignments = encodeURIComponent(JSON.stringify(assignments));
-        return [baseDescription, `[MANUAL_ASSIGNMENTS:${encodedAssignments}]`].filter(Boolean).join(' ').trim();
+        const segments: string[] = [];
+        if (baseDescription) segments.push(baseDescription);
+        if (hasAssignments) {
+            const encodedAssignments = encodeURIComponent(JSON.stringify(assignments));
+            segments.push(`[MANUAL_ASSIGNMENTS:${encodedAssignments}]`);
+        }
+        if (hasManualParticipants) {
+            const encodedManualParticipants = encodeURIComponent(
+                JSON.stringify({
+                    singles: manualParticipants?.singles || [],
+                    doubles: manualParticipants?.doubles || []
+                })
+            );
+            segments.push(`[MANUAL_PARTICIPANTS:${encodedManualParticipants}]`);
+        }
+        return segments.join(' ').trim();
     };
 
     const updateTournamentDescription = async (
@@ -236,8 +359,13 @@ export default function AdminTournamentDetailScreen() {
         }
     ) => {
         const currentAssignments = parseManualAssignments(tournament?.description);
+        const currentManualParticipants = parseManualParticipants(tournament?.description);
         const nextAssignments = updater(currentAssignments);
-        const nextDescription = buildTournamentDescriptionWithAssignments(tournament?.description, nextAssignments);
+        const nextDescription = buildTournamentDescriptionWithMetadata(
+            tournament?.description,
+            nextAssignments,
+            currentManualParticipants
+        );
 
         const { error } = await supabase
             .from('tournaments')
@@ -250,13 +378,42 @@ export default function AdminTournamentDetailScreen() {
         return nextAssignments;
     };
 
+    const updateTournamentManualParticipants = async (
+        updater: (current: {
+            singles: string[];
+            doubles: ManualDoublesTeam[];
+        }) => {
+            singles: string[];
+            doubles: ManualDoublesTeam[];
+        }
+    ) => {
+        const currentAssignments = parseManualAssignments(tournament?.description);
+        const currentManualParticipants = parseManualParticipants(tournament?.description);
+        const nextManualParticipants = updater(currentManualParticipants);
+        const nextDescription = buildTournamentDescriptionWithMetadata(
+            tournament?.description,
+            currentAssignments,
+            nextManualParticipants
+        );
+
+        const { error } = await supabase
+            .from('tournaments')
+            .update({ description: nextDescription })
+            .eq('id', id);
+
+        if (error) throw error;
+
+        setTournament((prev: any) => prev ? { ...prev, description: nextDescription } : prev);
+        return nextManualParticipants;
+    };
+
     useEffect(() => {
         if (!id || id === 'undefined') return;
         loadTournamentData();
     }, [id]);
 
-    const loadTournamentData = async () => {
-        setIsLoading(true);
+    const loadTournamentData = async (withLoader = true) => {
+        if (withLoader) setIsLoading(true);
         try {
             const access = await getCurrentUserAccessContext();
             if (!access) {
@@ -362,8 +519,37 @@ export default function AdminTournamentDetailScreen() {
         } catch (error) {
             Alert.alert('Error', 'No se pudo cargar la información del torneo.');
         } finally {
-            setIsLoading(false);
+            if (withLoader) setIsLoading(false);
         }
+    };
+
+    const getScoreText = (scoreValue: any): string => {
+        if (scoreValue === null || scoreValue === undefined) return '';
+        if (typeof scoreValue === 'string') return scoreValue.trim();
+
+        if (typeof scoreValue === 'object') {
+            if (scoreValue?.wo) return 'W.O.';
+            if (typeof scoreValue?.text === 'string') return scoreValue.text.trim();
+            if (typeof scoreValue?.score === 'string') return scoreValue.score.trim();
+            if (Array.isArray(scoreValue?.sets)) {
+                const setsAsText = scoreValue.sets
+                    .map((setScore: any) => String(setScore || '').trim())
+                    .filter(Boolean)
+                    .join(', ');
+                if (setsAsText) return setsAsText;
+            }
+            return '';
+        }
+
+        const fallback = String(scoreValue || '').trim();
+        return fallback === '[object Object]' ? '' : fallback;
+    };
+
+    const getScoreSetStrings = (scoreValue: any): string[] => {
+        const scoreText = getScoreText(scoreValue);
+        if (!scoreText) return [];
+        if (/^W\.?O\.?$/i.test(scoreText)) return [scoreText];
+        return scoreText.split(/\s*,\s*/).filter(Boolean);
     };
 
     const handleMatchPress = (match: any) => {
@@ -373,8 +559,9 @@ export default function AdminTournamentDetailScreen() {
         const setsToShow = getSetsToShow(tournament?.set_type);
         const newSetScores = Array.from({ length: setsToShow }, () => ({ s1: '', s2: '' }));
 
-        if (match.score) {
-            const setStrings = match.score.split(/\s*,\s*/);
+        const scoreText = getScoreText(match.score);
+        if (scoreText && !/^W\.?O\.?$/i.test(scoreText)) {
+            const setStrings = scoreText.split(/\s*,\s*/);
             setStrings.forEach((setStr: string, idx: number) => {
                 if (idx < setsToShow) {
                     const [s1, s2] = setStr.split(/[-]/);
@@ -461,8 +648,13 @@ export default function AdminTournamentDetailScreen() {
         }
     };
 
-    const resolveWinnerIds = (match: any, score: string) => {
-        const sets = score.split(/\s*,\s*/).filter(Boolean);
+    const resolveWinnerIds = (match: any, scoreValue: any) => {
+        const scoreText = getScoreText(scoreValue);
+        if (!scoreText || /^W\.?O\.?$/i.test(scoreText)) {
+            return { w1: null, w2: null };
+        }
+
+        const sets = scoreText.split(/\s*,\s*/).filter(Boolean);
         let playerAWins = 0;
         let playerBWins = 0;
 
@@ -553,12 +745,14 @@ export default function AdminTournamentDetailScreen() {
         };
 
         const manualAssignmentsForBye = parseManualAssignments(descriptionOverride ?? tournament?.description);
-        const resolveNameForByeCheck = (match: any, slot: 1 | 2 | 3 | 4) => {
+        const resolveNameForByeCheck = (match: any, slot: MatchSlot) => {
             const playerId = getPlayerIdBySlot(match, slot);
             if (playerId) return getPlayerName(playerId);
 
-            const slotKey = (slot === 1 || slot === 2) ? 'player_a' : 'player_b';
-            const manualName = manualAssignmentsForBye.matchSlots?.[match.id]?.[slotKey]?.name || null;
+            const manualName =
+                manualAssignmentsForBye.matchSlots?.[match.id]?.[getMatchManualKey(slot)]?.name ||
+                manualAssignmentsForBye.matchSlots?.[match.id]?.[getMatchManualFallbackKey(slot)]?.name ||
+                null;
             if (manualName) return manualName;
 
             return getDisplayName(match, slot);
@@ -725,7 +919,11 @@ export default function AdminTournamentDetailScreen() {
         );
     };
 
-    const registerParticipant = async (pId: string) => {
+    const registerParticipant = async (
+        pId: string,
+        options: { keepModalOpen?: boolean } = {}
+    ) => {
+        const keepModalOpen = options.keepModalOpen ?? false;
         setSavingPlayer(true);
         try {
             const { error } = await supabase
@@ -739,8 +937,38 @@ export default function AdminTournamentDetailScreen() {
                 });
 
             if (error) throw error;
-            setIsPlayerModalVisible(false);
-            await loadTournamentData();
+            const profileName =
+                players.find((player) => player.player_id === pId)?.profiles?.name ||
+                searchResults.find((user) => user.id === pId)?.name ||
+                'Jugador';
+
+            setPlayers((currentPlayers) => {
+                if (currentPlayers.some((player) => player.player_id === pId)) {
+                    return currentPlayers;
+                }
+
+                return [
+                    ...currentPlayers,
+                    {
+                        id: createUuid(),
+                        tournament_id: id,
+                        player_id: pId,
+                        status: 'confirmed',
+                        fee_amount: tournament?.registration_fee || 0,
+                        is_paid: false,
+                        profiles: {
+                            id: pId,
+                            name: profileName,
+                            avatar_url: null
+                        }
+                    }
+                ];
+            });
+
+            resetPlayerSelectionSearch();
+            if (!keepModalOpen) {
+                closePlayerSelectionModal();
+            }
         } catch (error: any) {
             if (error.code === '23505') {
                 Alert.alert('Información', 'Este jugador ya está registrado.');
@@ -752,30 +980,221 @@ export default function AdminTournamentDetailScreen() {
         }
     };
 
+    const togglePendingDoublesTeamMember = (playerId: string) => {
+        setPendingDoublesTeamIds((currentIds) => {
+            if (currentIds.includes(playerId)) {
+                return currentIds.filter((currentId) => currentId !== playerId);
+            }
+            if (currentIds.length >= 2) {
+                return [currentIds[1], playerId];
+            }
+            return [...currentIds, playerId];
+        });
+    };
+
+    const savePendingDoublesTeam = async () => {
+        if (pendingDoublesTeamIds.length !== 2) {
+            Alert.alert('Información', 'Selecciona 2 jugadores para crear la dupla.');
+            return;
+        }
+
+        const [p1Id, p2Id] = pendingDoublesTeamIds;
+        const p1Name = getPlayerName(p1Id);
+        const p2Name = getPlayerName(p2Id);
+
+        await addManualParticipantToPool(p1Name, p2Name, { p1Id, p2Id });
+        setPendingDoublesTeamIds([]);
+        closePlayerSelectionModal();
+    };
+
     const manualAssignments = useMemo(() => parseManualAssignments(tournament?.description), [tournament?.description]);
+    const manualParticipants = useMemo(() => parseManualParticipants(tournament?.description), [tournament?.description]);
 
-    const getAssignedNameForGroupSlot = (groupName: string, slotIndex: number) =>
-        manualAssignments.rrSlots?.[groupName]?.[String(slotIndex)]?.name || null;
+    const getMatchManualKey = (slot: MatchSlot) => {
+        if (slot === 1) return 'player_a';
+        if (slot === 2) return 'player_a2';
+        if (slot === 3) return 'player_b';
+        return 'player_b2';
+    };
 
-    const getAssignedNameForMatchSlot = (matchId: string, slot: 'player_a' | 'player_b') =>
-        manualAssignments.matchSlots?.[matchId]?.[slot]?.name || null;
+    const getMatchManualFallbackKey = (slot: MatchSlot) => (slot === 1 || slot === 2 ? 'player_a' : 'player_b');
 
-    const handlePlayerPress = (matchId: string, slot: 1 | 2 | 3 | 4) => {
-        setSelectedSlot({ matchId, slot });
-        setSelectedGroupSlot(null);
+    const getGroupManualKey = (slotIndex: number, member: GroupMember = 1) =>
+        member === 2 ? `${slotIndex}:2` : String(slotIndex);
+
+    const getAssignedNameForGroupSlot = (groupName: string, slotIndex: number, member: GroupMember = 1) =>
+        manualAssignments.rrSlots?.[groupName]?.[getGroupManualKey(slotIndex, member)]?.name ||
+        (!IS_DOUBLES && member === 2 ? manualAssignments.rrSlots?.[groupName]?.[String(slotIndex)]?.name : null) ||
+        null;
+
+    const getAssignedNameForMatchSlot = (matchId: string, slot: MatchSlot) =>
+        manualAssignments.matchSlots?.[matchId]?.[getMatchManualKey(slot)]?.name ||
+        (!IS_DOUBLES ? manualAssignments.matchSlots?.[matchId]?.[getMatchManualFallbackKey(slot)]?.name : null) ||
+        null;
+
+    const resetPlayerSelectionSearch = () => {
         setSearchQuery('');
         setSearchResults([]);
         setManualPlayerName('');
+        setManualPlayerName2('');
+        setPendingDoublesTeamIds([]);
+    };
+
+    const setSelectionFromTarget = (target: AssignmentTarget) => {
+        if (target.type === 'match') {
+            setSelectedSlot({ matchId: target.matchId, slot: target.slot });
+            setSelectedGroupSlot(null);
+            return;
+        }
+
+        setSelectedGroupSlot({
+            groupName: target.groupName,
+            slotIndex: target.slotIndex,
+            member: target.member
+        });
+        setSelectedSlot(null);
+    };
+
+    const openAssignmentModal = (targets: AssignmentTarget[], initialIndex = 0) => {
+        if (!targets.length) return;
+        const boundedIndex = Math.max(0, Math.min(initialIndex, targets.length - 1));
+        setAssignmentTargets(targets);
+        setActiveAssignmentIndex(boundedIndex);
+        setSelectionFromTarget(targets[boundedIndex]);
+        resetPlayerSelectionSearch();
         setIsPlayerModalVisible(true);
     };
 
-    const handleGroupSlotPress = (groupName: string, slotIndex: number, member: 1 | 2 = 1) => {
-        setSelectedGroupSlot({ groupName, slotIndex, member });
+    const getMatchTargetLabel = (slot: MatchSlot) => {
+        if (!IS_DOUBLES) {
+            return slot === 1 ? 'Jugador 1' : 'Jugador 2';
+        }
+        if (slot === 1) return 'Dupla 1 · Jugador 1';
+        if (slot === 2) return 'Dupla 1 · Jugador 2';
+        if (slot === 3) return 'Dupla 2 · Jugador 1';
+        return 'Dupla 2 · Jugador 2';
+    };
+
+    const handlePlayerPress = (matchId: string, slot: MatchSlot) => {
+        const orderedTargets = buildTargetsForMatch(matchId, slot);
+        openAssignmentModal(orderedTargets, 0);
+    };
+
+    const handleGroupSlotPress = (groupName: string, slotIndex: number, member: GroupMember = 1) => {
+        const orderedTargets = buildTargetsForGroupSlot(groupName, slotIndex, member);
+        openAssignmentModal(orderedTargets, 0);
+    };
+
+    const setActiveAssignmentTarget = (targetIndex: number) => {
+        const nextTarget = assignmentTargets[targetIndex];
+        if (!nextTarget) return;
+        setActiveAssignmentIndex(targetIndex);
+        setSelectionFromTarget(nextTarget);
+    };
+
+    const resetAssignmentSelection = () => {
         setSelectedSlot(null);
-        setSearchQuery('');
-        setSearchResults([]);
-        setManualPlayerName('');
-        setIsPlayerModalVisible(true);
+        setSelectedGroupSlot(null);
+        setAssignmentTargets([]);
+        setActiveAssignmentIndex(0);
+    };
+
+    const closePlayerSelectionModal = () => {
+        resetAssignmentSelection();
+        resetPlayerSelectionSearch();
+        setIsPlayerModalVisible(false);
+    };
+
+    const moveToNextAssignmentTarget = () => {
+        if (assignmentTargets.length <= 1) return;
+        const nextIndex = activeAssignmentIndex + 1;
+        if (nextIndex >= assignmentTargets.length) return;
+        setActiveAssignmentTarget(nextIndex);
+    };
+
+    const buildTargetsForMatch = (matchId: string, preferredSlot: MatchSlot = 1): AssignmentTarget[] => {
+        const targets: AssignmentTarget[] = IS_DOUBLES
+            ? [
+                { type: 'match', label: getMatchTargetLabel(1), matchId, slot: 1 },
+                { type: 'match', label: getMatchTargetLabel(2), matchId, slot: 2 },
+                { type: 'match', label: getMatchTargetLabel(3), matchId, slot: 3 },
+                { type: 'match', label: getMatchTargetLabel(4), matchId, slot: 4 },
+            ]
+            : [
+                { type: 'match', label: getMatchTargetLabel(1), matchId, slot: 1 },
+                { type: 'match', label: getMatchTargetLabel(3), matchId, slot: 3 },
+            ];
+        const initialIndex = Math.max(
+            0,
+            targets.findIndex((target) => target.type === 'match' && target.slot === preferredSlot)
+        );
+        return [targets[initialIndex], ...targets.filter((_, index) => index !== initialIndex)];
+    };
+
+    const buildTargetsForGroupSlot = (groupName: string, slotIndex: number, member: GroupMember = 1): AssignmentTarget[] => {
+        const targets: AssignmentTarget[] = IS_DOUBLES
+            ? [
+                { type: 'group', label: 'Dupla · Jugador 1', groupName, slotIndex, member: 1 },
+                { type: 'group', label: 'Dupla · Jugador 2', groupName, slotIndex, member: 2 },
+            ]
+            : [{ type: 'group', label: 'Jugador', groupName, slotIndex, member: 1 }];
+        const initialIndex = Math.max(
+            0,
+            targets.findIndex((target) => target.type === 'group' && target.member === member)
+        );
+        return [targets[initialIndex], ...targets.filter((_, index) => index !== initialIndex)];
+    };
+
+    const getFirstAvailableAssignmentTargets = (): AssignmentTarget[] => {
+        if (isRoundRobin) {
+            for (const groupName of roundRobinGroupNames) {
+                const slotCount = getRoundRobinSlots(tournamentMaxPlayers, groupName, tournamentFormat, tournament?.description).length;
+                for (let slotIndex = 0; slotIndex < slotCount; slotIndex++) {
+                    const hasP1 = !!getAssignedNameForGroupSlot(groupName, slotIndex, 1) ||
+                        !!roundRobinMatchesByGroup[groupName]?.some((m) => {
+                            const pairSlot = getRoundRobinSlotIndexForMatchSide(groupName, m.id, 1);
+                            const pairSlotB = getRoundRobinSlotIndexForMatchSide(groupName, m.id, 2);
+                            return (pairSlot === slotIndex && !!m.player_a_id) || (pairSlotB === slotIndex && !!m.player_b_id);
+                        });
+                    const hasP2 = !IS_DOUBLES || !!getAssignedNameForGroupSlot(groupName, slotIndex, 2) ||
+                        !!roundRobinMatchesByGroup[groupName]?.some((m) => {
+                            const pairSlot = getRoundRobinSlotIndexForMatchSide(groupName, m.id, 1);
+                            const pairSlotB = getRoundRobinSlotIndexForMatchSide(groupName, m.id, 2);
+                            return (pairSlot === slotIndex && !!m.player_a2_id) || (pairSlotB === slotIndex && !!m.player_b2_id);
+                        });
+                    if (!hasP1 || !hasP2) {
+                        return buildTargetsForGroupSlot(groupName, slotIndex, !hasP1 ? 1 : 2);
+                    }
+                }
+            }
+            return [];
+        }
+
+        const firstRoundMatches = matches
+            .filter((match) =>
+                !String(match.round || '').startsWith('Grupo ') &&
+                !/^Consolaci/i.test(String(match.round || '')) &&
+                !String(match.round || '').includes('RR') &&
+                Number(match.round_number || 0) === 1
+            )
+            .sort((leftMatch, rightMatch) => (leftMatch.match_order || 0) - (rightMatch.match_order || 0));
+
+        for (const match of firstRoundMatches) {
+            const candidates: Array<{ slot: MatchSlot; empty: boolean }> = IS_DOUBLES
+                ? [
+                    { slot: 1, empty: !match.player_a_id && !getAssignedNameForMatchSlot(match.id, 1) },
+                    { slot: 2, empty: !match.player_a2_id && !getAssignedNameForMatchSlot(match.id, 2) },
+                    { slot: 3, empty: !match.player_b_id && !getAssignedNameForMatchSlot(match.id, 3) },
+                    { slot: 4, empty: !match.player_b2_id && !getAssignedNameForMatchSlot(match.id, 4) },
+                ]
+                : [
+                    { slot: 1, empty: !match.player_a_id && !getAssignedNameForMatchSlot(match.id, 1) },
+                    { slot: 3, empty: !match.player_b_id && !getAssignedNameForMatchSlot(match.id, 3) },
+                ];
+            const firstEmpty = candidates.find((candidate) => candidate.empty);
+            if (firstEmpty) return buildTargetsForMatch(match.id, firstEmpty.slot);
+        }
+        return [];
     };
 
     useEffect(() => {
@@ -831,6 +1250,864 @@ export default function AdminTournamentDetailScreen() {
         return pairings;
     };
 
+    const isByeName = (value?: string | null) =>
+        String(value || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .trim()
+            .toUpperCase() === 'BYE';
+
+    const isPlaceholderName = (value?: string | null) => {
+        const normalized = String(value || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .trim()
+            .toUpperCase();
+        return !normalized || normalized === 'POR DEFINIR' || normalized.startsWith('CUPO ');
+    };
+
+    const manualParticipantSingles = useMemo<string[]>(() => {
+        const seen = new Set<string>();
+        return (manualParticipants.singles || [])
+            .map((name: string) => String(name || '').trim())
+            .filter((name: string) => Boolean(name))
+            .filter((name: string) => {
+                if (isPlaceholderName(name) || isByeName(name)) return false;
+                const key = normalizeManualNameKey(name);
+                if (!key || seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+    }, [manualParticipants.singles]);
+
+    const manualParticipantRows = useMemo<ManualParticipantRow[]>(
+        () =>
+            manualParticipantSingles.map((name: string, index: number): ManualParticipantRow => ({
+                id: `manual:${normalizeManualNameKey(name)}:${index}`,
+                name
+            })),
+        [manualParticipantSingles]
+    );
+
+    const manualDoublesTeams = useMemo<ManualDoublesTeam[]>(() => {
+        const seen = new Set<string>();
+        return (manualParticipants.doubles || [])
+            .map((team: ManualDoublesTeam) => ({
+                p1Name: String(team?.p1Name || '').trim(),
+                p2Name: String(team?.p2Name || '').trim(),
+                p1Id: UUID_PATTERN.test(String(team?.p1Id || '').trim()) ? String(team?.p1Id || '').trim() : null,
+                p2Id: UUID_PATTERN.test(String(team?.p2Id || '').trim()) ? String(team?.p2Id || '').trim() : null
+            }))
+            .filter((team: ManualDoublesTeam) => team.p1Name && team.p2Name)
+            .filter((team: ManualDoublesTeam) => {
+                const key = buildManualDoublesTeamKey(team);
+                if (!key || seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+    }, [manualParticipants.doubles]);
+
+    const manualDoublesTeamRows = useMemo<ManualDoublesTeamRow[]>(
+        () =>
+            manualDoublesTeams.map((team, index) => ({
+                id: `manual-team:${buildManualDoublesTeamKey(team)}:${index}`,
+                p1Name: team.p1Name,
+                p2Name: team.p2Name,
+                p1Id: team.p1Id || null,
+                p2Id: team.p2Id || null,
+                label: `${team.p1Name} / ${team.p2Name}`
+            })),
+        [manualDoublesTeams]
+    );
+
+    const assignedRegisteredPlayerIds = useMemo(() => {
+        const assignedIds = new Set<string>();
+        matches.forEach((match) => {
+            [match.player_a_id, match.player_a2_id, match.player_b_id, match.player_b2_id].forEach((playerId) => {
+                if (typeof playerId === 'string' && UUID_PATTERN.test(playerId)) {
+                    assignedIds.add(playerId);
+                }
+            });
+        });
+        return assignedIds;
+    }, [matches]);
+
+    const definedDoublesPlayerIds = useMemo(() => {
+        const ids = new Set<string>();
+        manualDoublesTeamRows.forEach((team) => {
+            if (UUID_PATTERN.test(String(team.p1Id || ''))) ids.add(String(team.p1Id));
+            if (UUID_PATTERN.test(String(team.p2Id || ''))) ids.add(String(team.p2Id));
+        });
+        return ids;
+    }, [manualDoublesTeamRows]);
+
+    const assignedManualNameKeys = useMemo(() => {
+        const assignedNames = new Set<string>();
+        const pushName = (name?: string | null) => {
+            const normalizedName = String(name || '').trim();
+            if (!normalizedName || isPlaceholderName(normalizedName) || isByeName(normalizedName)) return;
+            assignedNames.add(normalizeManualNameKey(normalizedName));
+        };
+
+        Object.values(manualAssignments.matchSlots || {}).forEach((slotMap: any) => {
+            Object.values(slotMap || {}).forEach((entry: any) => pushName(entry?.name));
+        });
+        Object.values(manualAssignments.rrSlots || {}).forEach((slotMap: any) => {
+            Object.values(slotMap || {}).forEach((entry: any) => pushName(entry?.name));
+        });
+        return assignedNames;
+    }, [manualAssignments]);
+
+    const selectableRegisteredPlayers = useMemo(() => {
+        if (assignmentTargets.length === 0) {
+            if (!IS_DOUBLES) return players;
+            return players.filter((registration) => !definedDoublesPlayerIds.has(String(registration.player_id || '')));
+        }
+        return players.filter((registration) => {
+            const playerId = String(registration.player_id || '');
+            if (assignedRegisteredPlayerIds.has(playerId)) return false;
+            if (IS_DOUBLES && definedDoublesPlayerIds.has(playerId)) return false;
+            return true;
+        });
+    }, [players, assignmentTargets.length, assignedRegisteredPlayerIds, IS_DOUBLES, definedDoublesPlayerIds]);
+
+    const selectableManualParticipants = useMemo<ManualParticipantRow[]>(() => {
+        if (assignmentTargets.length === 0) return manualParticipantRows;
+        return manualParticipantRows.filter((participant: ManualParticipantRow) => !assignedManualNameKeys.has(normalizeManualNameKey(participant.name)));
+    }, [manualParticipantRows, assignmentTargets.length, assignedManualNameKeys]);
+
+    const selectableDoublesTeamRows = useMemo<ManualDoublesTeamRow[]>(() => {
+        if (!IS_DOUBLES || assignmentTargets.length === 0) return [];
+        return manualDoublesTeamRows;
+    }, [IS_DOUBLES, assignmentTargets.length, manualDoublesTeamRows]);
+
+    const shuffleArray = <T,>(items: T[]) => {
+        const copy = [...items];
+        for (let index = copy.length - 1; index > 0; index--) {
+            const randomIndex = Math.floor(Math.random() * (index + 1));
+            [copy[index], copy[randomIndex]] = [copy[randomIndex], copy[index]];
+        }
+        return copy;
+    };
+
+    const buildSeedOrder = (seedCount: number) => {
+        if (seedCount <= 0) return [] as number[];
+        if (seedCount === 1) return [1];
+        let order = [1, 2];
+        while (order.length < seedCount) {
+            const nextTotal = order.length * 2;
+            order = order.flatMap((seedNumber, index) => {
+                const complementary = nextTotal + 1 - seedNumber;
+                return index % 2 === 0
+                    ? [seedNumber, complementary]
+                    : [complementary, seedNumber];
+            });
+        }
+        return order.slice(0, seedCount);
+    };
+
+    const buildSeedLinesForDraw = (totalSlots: number, seedCount: number) => {
+        const totalMatches = Math.floor(totalSlots / 2);
+        const effectiveSeedCount = Math.max(0, Math.min(seedCount, totalMatches));
+        if (effectiveSeedCount === 0 || totalMatches === 0) return [] as number[];
+
+        const order = buildSeedOrder(effectiveSeedCount);
+        const linesBySeed: number[] = Array.from({ length: effectiveSeedCount }, () => 0);
+
+        for (let zoneIndex = 0; zoneIndex < effectiveSeedCount; zoneIndex++) {
+            const seedNumber = order[zoneIndex];
+            const zoneStartMatch = Math.floor((zoneIndex * totalMatches) / effectiveSeedCount) + 1;
+            const zoneEndMatch = Math.max(zoneStartMatch, Math.floor(((zoneIndex + 1) * totalMatches) / effectiveSeedCount));
+            const targetMatch = zoneIndex % 2 === 0 ? zoneStartMatch : zoneEndMatch;
+            const targetLine = zoneIndex % 2 === 0
+                ? ((targetMatch - 1) * 2) + 1
+                : ((targetMatch - 1) * 2) + 2;
+            linesBySeed[seedNumber - 1] = targetLine;
+        }
+
+        return linesBySeed;
+    };
+
+    const buildRoundRobinSeedSlots = () => {
+        const groupSlots = roundRobinGroupNames.map((groupName) => ({
+            groupName,
+            count: getRoundRobinSlots(tournamentMaxPlayers, groupName, tournamentFormat, tournament?.description).length
+        }));
+        const maxRows = groupSlots.reduce((accumulator, groupSlot) => Math.max(accumulator, groupSlot.count), 0);
+        const slots: Array<{ groupName: string; slotIndex: number }> = [];
+
+        for (let row = 0; row < maxRows; row++) {
+            const rowOrder = row % 2 === 0 ? groupSlots : [...groupSlots].reverse();
+            rowOrder.forEach((groupSlot) => {
+                if (row < groupSlot.count) {
+                    slots.push({ groupName: groupSlot.groupName, slotIndex: row });
+                }
+            });
+        }
+
+        return slots;
+    };
+
+    const getUniqueRegisteredPlayerIds = () =>
+        players
+            .map((registration) => String(registration.player_id || '').trim())
+            .filter((playerId, index, allPlayerIds) => UUID_PATTERN.test(playerId) && allPlayerIds.indexOf(playerId) === index);
+
+    const getSeedingContext = () => {
+        const totalSlots = isRoundRobin
+            ? buildRoundRobinSeedSlots().length
+            : matches
+                .filter((match) =>
+                    !String(match.round || '').startsWith('Grupo ') &&
+                    !/^Consolaci/i.test(String(match.round || '')) &&
+                    !String(match.round || '').includes('RR') &&
+                    Number(match.round_number || 0) === 1
+                ).length * 2;
+
+        const registeredCount = getUniqueRegisteredPlayerIds().length;
+        const registeredUnits = IS_DOUBLES
+            ? Math.ceil(registeredCount / 2)
+            : registeredCount;
+        const maxSeedable = Math.max(0, Math.min(totalSlots, registeredUnits));
+        const recommended = totalSlots >= 8
+            ? Math.floor(totalSlots / 4)
+            : (totalSlots >= 4 ? 2 : Math.min(1, totalSlots));
+
+        return {
+            totalSlots,
+            maxSeedable,
+            recommended: Math.max(0, Math.min(maxSeedable, recommended))
+        };
+    };
+
+    const buildRankingMapForParticipants = async (playerIds: string[]) => {
+        if (!playerIds.length || !tournament?.organization_id || !tournament?.level) {
+            return {} as Record<string, number>;
+        }
+
+        const { data: rankingTournaments, error: rankingTournamentsError } = await supabase
+            .from('tournaments')
+            .select('id, description, format, status, modality')
+            .eq('organization_id', tournament.organization_id)
+            .eq('level', tournament.level)
+            .in('status', ['completed', 'finalized', 'finished']);
+
+        if (rankingTournamentsError) throw rankingTournamentsError;
+
+        const filteredRankingTournaments = (rankingTournaments || []).filter((rankingTournament: any) => {
+            if (String(tournament?.modality || '').toLowerCase() === 'dobles') return rankingTournament.modality === 'dobles';
+            return !rankingTournament.modality || rankingTournament.modality === 'singles';
+        });
+
+        if (!filteredRankingTournaments.length) {
+            return playerIds.reduce((acc: Record<string, number>, playerId) => {
+                acc[playerId] = 0;
+                return acc;
+            }, {});
+        }
+
+        const rankingTournamentIds = filteredRankingTournaments.map((rankingTournament: any) => rankingTournament.id);
+        const { data: rankingMatches, error: rankingMatchesError } = await supabase
+            .from('matches')
+            .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, round_number, match_order, score, status')
+            .in('tournament_id', rankingTournamentIds);
+
+        if (rankingMatchesError) throw rankingMatchesError;
+
+        const rankingMatchesByTournament = (rankingMatches || []).reduce((acc: Record<string, any[]>, match: any) => {
+            acc[match.tournament_id] = [...(acc[match.tournament_id] || []), match];
+            return acc;
+        }, {});
+
+        const rankingTotals: Record<string, number> = {};
+        filteredRankingTournaments.forEach((rankingTournament: any) => {
+            const placements = getTournamentPlacements(rankingTournament, rankingMatchesByTournament[rankingTournament.id] || []);
+            placements.forEach((placement) => {
+                if (placement.playerId) {
+                    rankingTotals[placement.playerId] = (rankingTotals[placement.playerId] || 0) + (Number(placement.points) || 0);
+                }
+                if (placement.playerId2) {
+                    rankingTotals[placement.playerId2] = (rankingTotals[placement.playerId2] || 0) + (Number(placement.points) || 0);
+                }
+            });
+        });
+
+        return playerIds.reduce((acc: Record<string, number>, playerId) => {
+            acc[playerId] = rankingTotals[playerId] || 0;
+            return acc;
+        }, {});
+    };
+
+    const buildRegisteredSinglesEntries = (rankingMap: Record<string, number>) =>
+        players
+            .map((registration) => String(registration.player_id || '').trim())
+            .filter((playerId, index, allPlayerIds) => UUID_PATTERN.test(playerId) && allPlayerIds.indexOf(playerId) === index)
+            .sort((leftId, rightId) => {
+                const pointsDiff = (rankingMap[rightId] || 0) - (rankingMap[leftId] || 0);
+                if (pointsDiff !== 0) return pointsDiff;
+                return getPlayerName(leftId).localeCompare(getPlayerName(rightId));
+            })
+            .map((playerId) => ({
+                kind: 'registered' as const,
+                p1Id: playerId,
+                p1Name: getPlayerName(playerId),
+                rankPoints: rankingMap[playerId] || 0
+            }));
+
+    const buildManualSinglesEntries = (manualNames: string[]) => {
+        const seen = new Set<string>();
+        const uniqueManualNames = manualNames
+            .map((manualName) => String(manualName || '').trim())
+            .filter((manualName) => !isPlaceholderName(manualName) && !isByeName(manualName))
+            .filter((manualName) => {
+                const key = normalizeManualNameKey(manualName);
+                if (!key || seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+
+        return shuffleArray(uniqueManualNames).map((manualName) => ({
+            kind: 'manual' as const,
+            p1Id: null,
+            p1Name: manualName,
+            rankPoints: -1
+        }));
+    };
+
+    const buildManualDoublesEntries = (manualTeams: ManualDoublesTeam[]) => {
+        const seen = new Set<string>();
+        const uniqueTeams = manualTeams
+            .map((team) => ({
+                p1Name: String(team?.p1Name || '').trim(),
+                p2Name: String(team?.p2Name || '').trim(),
+                p1Id: UUID_PATTERN.test(String(team?.p1Id || '').trim()) ? String(team?.p1Id || '').trim() : null,
+                p2Id: UUID_PATTERN.test(String(team?.p2Id || '').trim()) ? String(team?.p2Id || '').trim() : null
+            }))
+            .filter((team) => team.p1Name && team.p2Name)
+            .filter((team) => !(team.p1Id && team.p2Id))
+            .filter((team) => {
+                if (isPlaceholderName(team.p1Name) || isPlaceholderName(team.p2Name)) return false;
+                if (isByeName(team.p1Name) || isByeName(team.p2Name)) return false;
+                const teamKey = buildManualDoublesTeamKey(team);
+                if (!teamKey || seen.has(teamKey)) return false;
+                seen.add(teamKey);
+                return true;
+            });
+
+        return shuffleArray(uniqueTeams).map((team) => ({
+            kind: 'manual' as const,
+            p1Id: null,
+            p2Id: null,
+            p1Name: team.p1Name,
+            p2Name: team.p2Name,
+            rankPoints: -1
+        }));
+    };
+
+    const buildRegisteredDoublesEntries = (rankingMap: Record<string, number>) => {
+        const registeredPlayerIds = players
+            .map((registration) => String(registration.player_id || '').trim())
+            .filter((playerId, index, allPlayerIds) => UUID_PATTERN.test(playerId) && allPlayerIds.indexOf(playerId) === index)
+            .sort((leftId, rightId) => {
+                const pointsDiff = (rankingMap[rightId] || 0) - (rankingMap[leftId] || 0);
+                if (pointsDiff !== 0) return pointsDiff;
+                return getPlayerName(leftId).localeCompare(getPlayerName(rightId));
+            });
+
+        const doublesEntries: Array<{
+            kind: 'registered';
+            p1Id: string;
+            p2Id: string | null;
+            p1Name: string;
+            p2Name: string | null;
+            rankPoints: number;
+        }> = [];
+        const usedPlayerIds = new Set<string>();
+
+        manualDoublesTeams.forEach((team) => {
+            const p1Id = String(team.p1Id || '').trim();
+            const p2Id = String(team.p2Id || '').trim();
+            if (!UUID_PATTERN.test(p1Id) || !UUID_PATTERN.test(p2Id)) return;
+            if (!registeredPlayerIds.includes(p1Id) || !registeredPlayerIds.includes(p2Id)) return;
+            if (usedPlayerIds.has(p1Id) || usedPlayerIds.has(p2Id)) return;
+
+            usedPlayerIds.add(p1Id);
+            usedPlayerIds.add(p2Id);
+            doublesEntries.push({
+                kind: 'registered',
+                p1Id,
+                p2Id,
+                p1Name: getPlayerName(p1Id),
+                p2Name: getPlayerName(p2Id),
+                rankPoints: (rankingMap[p1Id] || 0) + (rankingMap[p2Id] || 0)
+            });
+        });
+
+        const sortedPlayers = registeredPlayerIds.filter((playerId) => !usedPlayerIds.has(playerId));
+
+        for (let index = 0; index < sortedPlayers.length; index += 2) {
+            const player1 = sortedPlayers[index];
+            const player2 = sortedPlayers[index + 1] || null;
+            doublesEntries.push({
+                kind: 'registered',
+                p1Id: player1,
+                p2Id: player2,
+                p1Name: getPlayerName(player1),
+                p2Name: player2 ? getPlayerName(player2) : null,
+                rankPoints: (rankingMap[player1] || 0) + (player2 ? (rankingMap[player2] || 0) : 0)
+            });
+        }
+
+        return doublesEntries.sort((leftEntry, rightEntry) => {
+            const pointsDiff = (rightEntry.rankPoints || 0) - (leftEntry.rankPoints || 0);
+            if (pointsDiff !== 0) return pointsDiff;
+            const leftName = `${leftEntry.p1Name} ${leftEntry.p2Name || ''}`.trim();
+            const rightName = `${rightEntry.p1Name} ${rightEntry.p2Name || ''}`.trim();
+            return leftName.localeCompare(rightName);
+        });
+    };
+
+    const buildByeEntries = (count: number, isDoubles = false) =>
+        Array.from({ length: Math.max(0, count) }, () => ({
+            kind: 'bye' as const,
+            p1Id: null,
+            p2Id: null,
+            p1Name: 'BYE',
+            p2Name: isDoubles ? 'BYE' : null,
+            rankPoints: -9999
+        }));
+
+    const getEntryPlayerValue = (entry: any, member: GroupMember | 1) => {
+        if (!entry) return null;
+        if (entry.kind !== 'registered') return null;
+        if (member === 1) {
+            return entry.p1Id || null;
+        }
+        return entry.p2Id || null;
+    };
+
+    const applyMatchPatchLocally = useCallback((matchId: string, patch: Record<string, any>) => {
+        setMatches((currentMatches) =>
+            currentMatches.map((candidate) =>
+                candidate.id === matchId ? { ...candidate, ...patch } : candidate
+            )
+        );
+    }, []);
+
+    const extractManualSinglesNamesFromMainBracket = (firstRoundMatches: any[]) => {
+        const uniqueNames = new Set<string>();
+        const addName = (name?: string | null) => {
+            const normalizedName = String(name || '').trim();
+            if (!normalizedName || isPlaceholderName(normalizedName) || isByeName(normalizedName)) return;
+            uniqueNames.add(normalizedName);
+        };
+
+        firstRoundMatches.forEach((match) => {
+            addName(getAssignedNameForMatchSlot(match.id, 1));
+            addName(getAssignedNameForMatchSlot(match.id, 3));
+        });
+        return [...uniqueNames];
+    };
+
+    const extractManualDoublesTeamsFromMainBracket = (firstRoundMatches: any[]) => {
+        const uniqueTeams = new Set<string>();
+        const parsedTeams: Array<{ p1Name: string; p2Name: string }> = [];
+
+        const addTeam = (p1Raw?: string | null, p2Raw?: string | null) => {
+            const p1Name = String(p1Raw || '').trim();
+            const p2Name = String(p2Raw || '').trim();
+            if (!p1Name || !p2Name) return;
+            if (isPlaceholderName(p1Name) || isPlaceholderName(p2Name)) return;
+            if (isByeName(p1Name) || isByeName(p2Name)) return;
+            const teamKey = `${p1Name.toUpperCase()}::${p2Name.toUpperCase()}`;
+            if (uniqueTeams.has(teamKey)) return;
+            uniqueTeams.add(teamKey);
+            parsedTeams.push({ p1Name, p2Name });
+        };
+
+        firstRoundMatches.forEach((match) => {
+            addTeam(getAssignedNameForMatchSlot(match.id, 1), getAssignedNameForMatchSlot(match.id, 2));
+            addTeam(getAssignedNameForMatchSlot(match.id, 3), getAssignedNameForMatchSlot(match.id, 4));
+        });
+
+        return parsedTeams;
+    };
+
+    const extractManualSinglesNamesFromGroups = () => {
+        const uniqueNames = new Set<string>();
+        const addName = (name?: string | null) => {
+            const normalizedName = String(name || '').trim();
+            if (!normalizedName || isPlaceholderName(normalizedName) || isByeName(normalizedName)) return;
+            uniqueNames.add(normalizedName);
+        };
+
+        roundRobinGroupNames.forEach((groupName) => {
+            const slotCount = getRoundRobinSlots(tournamentMaxPlayers, groupName, tournamentFormat, tournament?.description).length;
+            for (let slotIndex = 0; slotIndex < slotCount; slotIndex++) {
+                addName(getAssignedNameForGroupSlot(groupName, slotIndex, 1));
+            }
+        });
+        return [...uniqueNames];
+    };
+
+    const extractManualDoublesTeamsFromGroups = () => {
+        const uniqueTeams = new Set<string>();
+        const parsedTeams: Array<{ p1Name: string; p2Name: string }> = [];
+
+        roundRobinGroupNames.forEach((groupName) => {
+            const slotCount = getRoundRobinSlots(tournamentMaxPlayers, groupName, tournamentFormat, tournament?.description).length;
+            for (let slotIndex = 0; slotIndex < slotCount; slotIndex++) {
+                const p1Name = String(getAssignedNameForGroupSlot(groupName, slotIndex, 1) || '').trim();
+                const p2Name = String(getAssignedNameForGroupSlot(groupName, slotIndex, 2) || '').trim();
+                if (!p1Name || !p2Name) continue;
+                if (isPlaceholderName(p1Name) || isPlaceholderName(p2Name)) continue;
+                if (isByeName(p1Name) || isByeName(p2Name)) continue;
+                const teamKey = `${p1Name.toUpperCase()}::${p2Name.toUpperCase()}`;
+                if (uniqueTeams.has(teamKey)) continue;
+                uniqueTeams.add(teamKey);
+                parsedTeams.push({ p1Name, p2Name });
+            }
+        });
+
+        return parsedTeams;
+    };
+
+    const seedEliminationBracket = async (rankingMap: Record<string, number>, requestedSeedCount: number) => {
+        const firstRoundMatches = matches
+            .filter((match) =>
+                !String(match.round || '').startsWith('Grupo ') &&
+                !/^Consolaci/i.test(String(match.round || '')) &&
+                !String(match.round || '').includes('RR') &&
+                Number(match.round_number || 0) === 1
+            )
+            .sort((leftMatch, rightMatch) => (leftMatch.match_order || 0) - (rightMatch.match_order || 0));
+
+        if (!firstRoundMatches.length) {
+            Alert.alert('Información', 'No hay llaves iniciales disponibles para sembrar.');
+            return;
+        }
+
+        const totalSlots = firstRoundMatches.length * 2;
+        let registeredEntries: any[] = [];
+        let manualEntries: any[] = [];
+        if (IS_DOUBLES) {
+            registeredEntries = buildRegisteredDoublesEntries(rankingMap);
+            manualEntries = buildManualDoublesEntries([
+                ...extractManualDoublesTeamsFromMainBracket(firstRoundMatches),
+                ...manualDoublesTeams
+            ]);
+        } else {
+            registeredEntries = buildRegisteredSinglesEntries(rankingMap);
+            const manualSingles = [...extractManualSinglesNamesFromMainBracket(firstRoundMatches), ...manualParticipantSingles];
+            manualEntries = buildManualSinglesEntries(manualSingles);
+        }
+
+        if (!registeredEntries.length && !manualEntries.length) {
+            Alert.alert('Información', 'No hay participantes para sembrar todavía.');
+            return;
+        }
+
+        const maxSeedable = registeredEntries.length;
+        const normalizedSeedCount = Math.max(0, Math.min(Math.floor(requestedSeedCount || 0), maxSeedable));
+        const seedLineBySeed = buildSeedLinesForDraw(totalSlots, normalizedSeedCount);
+        const seededRegisteredEntries = registeredEntries.slice(0, normalizedSeedCount);
+        const nonSeededCompetitiveEntries = shuffleArray([
+            ...registeredEntries.slice(normalizedSeedCount),
+            ...manualEntries
+        ]);
+        const participantEntries = [...seededRegisteredEntries, ...nonSeededCompetitiveEntries];
+        const byeEntries = buildByeEntries(
+            Math.max(0, totalSlots - participantEntries.length),
+            IS_DOUBLES
+        );
+        const defaultEntry: any = buildByeEntries(1, IS_DOUBLES)[0];
+        const slotAssignments: any[] = Array.from({ length: totalSlots }, () => null);
+
+        seededRegisteredEntries.forEach((entry, seedIndex) => {
+            const drawLine = seedLineBySeed[seedIndex] || (seedIndex + 1);
+            slotAssignments[drawLine - 1] = entry || null;
+        });
+
+        const allLines = Array.from({ length: totalSlots }, (_unused, index) => index + 1);
+        const remainingLines = allLines.filter((line) => !slotAssignments[line - 1]);
+
+        const preferredByeLines: number[] = [];
+        seededRegisteredEntries.forEach((_entry, seedIndex) => {
+            const seededLine = seedLineBySeed[seedIndex] || (seedIndex + 1);
+            const opponentLine = seededLine % 2 === 1 ? seededLine + 1 : seededLine - 1;
+            if (!remainingLines.includes(opponentLine)) return;
+            if (preferredByeLines.includes(opponentLine)) return;
+            preferredByeLines.push(opponentLine);
+        });
+
+        let pendingByeEntries = [...byeEntries];
+        preferredByeLines.forEach((line) => {
+            if (!pendingByeEntries.length) return;
+            if (slotAssignments[line - 1]) return;
+            slotAssignments[line - 1] = pendingByeEntries[0];
+            pendingByeEntries = pendingByeEntries.slice(1);
+        });
+
+        const openLines = allLines.filter((line) => !slotAssignments[line - 1]);
+        const randomizedOpenLines = shuffleArray(openLines);
+        const remainingPool = shuffleArray([
+            ...nonSeededCompetitiveEntries,
+            ...pendingByeEntries
+        ]);
+
+        randomizedOpenLines.forEach((line, index) => {
+            slotAssignments[line - 1] = remainingPool[index] || defaultEntry;
+        });
+
+        slotAssignments.forEach((entry, index) => {
+            if (!entry) slotAssignments[index] = defaultEntry;
+        });
+
+        const matchSlots: Record<string, Record<string, { name: string }>> = {};
+
+        for (let matchIndex = 0; matchIndex < firstRoundMatches.length; matchIndex++) {
+            const match = firstRoundMatches[matchIndex];
+            const slotA = slotAssignments[matchIndex * 2];
+            const slotB = slotAssignments[(matchIndex * 2) + 1];
+
+            const updatePayload: any = {
+                player_a_id: getEntryPlayerValue(slotA, 1),
+                player_b_id: getEntryPlayerValue(slotB, 1),
+                score: null,
+                winner_id: null,
+                winner_2_id: null,
+                status: 'pending'
+            };
+
+            if (IS_DOUBLES) {
+                updatePayload.player_a2_id = getEntryPlayerValue(slotA, 2);
+                updatePayload.player_b2_id = getEntryPlayerValue(slotB, 2);
+            }
+
+            const { error } = await supabase
+                .from('matches')
+                .update(updatePayload)
+                .eq('id', match.id);
+
+            if (error) throw error;
+
+            if (slotA?.kind !== 'registered') {
+                matchSlots[match.id] = {
+                    ...(matchSlots[match.id] || {}),
+                    [getMatchManualKey(1)]: { name: slotA.p1Name }
+                };
+                if (IS_DOUBLES && slotA.p2Name) {
+                    matchSlots[match.id][getMatchManualKey(2)] = { name: slotA.p2Name };
+                }
+            }
+
+            if (slotB?.kind !== 'registered') {
+                matchSlots[match.id] = {
+                    ...(matchSlots[match.id] || {}),
+                    [getMatchManualKey(3)]: { name: slotB.p1Name }
+                };
+                if (IS_DOUBLES && slotB.p2Name) {
+                    matchSlots[match.id][getMatchManualKey(4)] = { name: slotB.p2Name };
+                }
+            }
+        }
+
+        const firstRoundIds = new Set(firstRoundMatches.map((match) => match.id));
+        const dependentMatches = matches.filter((match) => !firstRoundIds.has(match.id));
+        for (const dependentMatch of dependentMatches) {
+            const resetPayload: any = {
+                player_a_id: null,
+                player_b_id: null,
+                score: null,
+                winner_id: null,
+                winner_2_id: null,
+                status: 'pending'
+            };
+            if (IS_DOUBLES) {
+                resetPayload.player_a2_id = null;
+                resetPayload.player_b2_id = null;
+            }
+
+            const { error } = await supabase.from('matches').update(resetPayload).eq('id', dependentMatch.id);
+            if (error) throw error;
+        }
+
+        await updateTournamentDescription(() => ({
+            rrSlots: {},
+            matchSlots
+        }));
+    };
+
+    const seedRoundRobinGroups = async (rankingMap: Record<string, number>, requestedSeedCount: number) => {
+        const roundRobinSlots = buildRoundRobinSeedSlots();
+        if (!roundRobinSlots.length) {
+            Alert.alert('Información', 'No hay cupos disponibles para sembrar en grupos.');
+            return;
+        }
+
+        let registeredEntries: any[] = [];
+        let manualEntries: any[] = [];
+        if (IS_DOUBLES) {
+            registeredEntries = buildRegisteredDoublesEntries(rankingMap);
+            manualEntries = buildManualDoublesEntries([
+                ...extractManualDoublesTeamsFromGroups(),
+                ...manualDoublesTeams
+            ]);
+        } else {
+            registeredEntries = buildRegisteredSinglesEntries(rankingMap);
+            const manualSingles = [...extractManualSinglesNamesFromGroups(), ...manualParticipantSingles];
+            manualEntries = buildManualSinglesEntries(manualSingles);
+        }
+
+        if (!registeredEntries.length && !manualEntries.length) {
+            Alert.alert('Información', 'No hay participantes para sembrar todavía.');
+            return;
+        }
+
+        const totalGroupSlots = roundRobinSlots.length;
+        const maxSeedable = registeredEntries.length;
+        const normalizedSeedCount = Math.max(0, Math.min(Math.floor(requestedSeedCount || 0), maxSeedable));
+        const seededRegisteredEntries = registeredEntries.slice(0, normalizedSeedCount);
+        const remainingEntries = shuffleArray([
+            ...registeredEntries.slice(normalizedSeedCount),
+            ...manualEntries,
+            ...buildByeEntries(
+                Math.max(0, totalGroupSlots - (registeredEntries.length + manualEntries.length)),
+                IS_DOUBLES
+            )
+        ]).slice(0, Math.max(0, totalGroupSlots - seededRegisteredEntries.length));
+        const randomizedEntries = [...seededRegisteredEntries, ...remainingEntries].slice(0, totalGroupSlots);
+        const assignmentsByGroup = roundRobinSlots.reduce((acc: Record<string, Record<number, any>>, slot, slotIndex) => {
+            acc[slot.groupName] = acc[slot.groupName] || {};
+            acc[slot.groupName][slot.slotIndex] = randomizedEntries[slotIndex];
+            return acc;
+        }, {});
+
+        const rrSlots: Record<string, Record<string, { name: string }>> = {};
+
+        for (const groupName of roundRobinGroupNames) {
+            const groupMatches = [...(roundRobinMatchesByGroup[groupName] || [])].sort(
+                (leftMatch, rightMatch) => (leftMatch.match_order || 0) - (rightMatch.match_order || 0)
+            );
+            const slotCount = getRoundRobinSlots(tournamentMaxPlayers, groupName, tournamentFormat, tournament?.description).length;
+            const pairings = getRoundRobinPairings(slotCount);
+            const groupAssignments = assignmentsByGroup[groupName] || {};
+
+            for (let matchIndex = 0; matchIndex < groupMatches.length; matchIndex++) {
+                const match = groupMatches[matchIndex];
+                const pairing = pairings[matchIndex];
+                if (!pairing) continue;
+                const slotA = groupAssignments[pairing[0]];
+                const slotB = groupAssignments[pairing[1]];
+
+                const updatePayload: any = {
+                    player_a_id: getEntryPlayerValue(slotA, 1),
+                    player_b_id: getEntryPlayerValue(slotB, 1),
+                    score: null,
+                    winner_id: null,
+                    winner_2_id: null,
+                    status: 'pending'
+                };
+                if (IS_DOUBLES) {
+                    updatePayload.player_a2_id = getEntryPlayerValue(slotA, 2);
+                    updatePayload.player_b2_id = getEntryPlayerValue(slotB, 2);
+                }
+
+                const { error } = await supabase
+                    .from('matches')
+                    .update(updatePayload)
+                    .eq('id', match.id);
+
+                if (error) throw error;
+            }
+
+            Object.entries(groupAssignments).forEach(([slotKeyRaw, entry]) => {
+                const slotIndex = Number(slotKeyRaw);
+                if (!entry || entry.kind === 'registered') return;
+                rrSlots[groupName] = rrSlots[groupName] || {};
+                rrSlots[groupName][getGroupManualKey(slotIndex, 1)] = { name: entry.p1Name };
+                if (IS_DOUBLES && entry.p2Name) {
+                    rrSlots[groupName][getGroupManualKey(slotIndex, 2)] = { name: entry.p2Name };
+                }
+            });
+        }
+
+        for (const finalMatch of finalRoundRobinMatches) {
+            const resetPayload: any = {
+                player_a_id: null,
+                player_b_id: null,
+                score: null,
+                winner_id: null,
+                winner_2_id: null,
+                status: 'pending'
+            };
+            if (IS_DOUBLES) {
+                resetPayload.player_a2_id = null;
+                resetPayload.player_b2_id = null;
+            }
+            const { error } = await supabase.from('matches').update(resetPayload).eq('id', finalMatch.id);
+            if (error) throw error;
+        }
+
+        await updateTournamentDescription(() => ({
+            rrSlots,
+            matchSlots: {}
+        }));
+    };
+
+    const runAutoSeeding = async (requestedSeedCount: number) => {
+        setIsSeeding(true);
+        try {
+            const registeredPlayerIds = players
+                .map((registration) => String(registration.player_id || '').trim())
+                .filter((playerId, index, allPlayerIds) => UUID_PATTERN.test(playerId) && allPlayerIds.indexOf(playerId) === index);
+            const rankingMap = await buildRankingMapForParticipants(registeredPlayerIds);
+
+            if (isRoundRobin) {
+                await seedRoundRobinGroups(rankingMap, requestedSeedCount);
+            } else {
+                await seedEliminationBracket(rankingMap, requestedSeedCount);
+            }
+
+            await loadTournamentData();
+            Alert.alert('Éxito', 'Sembrado realizado correctamente.');
+        } catch (error: any) {
+            const detail = String(error?.message || '').trim();
+            Alert.alert(
+                'Error',
+                detail
+                    ? `No se pudo completar el sembrado automático. ${detail}`
+                    : 'No se pudo completar el sembrado automático.'
+            );
+        } finally {
+            setIsSeeding(false);
+        }
+    };
+
+    const handleSeedTournament = () => {
+        const seedingContext = getSeedingContext();
+        if (seedingContext.totalSlots <= 0) {
+            Alert.alert('Información', 'No hay cupos disponibles para sembrar todavía.');
+            return;
+        }
+
+        setSeedCountLimit(seedingContext.maxSeedable);
+        setSeedCountInput(String(seedingContext.recommended));
+        setIsSeedCountModalVisible(true);
+    };
+
+    const handleConfirmSeedCount = () => {
+        const parsedValue = Number(seedCountInput.replace(/\D/g, ''));
+        if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+            Alert.alert('Error', 'Ingresa una cantidad válida de sembrados.');
+            return;
+        }
+
+        const normalizedSeedCount = Math.max(0, Math.min(Math.floor(parsedValue), seedCountLimit));
+        setIsSeedCountModalVisible(false);
+        runAutoSeeding(normalizedSeedCount);
+    };
+
     const ensureRegisteredPlayer = async (profileId: string) => {
         const existingPlayer = players.find(p => p.player_id === profileId);
         if (existingPlayer) return;
@@ -883,6 +2160,7 @@ export default function AdminTournamentDetailScreen() {
                     .eq('id', match.id);
 
                 if (error) throw error;
+                applyMatchPatchLocally(match.id, updateData);
             }
 
             await updateTournamentDescription(current => {
@@ -891,7 +2169,10 @@ export default function AdminTournamentDetailScreen() {
                     matchSlots: { ...(current.matchSlots || {}) }
                 };
                 if (next.rrSlots[groupName]) {
-                    delete next.rrSlots[groupName][String(slotIndex)];
+                    delete next.rrSlots[groupName][getGroupManualKey(slotIndex, member)];
+                    if (!IS_DOUBLES && member === 2) {
+                        delete next.rrSlots[groupName][String(slotIndex)];
+                    }
                     if (Object.keys(next.rrSlots[groupName]).length === 0) delete next.rrSlots[groupName];
                 }
                 return next;
@@ -913,6 +2194,7 @@ export default function AdminTournamentDetailScreen() {
             .eq('id', matchId);
 
         if (error) throw error;
+        applyMatchPatchLocally(matchId, updateData);
 
         await updateTournamentDescription(current => {
             const next = {
@@ -920,44 +2202,246 @@ export default function AdminTournamentDetailScreen() {
                 matchSlots: { ...(current.matchSlots || {}) }
             };
             if (next.matchSlots[matchId]) {
-                delete next.matchSlots[matchId][slot === 1 ? 'player_a' : 'player_b'];
+                delete next.matchSlots[matchId][getMatchManualKey(slot)];
+                if (!IS_DOUBLES && (slot === 2 || slot === 4)) {
+                    delete next.matchSlots[matchId][getMatchManualFallbackKey(slot)];
+                }
                 if (Object.keys(next.matchSlots[matchId]).length === 0) delete next.matchSlots[matchId];
             }
             return next;
         });
     };
 
-    const createManualProfileAndAssign = async (name: string) => {
+    const assignDoublesTeamToSelectedSlot = async (team: ManualDoublesTeamRow) => {
+        if (!IS_DOUBLES) return;
+        if (!selectedSlot && !selectedGroupSlot) return;
+
+        const currentTargetRegisteredIds = new Set<string>();
+        if (selectedSlot) {
+            const selectedMatchData = matches.find((match) => match.id === selectedSlot.matchId);
+            if (selectedMatchData) {
+                if (selectedSlot.slot === 1 || selectedSlot.slot === 2) {
+                    [selectedMatchData.player_a_id, selectedMatchData.player_a2_id].forEach((playerId) => {
+                        const normalizedId = String(playerId || '').trim();
+                        if (UUID_PATTERN.test(normalizedId)) currentTargetRegisteredIds.add(normalizedId);
+                    });
+                } else {
+                    [selectedMatchData.player_b_id, selectedMatchData.player_b2_id].forEach((playerId) => {
+                        const normalizedId = String(playerId || '').trim();
+                        if (UUID_PATTERN.test(normalizedId)) currentTargetRegisteredIds.add(normalizedId);
+                    });
+                }
+            }
+        }
+
+        if (selectedGroupSlot) {
+            const { groupName, slotIndex } = selectedGroupSlot;
+            const groupMatches = [...(roundRobinMatchesByGroup[groupName] || [])].sort(
+                (a, b) => (a.match_order || 0) - (b.match_order || 0)
+            );
+            const slotCount = getRoundRobinSlots(tournamentMaxPlayers, groupName, tournamentFormat, tournament?.description).length;
+            const pairings = getRoundRobinPairings(slotCount);
+            for (let index = 0; index < groupMatches.length; index++) {
+                const match = groupMatches[index];
+                const pairing = pairings[index];
+                if (!pairing) continue;
+                if (pairing[0] === slotIndex) {
+                    [match.player_a_id, match.player_a2_id].forEach((playerId) => {
+                        const normalizedId = String(playerId || '').trim();
+                        if (UUID_PATTERN.test(normalizedId)) currentTargetRegisteredIds.add(normalizedId);
+                    });
+                }
+                if (pairing[1] === slotIndex) {
+                    [match.player_b_id, match.player_b2_id].forEach((playerId) => {
+                        const normalizedId = String(playerId || '').trim();
+                        if (UUID_PATTERN.test(normalizedId)) currentTargetRegisteredIds.add(normalizedId);
+                    });
+                }
+            }
+        }
+
+        const candidateRegisteredIds = [team.p1Id, team.p2Id]
+            .map((playerId) => String(playerId || '').trim())
+            .filter((playerId) => UUID_PATTERN.test(playerId));
+
+        const hasConflict = candidateRegisteredIds.some(
+            (playerId) => assignedRegisteredPlayerIds.has(playerId) && !currentTargetRegisteredIds.has(playerId)
+        );
+        if (hasConflict) {
+            Alert.alert('Información', 'Esa dupla ya está asignada en otra llave/grupo.');
+            return;
+        }
+
+        if (selectedGroupSlot) {
+            const { groupName, slotIndex } = selectedGroupSlot;
+            const groupMatches = [...(roundRobinMatchesByGroup[groupName] || [])].sort(
+                (a, b) => (a.match_order || 0) - (b.match_order || 0)
+            );
+            const slotCount = getRoundRobinSlots(tournamentMaxPlayers, groupName, tournamentFormat, tournament?.description).length;
+            const pairings = getRoundRobinPairings(slotCount);
+
+            for (let index = 0; index < groupMatches.length; index++) {
+                const match = groupMatches[index];
+                const pairing = pairings[index];
+                if (!pairing) continue;
+
+                const updateData: any = {};
+                if (pairing[0] === slotIndex) {
+                    updateData.player_a_id = UUID_PATTERN.test(String(team.p1Id || '')) ? team.p1Id : null;
+                    updateData.player_a2_id = UUID_PATTERN.test(String(team.p2Id || '')) ? team.p2Id : null;
+                }
+                if (pairing[1] === slotIndex) {
+                    updateData.player_b_id = UUID_PATTERN.test(String(team.p1Id || '')) ? team.p1Id : null;
+                    updateData.player_b2_id = UUID_PATTERN.test(String(team.p2Id || '')) ? team.p2Id : null;
+                }
+                if (Object.keys(updateData).length === 0) continue;
+
+                const { error } = await supabase
+                    .from('matches')
+                    .update(updateData)
+                    .eq('id', match.id);
+                if (error) throw error;
+                applyMatchPatchLocally(match.id, updateData);
+            }
+
+            await updateTournamentDescription((current) => ({
+                rrSlots: {
+                    ...(current.rrSlots || {}),
+                    [groupName]: {
+                        ...((current.rrSlots || {})[groupName] || {}),
+                        [getGroupManualKey(slotIndex, 1)]: { name: team.p1Name },
+                        [getGroupManualKey(slotIndex, 2)]: { name: team.p2Name },
+                    }
+                },
+                matchSlots: { ...(current.matchSlots || {}) }
+            }));
+            return;
+        }
+
+        if (!selectedSlot) return;
+        const { matchId, slot } = selectedSlot;
+        const updateData: any = {};
+        if (slot === 1 || slot === 2) {
+            updateData.player_a_id = UUID_PATTERN.test(String(team.p1Id || '')) ? team.p1Id : null;
+            updateData.player_a2_id = UUID_PATTERN.test(String(team.p2Id || '')) ? team.p2Id : null;
+        } else {
+            updateData.player_b_id = UUID_PATTERN.test(String(team.p1Id || '')) ? team.p1Id : null;
+            updateData.player_b2_id = UUID_PATTERN.test(String(team.p2Id || '')) ? team.p2Id : null;
+        }
+
+        const { error } = await supabase
+            .from('matches')
+            .update(updateData)
+            .eq('id', matchId);
+        if (error) throw error;
+        applyMatchPatchLocally(matchId, updateData);
+
+        await updateTournamentDescription((current) => ({
+            rrSlots: { ...(current.rrSlots || {}) },
+            matchSlots: {
+                ...(current.matchSlots || {}),
+                [matchId]: {
+                    ...((current.matchSlots || {})[matchId] || {}),
+                    ...(slot === 1 || slot === 2
+                        ? {
+                            [getMatchManualKey(1)]: { name: team.p1Name },
+                            [getMatchManualKey(2)]: { name: team.p2Name },
+                        }
+                        : {
+                            [getMatchManualKey(3)]: { name: team.p1Name },
+                            [getMatchManualKey(4)]: { name: team.p2Name },
+                        })
+                }
+            }
+        }));
+    };
+
+    const createManualProfileAndAssign = async (name: string, keepModalOpen = assignmentTargets.length > 1) => {
         const trimmedName = name.trim();
         if (!trimmedName) {
             Alert.alert('Error', 'Ingresa un nombre para el jugador manual.');
             return;
         }
+        const assignPairBye = IS_DOUBLES && isByeName(trimmedName);
 
         try {
             await removeMatchPlayer(false, false);
 
+            if (assignPairBye && selectedSlot) {
+                const { matchId, slot } = selectedSlot;
+                const pairField =
+                    slot === 1
+                        ? 'player_a2_id'
+                        : slot === 2
+                            ? 'player_a_id'
+                            : slot === 3
+                                ? 'player_b2_id'
+                                : 'player_b_id';
+                const clearPairPayload: any = { [pairField]: null };
+                const { error: clearPairError } = await supabase
+                    .from('matches')
+                    .update(clearPairPayload)
+                    .eq('id', matchId);
+                if (clearPairError) throw clearPairError;
+                applyMatchPatchLocally(matchId, clearPairPayload);
+            }
+
+            if (assignPairBye && selectedGroupSlot) {
+                const { groupName, slotIndex, member } = selectedGroupSlot;
+                const pairMember = member === 2 ? 1 : 2;
+                const groupMatches = [...(roundRobinMatchesByGroup[groupName] || [])].sort(
+                    (a, b) => (a.match_order || 0) - (b.match_order || 0)
+                );
+                const slotCount = getRoundRobinSlots(tournamentMaxPlayers, groupName, tournamentFormat, tournament?.description).length;
+                const pairings = getRoundRobinPairings(slotCount);
+
+                for (let index = 0; index < groupMatches.length; index++) {
+                    const match = groupMatches[index];
+                    const pairing = pairings[index];
+                    if (!pairing) continue;
+
+                    const updateData: any = {};
+                    if (pairing[0] === slotIndex) {
+                        updateData[pairMember === 2 ? 'player_a2_id' : 'player_a_id'] = null;
+                    }
+                    if (pairing[1] === slotIndex) {
+                        updateData[pairMember === 2 ? 'player_b2_id' : 'player_b_id'] = null;
+                    }
+                    if (Object.keys(updateData).length === 0) continue;
+
+                    const { error } = await supabase
+                        .from('matches')
+                        .update(updateData)
+                        .eq('id', match.id);
+                    if (error) throw error;
+                    applyMatchPatchLocally(match.id, updateData);
+                }
+            }
+
             if (selectedGroupSlot) {
-                const { groupName, slotIndex } = selectedGroupSlot;
+                const { groupName, slotIndex, member } = selectedGroupSlot;
                 await updateTournamentDescription(current => ({
                     rrSlots: {
                         ...(current.rrSlots || {}),
                         [groupName]: {
                             ...((current.rrSlots || {})[groupName] || {}),
-                            [String(slotIndex)]: { name: trimmedName }
+                            [getGroupManualKey(slotIndex, member)]: { name: trimmedName },
+                            ...(assignPairBye ? { [getGroupManualKey(slotIndex, member === 2 ? 1 : 2)]: { name: 'BYE' } } : {})
                         }
                     },
                     matchSlots: { ...(current.matchSlots || {}) }
                 }));
             } else if (selectedSlot) {
                 const { matchId, slot } = selectedSlot;
+                const pairSlot = slot === 1 ? 2 : slot === 2 ? 1 : slot === 3 ? 4 : 3;
                 await updateTournamentDescription(current => ({
                     rrSlots: { ...(current.rrSlots || {}) },
                     matchSlots: {
                         ...(current.matchSlots || {}),
                         [matchId]: {
                             ...((current.matchSlots || {})[matchId] || {}),
-                            [slot === 1 ? 'player_a' : 'player_b']: { name: trimmedName }
+                            [getMatchManualKey(slot)]: { name: trimmedName },
+                            ...(assignPairBye ? { [getMatchManualKey(pairSlot)]: { name: 'BYE' } } : {})
                         }
                     }
                 }));
@@ -965,32 +2449,189 @@ export default function AdminTournamentDetailScreen() {
                 return;
             }
 
-            await loadTournamentData();
             setManualPlayerName('');
-            setSelectedSlot(null);
-            setSelectedGroupSlot(null);
+            setManualPlayerName2('');
             setSearchQuery('');
             setSearchResults([]);
-            setIsPlayerModalVisible(false);
+            if (keepModalOpen && assignmentTargets.length > 1) {
+                moveToNextAssignmentTarget();
+            } else {
+                closePlayerSelectionModal();
+            }
         } catch (error) {
             Alert.alert('Error', 'No se pudo crear el jugador manual.');
         }
     };
 
+    const addManualParticipantToPool = async (
+        name: string,
+        secondName?: string | null,
+        options?: { p1Id?: string | null; p2Id?: string | null }
+    ) => {
+        const trimmedName = String(name || '').trim();
+        const trimmedSecondName = String(secondName || '').trim();
+        if (!trimmedName) {
+            Alert.alert('Error', IS_DOUBLES ? 'Ingresa el nombre del Jugador 1.' : 'Ingresa un nombre para el participante manual.');
+            return;
+        }
+
+        if (isByeName(trimmedName) || (IS_DOUBLES && isByeName(trimmedSecondName))) {
+            Alert.alert('Información', 'El valor BYE solo puede asignarse desde una llave o grupo.');
+            return;
+        }
+
+        if (IS_DOUBLES && !trimmedSecondName) {
+            Alert.alert('Error', 'Ingresa el nombre del Jugador 2 para crear la dupla.');
+            return;
+        }
+
+        try {
+            await updateTournamentManualParticipants((current) => {
+                const nextSingles = [...(current.singles || [])];
+                const nextDoubles = [...(current.doubles || [])];
+
+                if (IS_DOUBLES) {
+                    const nextTeam: ManualDoublesTeam = {
+                        p1Name: trimmedName,
+                        p2Name: trimmedSecondName,
+                        p1Id: UUID_PATTERN.test(String(options?.p1Id || '').trim()) ? String(options?.p1Id || '').trim() : null,
+                        p2Id: UUID_PATTERN.test(String(options?.p2Id || '').trim()) ? String(options?.p2Id || '').trim() : null
+                    };
+                    const nextTeamKey = buildManualDoublesTeamKey(nextTeam);
+                    const alreadyExists = nextDoubles.some((team) => buildManualDoublesTeamKey(team) === nextTeamKey);
+                    if (!alreadyExists) {
+                        nextDoubles.push(nextTeam);
+                    }
+                } else {
+                    const normalizedNameKey = normalizeManualNameKey(trimmedName);
+                    const alreadyExists = nextSingles.some((candidate) => normalizeManualNameKey(candidate) === normalizedNameKey);
+                    if (!alreadyExists) {
+                        nextSingles.push(trimmedName);
+                    }
+                }
+
+                return {
+                    singles: nextSingles,
+                    doubles: nextDoubles
+                };
+            });
+
+            setManualPlayerName('');
+            setManualPlayerName2('');
+            setSearchQuery('');
+            setSearchResults([]);
+            setIsManualPlayerModalVisible(false);
+        } catch (error) {
+            Alert.alert('Error', IS_DOUBLES ? 'No se pudo agregar la dupla.' : 'No se pudo agregar el participante manual.');
+        }
+    };
+
+    const removeManualParticipantFromPool = async (
+        name: string,
+        secondName?: string | null,
+        options?: { p1Id?: string | null; p2Id?: string | null }
+    ) => {
+        const normalizedNameKey = normalizeManualNameKey(name);
+        const normalizedSecondNameKey = normalizeManualNameKey(secondName);
+        if (!normalizedNameKey) return;
+
+        try {
+            await updateTournamentManualParticipants((current) => {
+                if (IS_DOUBLES) {
+                    const removalKey = buildManualDoublesTeamKey({
+                        p1Name: name,
+                        p2Name: String(secondName || ''),
+                        p1Id: options?.p1Id || null,
+                        p2Id: options?.p2Id || null
+                    });
+                    return {
+                        singles: [...(current.singles || [])],
+                        doubles: (current.doubles || []).filter((team) => {
+                            const teamKey = buildManualDoublesTeamKey(team);
+                            if (teamKey && removalKey) return teamKey !== removalKey;
+                            const p1Key = normalizeManualNameKey(team.p1Name);
+                            const p2Key = normalizeManualNameKey(team.p2Name);
+                            return !(p1Key === normalizedNameKey && p2Key === normalizedSecondNameKey);
+                        })
+                    };
+                }
+
+                return {
+                    singles: (current.singles || []).filter(
+                        (candidate) => normalizeManualNameKey(candidate) !== normalizedNameKey
+                    ),
+                    doubles: [...(current.doubles || [])]
+                };
+            });
+        } catch (error) {
+            Alert.alert('Error', IS_DOUBLES ? 'No se pudo eliminar la dupla.' : 'No se pudo eliminar el participante manual.');
+        }
+    };
+
     const updateMatchPlayer = async (profileId: string) => {
         if (!selectedSlot && !selectedGroupSlot) {
-            await registerParticipant(profileId);
+            await registerParticipant(profileId, { keepModalOpen: true });
+            return;
+        }
+
+        const isAlreadyAssignedElsewhere = (() => {
+            if (!UUID_PATTERN.test(profileId)) return false;
+
+            if (selectedSlot) {
+                const currentMatch = matches.find((match) => match.id === selectedSlot.matchId);
+                const currentTargetId =
+                    selectedSlot.slot === 1 ? currentMatch?.player_a_id :
+                    selectedSlot.slot === 2 ? currentMatch?.player_a2_id :
+                    selectedSlot.slot === 3 ? currentMatch?.player_b_id :
+                    currentMatch?.player_b2_id;
+                if (currentTargetId === profileId) return false;
+            }
+
+            if (selectedGroupSlot) {
+                const { groupName, slotIndex, member } = selectedGroupSlot;
+                const groupMatches = [...(roundRobinMatchesByGroup[groupName] || [])].sort(
+                    (a, b) => (a.match_order || 0) - (b.match_order || 0)
+                );
+                const slotCount = getRoundRobinSlots(tournamentMaxPlayers, groupName, tournamentFormat, tournament?.description).length;
+                const pairings = getRoundRobinPairings(slotCount);
+                const currentTargetIds = new Set<string>();
+
+                groupMatches.forEach((match, index) => {
+                    const pairing = pairings[index];
+                    if (!pairing) return;
+                    if (pairing[0] === slotIndex) {
+                        const candidateId = member === 2 ? match.player_a2_id : match.player_a_id;
+                        if (UUID_PATTERN.test(String(candidateId || ''))) {
+                            currentTargetIds.add(String(candidateId));
+                        }
+                    }
+                    if (pairing[1] === slotIndex) {
+                        const candidateId = member === 2 ? match.player_b2_id : match.player_b_id;
+                        if (UUID_PATTERN.test(String(candidateId || ''))) {
+                            currentTargetIds.add(String(candidateId));
+                        }
+                    }
+                });
+
+                if (currentTargetIds.has(profileId)) return false;
+            }
+
+            return assignedRegisteredPlayerIds.has(profileId);
+        })();
+
+        if (isAlreadyAssignedElsewhere) {
+            Alert.alert('Información', 'Ese jugador ya está asignado en otra llave/grupo.');
             return;
         }
 
         try {
             await assignPlayerToSelectedSlot(profileId);
-            await loadTournamentData();
-            setSelectedSlot(null);
-            setSelectedGroupSlot(null);
-            setSearchQuery('');
-            setSearchResults([]);
-            setIsPlayerModalVisible(false);
+            resetPlayerSelectionSearch();
+            if (assignmentTargets.length > 1) {
+                moveToNextAssignmentTarget();
+            } else {
+                closePlayerSelectionModal();
+            }
         } catch (error) {
             Alert.alert('Error', 'No se pudo asignar el jugador.');
         }
@@ -1052,7 +2693,7 @@ export default function AdminTournamentDetailScreen() {
     const removeMatchPlayer = async (closeModal = true, reload = true) => {
         try {
             if (selectedGroupSlot) {
-                const { groupName, slotIndex } = selectedGroupSlot;
+                const { groupName, slotIndex, member } = selectedGroupSlot;
                 const groupMatches = [...(roundRobinMatchesByGroup[groupName] || [])].sort(
                     (a, b) => (a.match_order || 0) - (b.match_order || 0)
                 );
@@ -1066,12 +2707,12 @@ export default function AdminTournamentDetailScreen() {
 
                     const updateData: any = {};
                     if (pairing[0] === slotIndex) {
-                        updateData.player_a_id = null;
-                        if (IS_DOUBLES) updateData.player_a2_id = null;
+                        if (IS_DOUBLES && member === 2) updateData.player_a2_id = null;
+                        else updateData.player_a_id = null;
                     }
                     if (pairing[1] === slotIndex) {
-                        updateData.player_b_id = null;
-                        if (IS_DOUBLES) updateData.player_b2_id = null;
+                        if (IS_DOUBLES && member === 2) updateData.player_b2_id = null;
+                        else updateData.player_b_id = null;
                     }
                     if (Object.keys(updateData).length === 0) continue;
 
@@ -1081,6 +2722,7 @@ export default function AdminTournamentDetailScreen() {
                         .eq('id', match.id);
 
                     if (error) throw error;
+                    applyMatchPatchLocally(match.id, updateData);
                 }
 
                 await updateTournamentDescription(current => {
@@ -1089,7 +2731,10 @@ export default function AdminTournamentDetailScreen() {
                         matchSlots: { ...(current.matchSlots || {}) }
                     };
                     if (next.rrSlots[groupName]) {
-                        delete next.rrSlots[groupName][String(slotIndex)];
+                        delete next.rrSlots[groupName][getGroupManualKey(slotIndex, member)];
+                        if (!IS_DOUBLES && member === 2) {
+                            delete next.rrSlots[groupName][String(slotIndex)];
+                        }
                         if (Object.keys(next.rrSlots[groupName]).length === 0) delete next.rrSlots[groupName];
                     }
                     return next;
@@ -1097,14 +2742,7 @@ export default function AdminTournamentDetailScreen() {
             } else if (selectedSlot) {
                 const { matchId, slot } = selectedSlot;
                 const selectedMatchData = matches.find((candidate) => candidate.id === matchId);
-                const { data: selectedMatchFresh } = await supabase
-                    .from('matches')
-                    .select('id, round, round_number, match_order, player_a_id, player_a2_id, player_b_id, player_b2_id, score, status, winner_id, winner_2_id')
-                    .eq('id', matchId)
-                    .maybeSingle();
-                const matchForRollback = selectedMatchFresh
-                    ? { ...selectedMatchData, ...selectedMatchFresh }
-                    : selectedMatchData;
+                const matchForRollback = selectedMatchData;
 
                 if (matchForRollback && (matchForRollback.winner_id || matchForRollback.winner_2_id || matchForRollback.score)) {
                     await rollbackWinnerFromFollowingRounds(
@@ -1134,6 +2772,7 @@ export default function AdminTournamentDetailScreen() {
                     .eq('id', matchId);
 
                 if (error) throw error;
+                applyMatchPatchLocally(matchId, updateData);
 
                 await updateTournamentDescription(current => {
                     const next = {
@@ -1141,7 +2780,10 @@ export default function AdminTournamentDetailScreen() {
                         matchSlots: { ...(current.matchSlots || {}) }
                     };
                     if (next.matchSlots[matchId]) {
-                        delete next.matchSlots[matchId][slot === 1 ? 'player_a' : 'player_b'];
+                        delete next.matchSlots[matchId][getMatchManualKey(slot)];
+                        if (!IS_DOUBLES && (slot === 2 || slot === 4)) {
+                            delete next.matchSlots[matchId][getMatchManualFallbackKey(slot)];
+                        }
                         if (Object.keys(next.matchSlots[matchId]).length === 0) delete next.matchSlots[matchId];
                     }
                     return next;
@@ -1149,14 +2791,10 @@ export default function AdminTournamentDetailScreen() {
             }
 
             if (reload) {
-                await loadTournamentData();
+                await loadTournamentData(false);
             }
             if (closeModal) {
-                setSelectedSlot(null);
-                setSelectedGroupSlot(null);
-                setSearchQuery('');
-                setSearchResults([]);
-                setIsPlayerModalVisible(false);
+                closePlayerSelectionModal();
             }
         } catch (error) {
             Alert.alert('Error', 'No se pudo quitar el jugador.');
@@ -1199,81 +2837,356 @@ export default function AdminTournamentDetailScreen() {
         );
     };
 
-    const generateRoundRobinFinals = async (mode: 'standard' | 'alternate') => {
+    const sortStandingRows = (leftRow: any, rightRow: any) => {
+        if (leftRow.finish !== rightRow.finish) return leftRow.finish - rightRow.finish;
+        if (rightRow.points !== leftRow.points) return rightRow.points - leftRow.points;
+        if (rightRow.diff !== leftRow.diff) return rightRow.diff - leftRow.diff;
+        if (rightRow.gamesWon !== leftRow.gamesWon) return rightRow.gamesWon - leftRow.gamesWon;
+        return String(leftRow.name || '').localeCompare(String(rightRow.name || ''));
+    };
+
+    const isValidStandingQualifier = (row: any) => {
+        if (!row) return false;
+        if (IS_DOUBLES) {
+            const nameA = String(row.p1Name || '').trim();
+            const nameB = String(row.p2Name || '').trim();
+            if (!nameA || !nameB) return false;
+            if (isPlaceholderName(nameA) || isPlaceholderName(nameB)) return false;
+            if (isByeName(nameA) || isByeName(nameB)) return false;
+            return true;
+        }
+        const name = String(row.p1Name || row.name || '').trim();
+        if (!name) return false;
+        if (isPlaceholderName(name)) return false;
+        if (isByeName(name)) return false;
+        return true;
+    };
+
+    const getStandingQualifierKey = (row: any) => {
+        if (!row) return '';
+        if (IS_DOUBLES) {
+            const playerAId = UUID_PATTERN.test(String(row.p1Id || '').trim()) ? String(row.p1Id || '').trim() : null;
+            const playerBId = UUID_PATTERN.test(String(row.p2Id || '').trim()) ? String(row.p2Id || '').trim() : null;
+            if (playerAId && playerBId) {
+                return [playerAId.toUpperCase(), playerBId.toUpperCase()].sort().join('::');
+            }
+            const nameA = normalizeManualNameKey(row.p1Name || '');
+            const nameB = normalizeManualNameKey(row.p2Name || '');
+            if (!nameA || !nameB) return '';
+            return [nameA, nameB].sort().join('::');
+        }
+
+        const playerId = UUID_PATTERN.test(String(row.id || '').trim()) ? String(row.id || '').trim() : null;
+        if (playerId) return playerId.toUpperCase();
+        return normalizeManualNameKey(row.p1Name || row.name || '');
+    };
+
+    const getRoundRobinFinalStageContextFromPool = (pool: any[]) => {
+        const candidateMatches = [...pool]
+            .filter((match) => !/3er|4to|5to|6to|puesto/i.test(String(match.round || '')))
+            .sort((leftMatch, rightMatch) => {
+                if ((leftMatch.round_number || 0) !== (rightMatch.round_number || 0)) {
+                    return (leftMatch.round_number || 0) - (rightMatch.round_number || 0);
+                }
+                return (leftMatch.match_order || 0) - (rightMatch.match_order || 0);
+            });
+
+        const minRoundNumber = candidateMatches.reduce(
+            (minimumRound, currentMatch) =>
+                Math.min(minimumRound, Number(currentMatch.round_number || minimumRound)),
+            Number.MAX_SAFE_INTEGER
+        );
+        const firstRoundMatches = Number.isFinite(minRoundNumber)
+            ? candidateMatches.filter((match) => Number(match.round_number || 0) === minRoundNumber)
+            : [];
+
+        const maxSlots = Math.max(2, firstRoundMatches.length * 2);
+
+        return {
+            firstRoundMatches,
+            maxSlots,
+        };
+    };
+
+    const getRoundRobinFinalStageContext = () => {
+        const totalAvailableEntries = roundRobinGroupNames.reduce(
+            (accumulator, groupName) => accumulator + getStandingsForGroup(groupName).length,
+            0
+        );
+        return {
+            ...getRoundRobinFinalStageContextFromPool(finalRoundRobinMatches),
+            totalAvailableEntries,
+        };
+    };
+
+    const fetchFinalRoundRobinMatchesFromDb = async () => {
+        const { data, error } = await supabase
+            .from('matches')
+            .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, round, round_number, match_order, status, score, winner_id, winner_2_id, scheduled_at, court')
+            .eq('tournament_id', id)
+            .not('round', 'ilike', 'Grupo %')
+            .order('round_number', { ascending: true })
+            .order('match_order', { ascending: true });
+
+        if (error) throw error;
+        return data || [];
+    };
+
+    const nextPowerOfTwoForFinals = (value: number) => {
+        let size = 2;
+        while (size < value) size *= 2;
+        return size;
+    };
+
+    const getEliminationRoundNameForFinals = (roundIndex: number, roundsCount: number) => {
+        if (roundsCount === 1) return 'Gran Final RR';
+        if (roundIndex === roundsCount) return 'Gran Final RR';
+        if (roundIndex === roundsCount - 1) return 'Semifinales RR';
+        if (roundIndex === roundsCount - 2) return 'Cuartos de Final RR';
+        if (roundIndex === roundsCount - 3) return 'Octavos de Final RR';
+        return `Ronda ${roundIndex} RR`;
+    };
+
+    const syncRoundRobinFinalBracket = async (qualifiersCount: number) => {
+        const normalizedQualifiers = Math.max(2, qualifiersCount);
+        const bracketSize = nextPowerOfTwoForFinals(normalizedQualifiers);
+        const roundsCount = Math.log2(bracketSize);
+
+        const desiredStructure: Array<{ round: string; round_number: number; match_order: number }> = [];
+        let matchOrderCounter = 1;
+        let matchesInRound = bracketSize / 2;
+        for (let roundIndex = 1; roundIndex <= roundsCount; roundIndex++) {
+            const roundName = getEliminationRoundNameForFinals(roundIndex, roundsCount);
+            for (let index = 0; index < matchesInRound; index++) {
+                desiredStructure.push({
+                    round: roundName,
+                    round_number: roundIndex,
+                    match_order: matchOrderCounter++
+                });
+            }
+            matchesInRound /= 2;
+        }
+
+        const currentPool = await fetchFinalRoundRobinMatchesFromDb();
+        const editableMatches = currentPool
+            .filter((match) => !/3er|4to|5to|6to|puesto/i.test(String(match.round || '')))
+            .sort((leftMatch, rightMatch) => {
+                if ((leftMatch.round_number || 0) !== (rightMatch.round_number || 0)) {
+                    return (leftMatch.round_number || 0) - (rightMatch.round_number || 0);
+                }
+                return (leftMatch.match_order || 0) - (rightMatch.match_order || 0);
+            });
+
+        const baseResetPayload: any = {
+            player_a_id: null,
+            player_b_id: null,
+            winner_id: null,
+            winner_2_id: null,
+            score: null,
+            status: 'pending',
+        };
+        if (IS_DOUBLES) {
+            baseResetPayload.player_a2_id = null;
+            baseResetPayload.player_b2_id = null;
+        }
+
+        for (let index = 0; index < desiredStructure.length; index++) {
+            const desiredMatch = desiredStructure[index];
+            const existingMatch = editableMatches[index];
+            const updatePayload: any = {
+                ...baseResetPayload,
+                round: desiredMatch.round,
+                round_number: desiredMatch.round_number,
+                match_order: desiredMatch.match_order
+            };
+
+            if (existingMatch) {
+                const { error } = await supabase
+                    .from('matches')
+                    .update(updatePayload)
+                    .eq('id', existingMatch.id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase
+                    .from('matches')
+                    .insert({
+                        tournament_id: id,
+                        ...updatePayload
+                    });
+                if (error) throw error;
+            }
+        }
+
+        const extraMatches = editableMatches.slice(desiredStructure.length);
+        if (extraMatches.length > 0) {
+            const extraIds = extraMatches.map((match) => match.id);
+            const { error } = await supabase
+                .from('matches')
+                .delete()
+                .in('id', extraIds);
+            if (error) throw error;
+        }
+
+        return fetchFinalRoundRobinMatchesFromDb();
+    };
+
+    const generateRoundRobinFinals = async (qualifiersPerGroup: number) => {
         try {
-            const seededPlayers = roundRobinGroupNames
-                .flatMap(groupName =>
-                    getStandingsForGroup(groupName).map((row: any, index: number) => ({
+            const seenQualifiers = new Set<string>();
+            const groupedStandings = roundRobinGroupNames.map((groupName) => ({
+                groupName,
+                rows: getStandingsForGroup(groupName)
+                    .map((row: any, index: number) => ({
                         ...row,
                         finish: index + 1,
+                        groupName
                     }))
-                )
-                .sort((a, b) => {
-                    if (a.finish !== b.finish) return a.finish - b.finish;
-                    if (b.points !== a.points) return b.points - a.points;
-                    if (b.diff !== a.diff) return b.diff - a.diff;
-                    return b.gamesWon - a.gamesWon;
-                })
-                .slice(0, 4);
+                    .filter(isValidStandingQualifier)
+                    .filter((row: any) => {
+                        const key = getStandingQualifierKey(row);
+                        if (!key || seenQualifiers.has(key)) return false;
+                        seenQualifiers.add(key);
+                        return true;
+                    })
+            }));
+            const sortedGlobalStandings = groupedStandings
+                .flatMap((group) => group.rows)
+                .sort(sortStandingRows);
 
-            const semifinals = finalRoundRobinMatches
-                .filter(match => String(match.round || '').includes('Semifinal'))
-                .sort((a, b) => (a.match_order || 0) - (b.match_order || 0));
-
-            if (semifinals.length < 2 || seededPlayers.length < 4) {
-                Alert.alert('Error', 'Se necesitan al menos 4 clasificados y 2 semifinales para generar las llaves.');
+            if (sortedGlobalStandings.length < 2) {
+                Alert.alert('Error', 'No hay suficientes duplas válidas para generar las llaves.');
                 return;
             }
 
-            const pairings =
-                mode === 'alternate'
-                    ? [[seededPlayers[0], seededPlayers[2]], [seededPlayers[1], seededPlayers[3]]]
-                    : [[seededPlayers[0], seededPlayers[3]], [seededPlayers[1], seededPlayers[2]]];
+            const parsedPerGroup = Math.max(1, Math.floor(qualifiersPerGroup || 1));
+            const totalQualifiersRequested = roundRobinGroupNames.length <= 1
+                ? parsedPerGroup
+                : roundRobinGroupNames.length * parsedPerGroup;
+            const requestedQualifiersCount = Math.max(
+                2,
+                Math.min(Math.floor(totalQualifiersRequested), sortedGlobalStandings.length)
+            );
 
-            for (let index = 0; index < semifinals.length; index++) {
-                const match = semifinals[index];
-                const [playerA, playerB] = pairings[index] || [];
+            const refreshedPool = await syncRoundRobinFinalBracket(requestedQualifiersCount);
+            setMatches((currentMatches) => {
+                const groupMatches = currentMatches.filter((match) => String(match.round || '').startsWith('Grupo '));
+                return [...groupMatches, ...refreshedPool];
+            });
+            const stageContext = {
+                ...getRoundRobinFinalStageContextFromPool(refreshedPool),
+                totalAvailableEntries: groupedStandings.reduce((acc, group) => acc + group.rows.length, 0)
+            };
+
+            const bracketSize = stageContext.maxSlots;
+            const normalizedQualifiersCount = Math.max(
+                2,
+                Math.min(requestedQualifiersCount, bracketSize, sortedGlobalStandings.length)
+            );
+            const selectedMatches = stageContext.firstRoundMatches;
+            if (!selectedMatches.length) {
+                Alert.alert('Error', 'No se pudieron preparar las llaves finales.');
+                return;
+            }
+
+            const topByGroup = groupedStandings.map((group) => group.rows[0]).filter(Boolean);
+            const secondByGroup = groupedStandings.map((group) => group.rows[1]).filter(Boolean);
+
+            let bracketSlots: any[] = Array.from({ length: bracketSize }, () => null);
+            if (roundRobinGroupNames.length === 2 && parsedPerGroup === 1 && topByGroup.length >= 2 && bracketSize === 2) {
+                bracketSlots = [topByGroup[0], topByGroup[1]];
+            } else if (roundRobinGroupNames.length === 2 && parsedPerGroup === 2 && secondByGroup.length >= 2 && bracketSize === 4) {
+                bracketSlots = [topByGroup[0], secondByGroup[1], secondByGroup[0], topByGroup[1]];
+            } else if (roundRobinGroupNames.length === 1 && parsedPerGroup === 4 && sortedGlobalStandings.length >= 4 && bracketSize === 4) {
+                bracketSlots = [
+                    sortedGlobalStandings[0],
+                    sortedGlobalStandings[3],
+                    sortedGlobalStandings[1],
+                    sortedGlobalStandings[2]
+                ];
+            } else {
+                const qualifiers = sortedGlobalStandings.slice(0, normalizedQualifiersCount);
+                const seedLines = buildSeedLinesForDraw(bracketSize, normalizedQualifiersCount);
+                qualifiers.forEach((entry, index) => {
+                    const line = seedLines[index] || (index + 1);
+                    if (line >= 1 && line <= bracketSize) {
+                        bracketSlots[line - 1] = entry;
+                    }
+                });
+            }
+
+            const byeEntries = buildByeEntries(
+                Math.max(0, bracketSize - bracketSlots.filter(Boolean).length),
+                IS_DOUBLES
+            );
+            let byeCursor = 0;
+            const completeQualifierList = bracketSlots.map((entry) => {
+                if (entry) return entry;
+                const byeEntry = byeEntries[byeCursor];
+                byeCursor += 1;
+                return byeEntry || buildByeEntries(1, IS_DOUBLES)[0];
+            });
+
+            for (let index = 0; index < selectedMatches.length; index++) {
+                const match = selectedMatches[index];
+                const playerA = completeQualifierList[index * 2];
+                const playerB = completeQualifierList[(index * 2) + 1];
 
                 const updateData: any = {
-                    player_a_id: isUuid(playerA?.id) ? playerA.id : null,
-                    player_b_id: isUuid(playerB?.id) ? playerB.id : null,
+                    player_a_id: isUuid(playerA?.p1Id || playerA?.id) ? (playerA?.p1Id || playerA?.id) : null,
+                    player_b_id: isUuid(playerB?.p1Id || playerB?.id) ? (playerB?.p1Id || playerB?.id) : null,
                     winner_id: null,
+                    winner_2_id: null,
                     score: null,
                     status: 'pending',
                 };
 
+                if (IS_DOUBLES) {
+                    updateData.player_a2_id = isUuid(playerA?.p2Id) ? playerA.p2Id : null;
+                    updateData.player_b2_id = isUuid(playerB?.p2Id) ? playerB.p2Id : null;
+                }
+
                 const { error } = await supabase.from('matches').update(updateData).eq('id', match.id);
                 if (error) throw error;
+                applyMatchPatchLocally(match.id, updateData);
 
                 await updateTournamentDescription(current => ({
                     rrSlots: { ...(current.rrSlots || {}) },
                     matchSlots: {
                         ...(current.matchSlots || {}),
                         [match.id]: {
-                            player_a: { name: playerA?.name || 'Por definir' },
-                            player_b: { name: playerB?.name || 'Por definir' },
+                            player_a: { name: playerA?.p1Name || playerA?.name || 'BYE' },
+                            ...(IS_DOUBLES ? { player_a2: { name: playerA?.p2Name || (isByeName(playerA?.p1Name) ? 'BYE' : 'Por definir') } } : {}),
+                            player_b: { name: playerB?.p1Name || playerB?.name || 'BYE' },
+                            ...(IS_DOUBLES ? { player_b2: { name: playerB?.p2Name || (isByeName(playerB?.p1Name) ? 'BYE' : 'Por definir') } } : {}),
                         }
                     }
                 }));
             }
 
-            await loadTournamentData();
-            Alert.alert('Éxito', 'Las llaves finales fueron generadas. Puedes ajustar cualquier cruce manualmente.');
+            Alert.alert('Éxito', 'Las llaves finales fueron generadas automáticamente.');
         } catch (error) {
             Alert.alert('Error', 'No se pudieron generar las llaves finales.');
         }
     };
 
     const handleGenerateRoundRobinFinals = () => {
-        Alert.alert(
-            'Generar llaves',
-            'Elige una combinación para crear las semifinales. Después puedes editarla manualmente.',
-            [
-                { text: 'Cancelar', style: 'cancel' },
-                { text: '1 vs 4 / 2 vs 3', onPress: () => generateRoundRobinFinals('standard') },
-                { text: '1 vs 3 / 2 vs 4', onPress: () => generateRoundRobinFinals('alternate') },
-            ]
-        );
+        const context = getRoundRobinFinalStageContext();
+        const suggestedPerGroup = roundRobinGroupNames.length <= 1
+            ? Math.min(4, context.maxSlots, context.totalAvailableEntries)
+            : Math.max(1, Math.min(2, Math.floor((context.maxSlots || 2) / roundRobinGroupNames.length)));
+        setFinalsCountInput(String(Math.max(1, suggestedPerGroup)));
+        setIsFinalsCountModalVisible(true);
+    };
+
+    const handleConfirmRoundRobinFinalsCount = () => {
+        const parsedValue = Number(finalsCountInput.replace(/\D/g, ''));
+        if (!Number.isFinite(parsedValue) || parsedValue < 1) {
+            Alert.alert('Error', 'Ingresa una cantidad válida.');
+            return;
+        }
+
+        setIsFinalsCountModalVisible(false);
+        generateRoundRobinFinals(Math.floor(parsedValue));
     };
 
     const roundRobinGroupNames = useMemo(() => getRoundRobinGroupNames(tournamentFormat, tournament?.description), [tournamentFormat, tournament?.description]);
@@ -1319,8 +3232,10 @@ export default function AdminTournamentDetailScreen() {
 
         return fallbackSlots.map((slot, index) => {
             const pair = playerPairs[index];
-            const p1Name = pair?.p1 ? getPlayerName(pair.p1) : (getAssignedNameForGroupSlot(groupName, index) || slot.name);
-            const p2Name = pair?.p2 ? getPlayerName(pair.p2) : (IS_DOUBLES ? `${slot.name} (P2)` : null);
+            const p1Name = pair?.p1 ? getPlayerName(pair.p1) : (getAssignedNameForGroupSlot(groupName, index, 1) || slot.name);
+            const p2Name = pair?.p2
+                ? getPlayerName(pair.p2)
+                : (IS_DOUBLES ? (getAssignedNameForGroupSlot(groupName, index, 2) || `${slot.name} (P2)`) : null);
             
             return {
                 id: pair?.p1 || slot.id,
@@ -1352,7 +3267,8 @@ export default function AdminTournamentDetailScreen() {
         }, {} as Record<string, any>);
 
         groupMatches.forEach(match => {
-            if (!match.score) return;
+            const scoreText = getScoreText(match.score);
+            if (!scoreText || /^W\.?O\.?$/i.test(scoreText)) return;
 
             const slotA = getRoundRobinSlotIndexForMatchSide(groupName, match.id, 1);
             const slotB = getRoundRobinSlotIndexForMatchSide(groupName, match.id, 2);
@@ -1365,7 +3281,7 @@ export default function AdminTournamentDetailScreen() {
             let playerAGames = 0;
             let playerBGames = 0;
 
-            String(match.score)
+            scoreText
                 .split(/\s*,\s*/)
                 .filter(Boolean)
                 .forEach((setScore: string) => {
@@ -1407,14 +3323,14 @@ export default function AdminTournamentDetailScreen() {
         });
     };
 
-    const getPlayerIdBySlot = (match: any, slot: 1 | 2 | 3 | 4) => {
+    const getPlayerIdBySlot = (match: any, slot: MatchSlot) => {
         if (slot === 1) return match.player_a_id;
         if (slot === 2) return match.player_a2_id;
         if (slot === 3) return match.player_b_id;
         return match.player_b2_id;
     };
 
-    const getDisplayName = (match: any, slot: 1 | 2 | 3 | 4) => {
+    const getDisplayName = (match: any, slot: MatchSlot) => {
         const playerId = getPlayerIdBySlot(match, slot);
         if (playerId) return getPlayerName(playerId);
 
@@ -1423,20 +3339,19 @@ export default function AdminTournamentDetailScreen() {
             const entrySlot = (slot === 1 || slot === 2) ? 1 : 2;
             const slotIndex = getRoundRobinSlotIndexForMatchSide(groupName, match.id, entrySlot as 1 | 2);
             if (slotIndex !== null) {
-                const assignedName = getAssignedNameForGroupSlot(groupName, slotIndex);
+                const assignedName = getAssignedNameForGroupSlot(groupName, slotIndex, (slot === 2 || slot === 4) ? 2 : 1);
                 if (assignedName) return assignedName;
                 return `Cupo ${groupName}${slotIndex + 1}${ (slot === 2 || slot === 4) ? ' (P2)' : ''}`;
             }
         }
 
-        const matchSlotKey = (slot === 1 || slot === 2) ? 'player_a' : 'player_b';
-        const assignedName = getAssignedNameForMatchSlot(match.id, matchSlotKey);
+        const assignedName = getAssignedNameForMatchSlot(match.id, slot);
         if (assignedName) return assignedName;
 
         return 'Por definir';
     };
 
-    const getDisplayAvatar = (match: any, slot: 1 | 2 | 3 | 4) => {
+    const getDisplayAvatar = (match: any, slot: MatchSlot) => {
         const playerId = getPlayerIdBySlot(match, slot);
         return getPlayerAvatar(playerId);
     };
@@ -1473,8 +3388,30 @@ export default function AdminTournamentDetailScreen() {
         </View>
     );
 
+    const getAssignmentTargetCurrentName = (target: AssignmentTarget) => {
+        if (target.type === 'match') {
+            const match = matches.find((candidate) => candidate.id === target.matchId);
+            if (!match) return 'Por definir';
+            return getDisplayName(match, target.slot);
+        }
+
+        const groupRows = getGroupRows(target.groupName);
+        const groupRow = groupRows[target.slotIndex];
+        if (!groupRow) return 'Por definir';
+        if (!IS_DOUBLES) return groupRow.p1Name || groupRow.name || 'Por definir';
+        if (target.member === 2) return groupRow.p2Name || `Cupo ${target.groupName}${target.slotIndex + 1} (P2)`;
+        return groupRow.p1Name || `Cupo ${target.groupName}${target.slotIndex + 1}`;
+    };
+
     const currentGroupRows = useMemo(() => getGroupRows(currentGroupName), [currentGroupName, roundRobinMatchesByGroup, players, tournamentMaxPlayers, tournamentFormat, tournament?.description]);
     const currentGroupStandings = useMemo(() => getStandingsForGroup(currentGroupName), [currentGroupName, currentGroupRows, roundRobinMatchesByGroup]);
+    const listedRegisteredPlayers = useMemo(
+        () =>
+            IS_DOUBLES
+                ? players.filter((registration) => !definedDoublesPlayerIds.has(String(registration.player_id || '')))
+                : players,
+        [IS_DOUBLES, players, definedDoublesPlayerIds]
+    );
 
     if (isLoading) {
         return (
@@ -1573,12 +3510,32 @@ export default function AdminTournamentDetailScreen() {
                         </View>
                     </View>
                     {tournament.status !== 'finished' && tournament.status !== 'completed' && (
-                        <TouchableOpacity 
-                            style={{ alignSelf: 'flex-start', backgroundColor: colors.primary[500], paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.sm, marginTop: spacing.sm }}
-                            onPress={finalizeTournament}
-                        >
-                            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Finalizar Torneo</Text>
-                        </TouchableOpacity>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm }}>
+                            <TouchableOpacity
+                                style={{
+                                    alignSelf: 'flex-start',
+                                    backgroundColor: colors.primary[500],
+                                    paddingHorizontal: spacing.md,
+                                    paddingVertical: spacing.xs,
+                                    borderRadius: borderRadius.sm,
+                                    opacity: isSeeding ? 0.7 : 1
+                                }}
+                                onPress={handleSeedTournament}
+                                disabled={isSeeding}
+                            >
+                                {isSeeding ? (
+                                    <TennisSpinner size={14} color="#fff" />
+                                ) : (
+                                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Sembrar</Text>
+                                )}
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={{ alignSelf: 'flex-start', backgroundColor: colors.primary[500], paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.sm }}
+                                onPress={finalizeTournament}
+                            >
+                                <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Finalizar Torneo</Text>
+                            </TouchableOpacity>
+                        </View>
                     )}
                     {(tournament.status === 'finished' || tournament.status === 'completed') && (
                         <View style={{ alignSelf: 'flex-start', backgroundColor: colors.success + '20', paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.sm, flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.sm }}>
@@ -1586,7 +3543,12 @@ export default function AdminTournamentDetailScreen() {
                             <Text style={{ color: colors.success, fontSize: 11, fontWeight: '800' }}>FINALIZADO</Text>
                         </View>
                     )}
-                    <Text style={[styles.summaryTextSecondary, { marginTop: spacing.xs }]}>{players.length} Jugadores | {tournament.format} | {tournament.modality === 'dobles' ? 'Dobles' : 'Singles'} | Máx: {tournament.max_players}</Text>
+                    <Text style={[styles.summaryTextSecondary, { marginTop: spacing.xs }]}>
+                        {IS_DOUBLES
+                            ? `${manualDoublesTeamRows.length + listedRegisteredPlayers.length} Participantes visibles`
+                            : `${listedRegisteredPlayers.length + manualParticipantRows.length} Jugadores`}
+                        {' | '}{tournament.format} | {tournament.modality === 'dobles' ? 'Dobles' : 'Singles'} | Máx: {tournament.max_players}
+                    </Text>
                 </View>
 
                 {activeTab === 'participantes' ? (
@@ -1595,35 +3557,91 @@ export default function AdminTournamentDetailScreen() {
                         <TouchableOpacity 
                             style={[styles.generateBtn, { marginBottom: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, justifyContent: 'center' }]}
                             onPress={() => {
-                                setSelectedSlot(null);
-                                setSelectedGroupSlot(null);
+                                if (IS_DOUBLES) {
+                                    resetAssignmentSelection();
+                                    resetPlayerSelectionSearch();
+                                    setIsPlayerModalVisible(true);
+                                    return;
+                                }
+                                resetAssignmentSelection();
+                                resetPlayerSelectionSearch();
                                 setIsPlayerModalVisible(true);
                             }}
                         >
                             <Ionicons name="person-add-outline" size={18} color="#fff" />
-                            <Text style={styles.generateBtnText}>Agregar Participante</Text>
+                            <Text style={styles.generateBtnText}>{IS_DOUBLES ? 'Agregar dupla' : 'Agregar Participante'}</Text>
                         </TouchableOpacity>
 
-                        {players.length > 0 ? (
-                            players.map((p) => (
-                                // ... existing view (already handled by snippet above or I'll fix it in one go)
-                                <View key={p.player_id} style={styles.playerListItem}>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                                        <View style={styles.playerListItemAvatar}>
-                                            <Text style={styles.playerListItemInitials}>
-                                                {p.profiles?.name?.substring(0, 2).toUpperCase()}
-                                            </Text>
+                        {(listedRegisteredPlayers.length + (IS_DOUBLES ? manualDoublesTeamRows.length : manualParticipantRows.length)) > 0 ? (
+                            <>
+                                {listedRegisteredPlayers.map((p) => (
+                                    <View key={p.player_id} style={styles.playerListItem}>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                                            <View style={styles.playerListItemAvatar}>
+                                                <Text style={styles.playerListItemInitials}>
+                                                    {p.profiles?.name?.substring(0, 2).toUpperCase()}
+                                                </Text>
+                                            </View>
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={styles.playerListItemName}>{p.profiles?.name || 'Desconocido'}</Text>
+                                                <Text style={styles.playerSearchRole}>Participante Inscrito</Text>
+                                            </View>
                                         </View>
-                                        <Text style={styles.playerListItemName}>{p.profiles?.name || 'Desconocido'}</Text>
+                                        <TouchableOpacity 
+                                            style={{ padding: spacing.sm }} 
+                                            onPress={() => removeParticipant(p.player_id)}
+                                        >
+                                            <Ionicons name="trash-outline" size={20} color={colors.error} />
+                                        </TouchableOpacity>
                                     </View>
-                                    <TouchableOpacity 
-                                        style={{ padding: spacing.sm }} 
-                                        onPress={() => removeParticipant(p.player_id)}
-                                    >
-                                        <Ionicons name="trash-outline" size={20} color={colors.error} />
-                                    </TouchableOpacity>
-                                </View>
-                            ))
+                                ))}
+                                {IS_DOUBLES ? manualDoublesTeamRows.map((team) => (
+                                    <View key={team.id} style={styles.playerListItem}>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                                            <View style={styles.playerListItemAvatar}>
+                                                <Text style={styles.playerListItemInitials}>
+                                                    {team.p1Name.substring(0, 1).toUpperCase()}{team.p2Name.substring(0, 1).toUpperCase()}
+                                                </Text>
+                                            </View>
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={styles.playerListItemName}>{team.label}</Text>
+                                                <Text style={styles.playerSearchRole}>Dupla definida</Text>
+                                            </View>
+                                        </View>
+                                        <TouchableOpacity
+                                            style={{ padding: spacing.sm }}
+                                            onPress={() =>
+                                                removeManualParticipantFromPool(team.p1Name, team.p2Name, {
+                                                    p1Id: team.p1Id,
+                                                    p2Id: team.p2Id
+                                                })
+                                            }
+                                        >
+                                            <Ionicons name="trash-outline" size={20} color={colors.error} />
+                                        </TouchableOpacity>
+                                    </View>
+                                )) : manualParticipantRows.map((participant) => (
+                                    <View key={participant.id} style={styles.playerListItem}>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                                            <View style={styles.playerListItemAvatar}>
+                                                <Text style={styles.playerListItemInitials}>
+                                                    {participant.name.substring(0, 2).toUpperCase()}
+                                                </Text>
+                                            </View>
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={styles.playerListItemName}>{participant.name}</Text>
+                                                <Text style={styles.playerSearchRole}>Participante Manual</Text>
+                                            </View>
+                                        </View>
+                                        <TouchableOpacity
+                                            style={{ padding: spacing.sm }}
+                                            onPress={() => removeManualParticipantFromPool(participant.name)}
+                                        >
+                                            <Ionicons name="trash-outline" size={20} color={colors.error} />
+                                        </TouchableOpacity>
+                                    </View>
+                                ))}
+                            </>
                         ) : (
                             <View style={styles.emptyMatches}>
                                 <Ionicons name="people-outline" size={48} color={colors.border} />
@@ -1666,7 +3684,9 @@ export default function AdminTournamentDetailScreen() {
                                     <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md }} onPress={() => handleMatchPress(m)}>
                                         <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textTertiary }}>VS</Text>
                                         <View style={{ backgroundColor: colors.background, paddingHorizontal: 8, paddingVertical: 4, borderRadius: borderRadius.sm }}>
-                                            <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textSecondary }}>{m.score || 'Por definir'}</Text>
+                                            <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textSecondary }}>
+                                                {getScoreText(m.score) || 'Por definir'}
+                                            </Text>
                                         </View>
                                     </TouchableOpacity>
 
@@ -1746,19 +3766,7 @@ export default function AdminTournamentDetailScreen() {
                                     <TouchableOpacity
                                         key={playerRow.id}
                                         onPress={() => {
-                                            if (IS_DOUBLES) {
-                                                Alert.alert(
-                                                    'Asignar Jugador',
-                                                    '¿Qué jugador deseas asignar?',
-                                                    [
-                                                        { text: 'Jugador 1', onPress: () => handleGroupSlotPress(currentGroupName, playerRow.slotIndex, 1) },
-                                                        { text: 'Jugador 2', onPress: () => handleGroupSlotPress(currentGroupName, playerRow.slotIndex, 2) },
-                                                        { text: 'Cancelar', style: 'cancel' }
-                                                    ]
-                                                );
-                                            } else {
-                                                handleGroupSlotPress(currentGroupName, playerRow.slotIndex, 1);
-                                            }
+                                            handleGroupSlotPress(currentGroupName, playerRow.slotIndex, 1);
                                         }}
                                         style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: spacing.md, paddingHorizontal: spacing.md }}
                                     >
@@ -1809,7 +3817,9 @@ export default function AdminTournamentDetailScreen() {
                                                 <View style={{ alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md }}>
                                                     <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textTertiary }}>VS</Text>
                                                     <View style={{ backgroundColor: colors.background, paddingHorizontal: 8, paddingVertical: 4, borderRadius: borderRadius.sm }}>
-                                                        <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textSecondary }}>{m.score || 'Próximo'}</Text>
+                                                        <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textSecondary }}>
+                                                            {getScoreText(m.score) || 'Próximo'}
+                                                        </Text>
                                                     </View>
                                                 </View>
 
@@ -1891,7 +3901,9 @@ export default function AdminTournamentDetailScreen() {
 
                                             <View style={{ marginTop: initialMarginTop }}>
                                                 {roundMatches.map((m, mIdx) => {
-                                                    const isUnplayed = !m.score;
+                                                    const scoreText = getScoreText(m.score);
+                                                    const scoreSetStrings = getScoreSetStrings(m.score);
+                                                    const isUnplayed = !scoreText;
                                                     const isTBD = !m.player_a_id || !m.player_b_id;
 
                                                     // Special positioning for 3rd place match
@@ -1940,7 +3952,7 @@ export default function AdminTournamentDetailScreen() {
                                                                         )}
                                                                     </View>
                                                                     <TouchableOpacity onPress={() => handleMatchPress(m)} style={{ flexDirection: 'row', gap: 4, paddingRight: spacing.md }}>
-                                                                        {(m.score ? m.score.split(/\s*,\s*/) : ['-']).map((setStr: string, sIdx: number) => {
+                                                                        {(scoreSetStrings.length ? scoreSetStrings : ['-']).map((setStr: string, sIdx: number) => {
                                                                             const setScores = setStr.split(/[ -]/);
                                                                             return (
                                                                                 <View key={sIdx} style={{ backgroundColor: isUnplayed ? colors.background : colors.primary[500], paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm, minWidth: 24, alignItems: 'center' }}>
@@ -1979,7 +3991,7 @@ export default function AdminTournamentDetailScreen() {
                                                                         )}
                                                                     </View>
                                                                     <TouchableOpacity onPress={() => handleMatchPress(m)} style={{ flexDirection: 'row', gap: 4, paddingRight: spacing.md }}>
-                                                                        {(m.score ? m.score.split(/\s*,\s*/) : ['-']).map((setStr: string, sIdx: number) => {
+                                                                        {(scoreSetStrings.length ? scoreSetStrings : ['-']).map((setStr: string, sIdx: number) => {
                                                                             const setScores = setStr.split(/[ -]/);
                                                                             return (
                                                                                 <View key={sIdx} style={{ backgroundColor: isUnplayed ? colors.background : colors.primary[500], paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm, minWidth: 24, alignItems: 'center' }}>
@@ -2114,42 +4126,200 @@ export default function AdminTournamentDetailScreen() {
                     behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 >
                     <View style={styles.modalHeader}>
-                        <Text style={styles.modalTitle}>Asignar Jugador</Text>
-                        <TouchableOpacity onPress={() => setIsPlayerModalVisible(false)} style={styles.modalCloseBtn}>
+                        <Text style={styles.modalTitle}>
+                            {assignmentTargets.length > 0 ? 'Asignar Jugadores' : (IS_DOUBLES ? 'Agregar dupla' : 'Agregar Participante')}
+                        </Text>
+                        <TouchableOpacity onPress={closePlayerSelectionModal} style={styles.modalCloseBtn}>
                             <Ionicons name="close" size={24} color={colors.text} />
                         </TouchableOpacity>
                     </View>
 
-                    <View style={{ paddingHorizontal: spacing.xl, gap: spacing.sm, marginTop: spacing.md, marginBottom: spacing.sm, flexDirection: 'row' }}>
-                        <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={() => setIsManualPlayerModalVisible(true)}>
-                            <Text style={styles.modalBtnSaveText}>Agregar Manual</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => createManualProfileAndAssign('BYE')}>
-                            <Text style={styles.modalBtnCancelText}>Asignar BYE</Text>
-                        </TouchableOpacity>
-                    </View>
+                    {assignmentTargets.length > 0 && (
+                        <View style={styles.assignmentSectionsContainer}>
+                            {assignmentTargets.map((target, index) => {
+                                const isActiveTarget = index === activeAssignmentIndex;
+                                const targetMeta =
+                                    target.type === 'group'
+                                        ? ` · Grupo ${target.groupName}${target.slotIndex + 1}`
+                                        : '';
+                                return (
+                                    <View
+                                        key={`${target.type}-${target.type === 'match' ? `${target.matchId}-${target.slot}` : `${target.groupName}-${target.slotIndex}-${target.member}`}`}
+                                        style={[
+                                            styles.assignmentTargetCard,
+                                            isActiveTarget && styles.assignmentTargetCardActive
+                                        ]}
+                                    >
+                                        <TouchableOpacity
+                                            onPress={() => setActiveAssignmentTarget(index)}
+                                            style={styles.assignmentTargetHeader}
+                                        >
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={styles.assignmentTargetLabel}>{target.label}{targetMeta}</Text>
+                                                <Text style={styles.assignmentTargetValue} numberOfLines={1}>
+                                                    {getAssignmentTargetCurrentName(target)}
+                                                </Text>
+                                            </View>
+                                            {isActiveTarget && (
+                                                <Ionicons name="checkmark-circle" size={18} color={colors.primary[500]} />
+                                            )}
+                                        </TouchableOpacity>
+                                        <View style={styles.assignmentActionRow}>
+                                            <TouchableOpacity
+                                                style={[styles.assignmentActionButton, styles.assignmentActionPrimary]}
+                                                onPress={() => {
+                                                    if (!isActiveTarget) {
+                                                        setActiveAssignmentTarget(index);
+                                                        return;
+                                                    }
+                                                    setManualCreationMode('assignment');
+                                                    setIsManualPlayerModalVisible(true);
+                                                }}
+                                            >
+                                                <Text style={styles.assignmentActionPrimaryText}>Agregar Manual</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                                style={[styles.assignmentActionButton, styles.assignmentActionSecondary]}
+                                                onPress={async () => {
+                                                    if (!isActiveTarget) {
+                                                        setActiveAssignmentTarget(index);
+                                                        return;
+                                                    }
+                                                    await createManualProfileAndAssign('BYE', assignmentTargets.length > 1);
+                                                }}
+                                            >
+                                                <Text style={styles.assignmentActionSecondaryText}>Asignar BYE</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                                style={[styles.assignmentActionButton, styles.assignmentActionDanger]}
+                                                onPress={async () => {
+                                                    if (!isActiveTarget) {
+                                                        setActiveAssignmentTarget(index);
+                                                        return;
+                                                    }
+                                                    await removeMatchPlayer(false, false);
+                                                    resetPlayerSelectionSearch();
+                                                    if (assignmentTargets.length > 1) {
+                                                        moveToNextAssignmentTarget();
+                                                    }
+                                                }}
+                                            >
+                                                <Text style={styles.assignmentActionDangerText}>Quitar</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+                                );
+                            })}
+                        </View>
+                    )}
 
-                    <TouchableOpacity
-                        style={[styles.searchResultRow, { paddingHorizontal: spacing.xl, borderBottomWidth: 1, borderTopWidth: 1, borderColor: colors.border, backgroundColor: colors.error + '10' }]}
-                        onPress={() => removeMatchPlayer()}
-                    >
-                        <Ionicons name="trash-outline" size={20} color={colors.error} style={{ marginRight: spacing.md }} />
-                        <Text style={{ color: colors.error, fontWeight: '600' }}>Quitar Jugador / Por definir</Text>
-                    </TouchableOpacity>
+                    {assignmentTargets.length === 0 && (
+                        <View style={{ paddingHorizontal: spacing.xl, paddingTop: spacing.md, gap: spacing.sm }}>
+                            <Text style={{ color: colors.textSecondary, fontSize: 13 }}>
+                                {IS_DOUBLES
+                                    ? 'Selecciona 2 jugadores para crear una dupla definida, o agrégala manualmente.'
+                                    : 'Busca usuarios o agrega participantes manuales para inscribirlos al torneo.'}
+                            </Text>
+                            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                                <TouchableOpacity
+                                    style={[styles.modalBtn, styles.modalBtnSave]}
+                                    onPress={() => {
+                                        setManualCreationMode('participants');
+                                        setIsManualPlayerModalVisible(true);
+                                    }}
+                                >
+                                    <Text style={styles.modalBtnSaveText}>{IS_DOUBLES ? 'Agregar dupla manual' : 'Agregar Manual'}</Text>
+                                </TouchableOpacity>
+                                {IS_DOUBLES && (
+                                    <TouchableOpacity
+                                        style={[styles.modalBtn, styles.modalBtnSave, { opacity: pendingDoublesTeamIds.length === 2 ? 1 : 0.6 }]}
+                                        onPress={savePendingDoublesTeam}
+                                        disabled={pendingDoublesTeamIds.length !== 2}
+                                    >
+                                        <Text style={styles.modalBtnSaveText}>Guardar dupla</Text>
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                            {IS_DOUBLES && pendingDoublesTeamIds.length > 0 && (
+                                <Text style={{ color: colors.textSecondary, fontSize: 12 }}>
+                                    Seleccionados: {pendingDoublesTeamIds.map((id) => getPlayerName(id)).join(' / ')}
+                                </Text>
+                            )}
+                        </View>
+                    )}
 
-                    <Text style={styles.modalSectionTitle}>Participantes Registrados</Text>
+                    <Text style={styles.modalSectionTitle}>
+                        {assignmentTargets.length > 0 ? 'Participantes Registrados (toque para asignar al bloque activo)' : 'Participantes Registrados'}
+                    </Text>
                     <ScrollView style={{ maxHeight: 300 }}>
-                        {players.map((p) => (
-                            <TouchableOpacity 
-                                key={p.player_id} 
+                        {IS_DOUBLES && assignmentTargets.length > 0 && selectableDoublesTeamRows.map((team) => (
+                            <TouchableOpacity
+                                key={team.id}
                                 style={styles.playerSearchItem}
-                                onPress={() => updateMatchPlayer(p.player_id)}
+                                onPress={async () => {
+                                    await assignDoublesTeamToSelectedSlot(team);
+                                    resetPlayerSelectionSearch();
+                                    const nextIndex = activeAssignmentIndex + 2;
+                                    if (assignmentTargets.length > 1 && nextIndex < assignmentTargets.length) {
+                                        setActiveAssignmentTarget(nextIndex);
+                                    } else {
+                                        closePlayerSelectionModal();
+                                    }
+                                }}
+                            >
+                                <View>
+                                    <Text style={styles.playerSearchName}>{team.label}</Text>
+                                    <Text style={styles.playerSearchRole}>Dupla definida</Text>
+                                </View>
+                                <Ionicons name="add-circle-outline" size={20} color={colors.primary[500]} />
+                            </TouchableOpacity>
+                        ))}
+                        {selectableRegisteredPlayers.map((p) => (
+                            <TouchableOpacity
+                                key={p.player_id}
+                                style={styles.playerSearchItem}
+                                onPress={() => {
+                                    if (assignmentTargets.length === 0 && IS_DOUBLES) {
+                                        togglePendingDoublesTeamMember(p.player_id);
+                                        return;
+                                    }
+                                    updateMatchPlayer(p.player_id);
+                                }}
                             >
                                 <View>
                                     <Text style={styles.playerSearchName}>{p.profiles?.name || 'Desconocido'}</Text>
                                     <Text style={styles.playerSearchRole}>Participante Inscrito</Text>
                                 </View>
-                                <Ionicons name="add-circle-outline" size={20} color={colors.primary[500]} />
+                                <Ionicons
+                                    name={assignmentTargets.length === 0 && IS_DOUBLES && pendingDoublesTeamIds.includes(p.player_id)
+                                        ? 'checkmark-circle'
+                                        : 'add-circle-outline'}
+                                    size={20}
+                                    color={assignmentTargets.length === 0 && IS_DOUBLES && pendingDoublesTeamIds.includes(p.player_id)
+                                        ? colors.success
+                                        : colors.primary[500]}
+                                />
+                            </TouchableOpacity>
+                        ))}
+                        {selectableManualParticipants.map((participant) => (
+                            <TouchableOpacity
+                                key={participant.id}
+                                style={styles.playerSearchItem}
+                                onPress={async () => {
+                                    if (assignmentTargets.length === 0) return;
+                                    await createManualProfileAndAssign(participant.name, assignmentTargets.length > 1);
+                                }}
+                                disabled={assignmentTargets.length === 0}
+                            >
+                                <View>
+                                    <Text style={styles.playerSearchName}>{participant.name}</Text>
+                                    <Text style={styles.playerSearchRole}>Participante Manual</Text>
+                                </View>
+                                <Ionicons
+                                    name={assignmentTargets.length > 0 ? 'add-circle-outline' : 'person-outline'}
+                                    size={20}
+                                    color={assignmentTargets.length > 0 ? colors.primary[500] : colors.textTertiary}
+                                />
                             </TouchableOpacity>
                         ))}
                     </ScrollView>
@@ -2182,7 +4352,14 @@ export default function AdminTournamentDetailScreen() {
                                 <TouchableOpacity 
                                     key={user.id} 
                                     style={styles.playerSearchItem}
-                                    onPress={() => updateMatchPlayer(user.id)}
+                                    onPress={async () => {
+                                        if (assignmentTargets.length === 0 && IS_DOUBLES) {
+                                            await registerParticipant(user.id, { keepModalOpen: true });
+                                            togglePendingDoublesTeamMember(user.id);
+                                            return;
+                                        }
+                                        await updateMatchPlayer(user.id);
+                                    }}
                                 >
                                     <View>
                                         <Text style={styles.playerSearchName}>{user.name}</Text>
@@ -2199,14 +4376,28 @@ export default function AdminTournamentDetailScreen() {
             <Modal visible={isManualPlayerModalVisible} transparent animationType="fade">
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>Jugador Manual</Text>
+                        <Text style={styles.modalTitle}>
+                            {manualCreationMode === 'participants'
+                                ? (IS_DOUBLES ? 'Dupla Manual' : 'Participante Manual')
+                                : 'Jugador Manual'}
+                        </Text>
+                        {manualCreationMode === 'participants' && IS_DOUBLES && (
+                            <TextInput
+                                style={[styles.scoreInput, { color: colors.text, textAlign: 'left', marginBottom: spacing.sm }]}
+                                placeholder="Jugador 1"
+                                placeholderTextColor={colors.textTertiary}
+                                value={manualPlayerName}
+                                onChangeText={setManualPlayerName}
+                                autoFocus
+                            />
+                        )}
                         <TextInput
                             style={[styles.scoreInput, { color: colors.text, textAlign: 'left' }]}
-                            placeholder="Nombre del jugador"
+                            placeholder={manualCreationMode === 'participants' && IS_DOUBLES ? 'Jugador 2' : 'Nombre del jugador'}
                             placeholderTextColor={colors.textTertiary}
-                            value={manualPlayerName}
-                            onChangeText={setManualPlayerName}
-                            autoFocus
+                            value={manualCreationMode === 'participants' && IS_DOUBLES ? manualPlayerName2 : manualPlayerName}
+                            onChangeText={manualCreationMode === 'participants' && IS_DOUBLES ? setManualPlayerName2 : setManualPlayerName}
+                            autoFocus={!(manualCreationMode === 'participants' && IS_DOUBLES)}
                         />
                         <View style={styles.modalButtons}>
                             <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsManualPlayerModalVisible(false)}>
@@ -2215,6 +4406,10 @@ export default function AdminTournamentDetailScreen() {
                             <TouchableOpacity
                                 style={[styles.modalBtn, styles.modalBtnSave]}
                                 onPress={async () => {
+                                    if (manualCreationMode === 'participants' && assignmentTargets.length === 0) {
+                                        await addManualParticipantToPool(manualPlayerName, manualPlayerName2);
+                                        return;
+                                    }
                                     await createManualProfileAndAssign(manualPlayerName);
                                     setIsManualPlayerModalVisible(false);
                                 }}
@@ -2299,6 +4494,87 @@ export default function AdminTournamentDetailScreen() {
                         <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsCourtPickerVisible(false)}>
                             <Text style={styles.modalBtnCancelText}>Cerrar</Text>
                         </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            <Modal
+                visible={isSeedCountModalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setIsSeedCountModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Sembrar cuadro</Text>
+                        <Text style={[styles.modalDividerText, { marginBottom: spacing.sm }]}>
+                            ¿Cuántos sembrados quieres usar? Solo esos mejores rankings se distribuirán como cabezas de serie.
+                        </Text>
+                        <Text style={[styles.modalDividerText, { marginBottom: spacing.sm }]}>
+                            Máximo disponible: {seedCountLimit}
+                        </Text>
+                        <TextInput
+                            style={[styles.scoreInput, { color: colors.text, textAlign: 'left' }]}
+                            placeholder="Ej: 4"
+                            placeholderTextColor={colors.textTertiary}
+                            keyboardType="number-pad"
+                            value={seedCountInput}
+                            onChangeText={(value) => setSeedCountInput(value.replace(/\D/g, ''))}
+                            maxLength={3}
+                        />
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity
+                                style={[styles.modalBtn, styles.modalBtnCancel]}
+                                onPress={() => setIsSeedCountModalVisible(false)}
+                            >
+                                <Text style={styles.modalBtnCancelText}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.modalBtn, styles.modalBtnSave]}
+                                onPress={handleConfirmSeedCount}
+                            >
+                                <Text style={styles.modalBtnSaveText}>Sembrar</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            <Modal
+                visible={isFinalsCountModalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setIsFinalsCountModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Generar llaves finales</Text>
+                        <Text style={[styles.modalDividerText, { marginBottom: spacing.sm }]}>
+                            ¿Cuántas duplas clasifican por grupo a la siguiente ronda?
+                        </Text>
+                        <TextInput
+                            style={[styles.scoreInput, { color: colors.text, textAlign: 'left' }]}
+                            placeholder="Ej: 1 o 2"
+                            placeholderTextColor={colors.textTertiary}
+                            keyboardType="number-pad"
+                            value={finalsCountInput}
+                            onChangeText={(value) => setFinalsCountInput(value.replace(/\D/g, ''))}
+                            maxLength={3}
+                        />
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity
+                                style={[styles.modalBtn, styles.modalBtnCancel]}
+                                onPress={() => setIsFinalsCountModalVisible(false)}
+                            >
+                                <Text style={styles.modalBtnCancelText}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.modalBtn, styles.modalBtnSave]}
+                                onPress={handleConfirmRoundRobinFinalsCount}
+                            >
+                                <Text style={styles.modalBtnSaveText}>Generar</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 </View>
             </Modal>
@@ -2449,6 +4725,80 @@ function getStyles(colors: any) {
             color: colors.textTertiary,
             marginTop: 2,
         },
+        assignmentSectionsContainer: {
+            paddingHorizontal: spacing.xl,
+            paddingTop: spacing.md,
+            gap: spacing.sm,
+        },
+        assignmentTargetCard: {
+            borderWidth: 1,
+            borderColor: colors.border,
+            borderRadius: borderRadius.lg,
+            backgroundColor: colors.surface,
+            padding: spacing.sm,
+            gap: spacing.sm,
+        },
+        assignmentTargetCardActive: {
+            borderColor: colors.primary[500],
+            backgroundColor: colors.primary[500] + '08',
+        },
+        assignmentTargetHeader: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: spacing.sm,
+        },
+        assignmentTargetLabel: {
+            fontSize: 12,
+            fontWeight: '800',
+            color: colors.textSecondary,
+            textTransform: 'uppercase',
+        },
+        assignmentTargetValue: {
+            fontSize: 14,
+            fontWeight: '700',
+            color: colors.text,
+            marginTop: 2,
+        },
+        assignmentActionRow: {
+            flexDirection: 'row',
+            gap: spacing.xs,
+        },
+        assignmentActionButton: {
+            flex: 1,
+            minHeight: 34,
+            borderRadius: borderRadius.md,
+            justifyContent: 'center',
+            alignItems: 'center',
+            paddingHorizontal: spacing.sm,
+        },
+        assignmentActionPrimary: {
+            backgroundColor: colors.primary[500],
+        },
+        assignmentActionSecondary: {
+            backgroundColor: colors.surfaceSecondary,
+            borderWidth: 1,
+            borderColor: colors.border,
+        },
+        assignmentActionDanger: {
+            backgroundColor: colors.error + '12',
+            borderWidth: 1,
+            borderColor: colors.error + '35',
+        },
+        assignmentActionPrimaryText: {
+            color: '#fff',
+            fontSize: 11,
+            fontWeight: '800',
+        },
+        assignmentActionSecondaryText: {
+            color: colors.text,
+            fontSize: 11,
+            fontWeight: '700',
+        },
+        assignmentActionDangerText: {
+            color: colors.error,
+            fontSize: 11,
+            fontWeight: '800',
+        },
         modalSectionTitle: {
             fontSize: 14,
             fontWeight: '800',
@@ -2474,6 +4824,8 @@ function getStyles(colors: any) {
         },
     });
 }
+
+
 
 
 

@@ -11,6 +11,7 @@ import { TOURNAMENT_CATEGORIES, CHILEAN_COMUNAS, TOURNAMENT_SURFACES, TOURNAMENT
 import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { normalizeTournamentStatus } from '@/services/tournamentStatus';
+import { buildDescriptionWithRankingPoints, DEFAULT_RANKING_POINTS, parseRankingPoints } from '@/services/ranking';
 
 const formatCloseTimeInput = (value: string) => {
     const digits = value.replace(/\D/g, '').slice(0, 4);
@@ -37,6 +38,57 @@ const isValidCloseTime = (value: string) => {
     return Number.isInteger(hours) && Number.isInteger(minutes) && hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
 };
 
+type RankingPointRow = {
+    id: string;
+    place: string;
+    label: string;
+    points: string;
+    isDefault: boolean;
+};
+
+const DEFAULT_RANKING_ROW_CONFIG = [
+    { place: '1', label: 'Campeon' },
+    { place: '2', label: 'Finalista' },
+    { place: '3', label: 'Semifinalistas' },
+    { place: '4', label: 'Cuartos' },
+] as const;
+
+const createRankingRowId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const DEFAULT_RANKING_ROWS = (): RankingPointRow[] =>
+    DEFAULT_RANKING_ROW_CONFIG.map((row) => ({
+        id: `rank-default-${row.place}`,
+        place: row.place,
+        label: row.label,
+        points: String(DEFAULT_RANKING_POINTS[row.place] ?? 0),
+        isDefault: true,
+    }));
+
+const buildRankingRowsFromDescription = (description?: string | null): RankingPointRow[] => {
+    const parsedPoints = parseRankingPoints(description);
+    const defaultPlaces = new Set<string>(DEFAULT_RANKING_ROW_CONFIG.map((row) => row.place));
+
+    const defaultRows = DEFAULT_RANKING_ROW_CONFIG.map((row) => ({
+        id: `rank-default-${row.place}`,
+        place: row.place,
+        label: row.label,
+        points: String(parsedPoints[row.place] ?? DEFAULT_RANKING_POINTS[row.place] ?? 0),
+        isDefault: true,
+    }));
+
+    const manualRows = Object.entries(parsedPoints)
+        .filter(([placeKey]) => !defaultPlaces.has(placeKey))
+        .map(([placeKey, points]) => ({
+            id: `rank-manual-${createRankingRowId()}`,
+            place: String(placeKey || ''),
+            label: 'Rango manual',
+            points: String(points ?? 0),
+            isDefault: false,
+        }));
+
+    return [...defaultRows, ...manualRows];
+};
+
 export default function EditTournamentScreen() {
     const { id } = useLocalSearchParams();
     const insets = useSafeAreaInsets();
@@ -60,6 +112,7 @@ export default function EditTournamentScreen() {
     const [address, setAddress] = useState('');
     const [comuna, setComuna] = useState('');
     const [tournamentData, setTournamentData] = useState<any>(null);
+    const [rankingPointRows, setRankingPointRows] = useState<RankingPointRow[]>(() => DEFAULT_RANKING_ROWS());
 
     const [isLoading, setIsLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -127,6 +180,7 @@ export default function EditTournamentScreen() {
             setRegistrationFee(String(data.registration_fee || '0'));
             setAddress(data.address || '');
             setComuna(data.comuna || '');
+            setRankingPointRows(buildRankingRowsFromDescription(data.description));
         } catch (error) {
             Alert.alert('Error', 'No se pudo cargar el torneo');
             router.back();
@@ -174,7 +228,7 @@ export default function EditTournamentScreen() {
 
             const maxPlayersValue = parseInt(maxPlayers) || 8;
             const tournamentFormat = buildTournamentFormatLabel(format, { groupCount: parseInt(groupCount) || 2 });
-            const tournamentDescription = buildTournamentDescription(parseInt(groupCount) || 2, tournamentData?.description);
+            const descriptionWithGroup = buildTournamentDescription(parseInt(groupCount) || 2, tournamentData?.description);
             const updatePayload: any = { name: tournamentName };
 
             if (isMasterTournament) {
@@ -187,9 +241,39 @@ export default function EditTournamentScreen() {
                 updatePayload.address = address;
                 updatePayload.comuna = comuna;
             } else {
+                const rankingPoints: Record<string, number> = {};
+                const usedPlaces = new Set<string>();
+
+                for (const row of rankingPointRows) {
+                    const placeKey = row.place.trim();
+                    const pointsRaw = row.points.trim();
+                    const isEmptyManualRow = !row.isDefault && !placeKey && !pointsRaw;
+                    if (isEmptyManualRow) continue;
+
+                    if (!placeKey) {
+                        Alert.alert('Error', 'Completa el rango en los puntos de ranking manuales.');
+                        return;
+                    }
+
+                    const uniquePlaceKey = placeKey.toLowerCase();
+                    if (usedPlaces.has(uniquePlaceKey)) {
+                        Alert.alert('Error', `El rango "${placeKey}" está duplicado en los puntos para ranking.`);
+                        return;
+                    }
+                    usedPlaces.add(uniquePlaceKey);
+
+                    const parsedPoints = Number(pointsRaw || '0');
+                    if (!Number.isFinite(parsedPoints)) {
+                        Alert.alert('Error', `Los puntos para el rango "${placeKey}" deben ser numéricos.`);
+                        return;
+                    }
+
+                    rankingPoints[placeKey] = parsedPoints;
+                }
+
                 updatePayload.level = level;
                 updatePayload.format = tournamentFormat;
-                updatePayload.description = tournamentDescription;
+                updatePayload.description = buildDescriptionWithRankingPoints(rankingPoints, descriptionWithGroup);
                 updatePayload.set_type = setType;
                 updatePayload.max_players = maxPlayersValue;
                 updatePayload.registration_fee = parseInt(registrationFee) || 0;
@@ -235,7 +319,7 @@ export default function EditTournamentScreen() {
                 const rebuiltMatches = createInitialMatches({
                     tournamentId: String(id),
                     format: tournamentFormat,
-                    description: tournamentDescription,
+                    description: updatePayload.description,
                     maxPlayers: maxPlayersValue,
                     participants: (registrations || []).map((registration: any) => ({ id: registration.player_id }))
                 });
@@ -437,6 +521,83 @@ export default function EditTournamentScreen() {
                             <Text style={styles.dropdownText}>{level}</Text>
                             <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
                         </TouchableOpacity>
+                    </View>
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>
+                            <Ionicons name="trophy-outline" size={18} color={colors.primary[500]} />
+                            {' '}Puntos para Ranking
+                        </Text>
+                        <View style={styles.rankingContainer}>
+                            {rankingPointRows.map((row) => (
+                                <View key={row.id} style={styles.rankingRow}>
+                                    <View style={styles.rankingRowHeader}>
+                                        <Text style={styles.rankingRowTitle}>{row.label}</Text>
+                                        {!row.isDefault && (
+                                            <TouchableOpacity
+                                                onPress={() =>
+                                                    setRankingPointRows((current) =>
+                                                        current.filter((currentRow) => currentRow.id !== row.id)
+                                                    )
+                                                }
+                                            >
+                                                <Ionicons name="trash-outline" size={18} color={colors.error} />
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
+                                    <View style={styles.rankingRowInputs}>
+                                        <TextInput
+                                            style={[styles.textInput, styles.rankingInput]}
+                                            value={row.place}
+                                            onChangeText={(nextValue) =>
+                                                setRankingPointRows((current) =>
+                                                    current.map((currentRow) =>
+                                                        currentRow.id === row.id
+                                                            ? { ...currentRow, place: nextValue }
+                                                            : currentRow
+                                                    )
+                                                )
+                                            }
+                                            placeholder="Rango (ej: 1, 5-8, Octavos)"
+                                            placeholderTextColor={colors.textTertiary}
+                                        />
+                                        <TextInput
+                                            style={[styles.textInput, styles.rankingPointsInput]}
+                                            value={row.points}
+                                            onChangeText={(nextValue) =>
+                                                setRankingPointRows((current) =>
+                                                    current.map((currentRow) =>
+                                                        currentRow.id === row.id
+                                                            ? { ...currentRow, points: nextValue }
+                                                            : currentRow
+                                                    )
+                                                )
+                                            }
+                                            keyboardType="number-pad"
+                                            placeholder="Pts"
+                                            placeholderTextColor={colors.textTertiary}
+                                        />
+                                    </View>
+                                </View>
+                            ))}
+                            <TouchableOpacity
+                                style={styles.addRankingManualBtn}
+                                onPress={() =>
+                                    setRankingPointRows((current) => [
+                                        ...current,
+                                        {
+                                            id: `rank-manual-${createRankingRowId()}`,
+                                            place: '',
+                                            label: 'Rango manual',
+                                            points: '',
+                                            isDefault: false,
+                                        },
+                                    ])
+                                }
+                            >
+                                <Ionicons name="add-circle-outline" size={18} color={colors.primary[500]} />
+                                <Text style={styles.addRankingManualText}>Agregar rango manual</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                         </>
                     )}
@@ -658,6 +819,52 @@ function getStyles(colors: any) {
     modalCloseText: {
         color: colors.primary[500],
         fontWeight: '700',
+    },
+    rankingContainer: {
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: borderRadius.lg,
+        padding: spacing.md,
+        gap: spacing.md,
+    },
+    rankingRow: {
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: borderRadius.md,
+        padding: spacing.sm,
+        gap: spacing.sm,
+    },
+    rankingRowHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    rankingRowTitle: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: colors.textSecondary,
+    },
+    rankingRowInputs: {
+        flexDirection: 'row',
+        gap: spacing.sm,
+    },
+    rankingInput: {
+        flex: 1,
+    },
+    rankingPointsInput: {
+        width: 90,
+    },
+    addRankingManualBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.xs,
+        alignSelf: 'flex-start',
+    },
+    addRankingManualText: {
+        color: colors.primary[500],
+        fontWeight: '700',
+        fontSize: 13,
     },
     });
 }

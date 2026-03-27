@@ -56,3 +56,46 @@ export const normalizeTournamentStatus = (status?: string | null) => {
 
   return normalized;
 };
+
+const parseDateOnly = (value?: string | null) => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const parsed = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+};
+
+export const getEffectiveTournamentStatus = (params: {
+  status?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  now?: Date;
+}) => {
+  const normalizedStatus = normalizeTournamentStatus(params.status);
+
+  if (normalizedStatus === 'finished' || normalizedStatus === 'cancelled') {
+    return normalizedStatus;
+  }
+
+  if (normalizedStatus === 'draft' || normalizedStatus === 'pending') {
+    return normalizedStatus;
+  }
+
+  const now = params.now || new Date();
+  const startDate = parseDateOnly(params.startDate);
+  const endDate = parseDateOnly(params.endDate || params.startDate);
+
+  if (endDate) {
+    const endOfDay = new Date(endDate);
+    endOfDay.setHours(23, 59, 59, 999);
+    if (now >= endOfDay) {
+      return 'finished';
+    }
+  }
+
+  if (startDate && now >= startDate) {
+    return 'in_progress';
+  }
+
+  return normalizedStatus || 'open';
+};

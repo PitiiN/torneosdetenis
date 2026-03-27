@@ -17,6 +17,28 @@ const { width } = Dimensions.get('window');
 const BACKHAND_FIELD = 'rev\u00E9s';
 const VIEW_TOGGLE_BLOCKED_EMAILS = new Set(['javier.aravena25@gmail.com']);
 
+const getScoreText = (scoreValue: any): string => {
+    if (scoreValue === null || scoreValue === undefined) return '';
+    if (typeof scoreValue === 'string') return scoreValue.trim();
+
+    if (typeof scoreValue === 'object') {
+        if (scoreValue?.wo) return 'W.O.';
+        if (typeof scoreValue?.text === 'string') return scoreValue.text.trim();
+        if (typeof scoreValue?.score === 'string') return scoreValue.score.trim();
+        if (Array.isArray(scoreValue?.sets)) {
+            const setsAsText = scoreValue.sets
+                .map((setScore: any) => String(setScore || '').trim())
+                .filter(Boolean)
+                .join(', ');
+            if (setsAsText) return setsAsText;
+        }
+        return '';
+    }
+
+    const fallback = String(scoreValue || '').trim();
+    return fallback === '[object Object]' ? '' : fallback;
+};
+
 export default function ProfileScreen() {
     const insets = useSafeAreaInsets();
     const { colors, toggleTheme, isDark } = useTheme();
@@ -299,8 +321,9 @@ export default function ProfileScreen() {
 
             userMatches.forEach((m: any) => {
                 const isPlayerA = m.player_a_id === user.id || m.player_a2_id === user.id;
-                if (m.score) {
-                    const sets = String(m.score).split(/\s*,\s*/);
+                const scoreText = getScoreText(m.score);
+                if (scoreText && !/^W\.?O\.?$/i.test(scoreText)) {
+                    const sets = scoreText.split(/\s*,\s*/);
                     sets.forEach((s: string) => {
                         const parts = s.trim().split(/[- ]+/).map(Number);
                         if (parts.length >= 2) {
@@ -329,6 +352,7 @@ export default function ProfileScreen() {
 
             let trophies = 0;
             let allPlayersPoints: Record<string, number> = {};
+            const rankingPlayerIds = new Set<string>();
 
             if (completedTournaments.length > 0) {
                 const completedTournamentIds = completedTournaments.map((tournament: any) => tournament.id);
@@ -339,6 +363,13 @@ export default function ProfileScreen() {
 
                 if (allMatchesError) throw allMatchesError;
 
+                const { data: completedRegistrationsRows, error: completedRegistrationsError } = await supabase
+                    .from('registrations')
+                    .select('player_id, status')
+                    .in('tournament_id', completedTournamentIds);
+
+                if (completedRegistrationsError) throw completedRegistrationsError;
+
                 const matchesByTour = (allMatchesRows || []).reduce((acc: any, m: any) => {
                     acc[m.tournament_id] = [...(acc[m.tournament_id] || []), m];
                     return acc;
@@ -348,13 +379,52 @@ export default function ProfileScreen() {
                     const placements = getTournamentPlacements(t, matchesByTour[t.id] || []);
                     placements.forEach((p: any) => {
                         if ((p.playerId === user.id || p.playerId2 === user.id) && p.place === '1') trophies += 1;
-                        if (p.playerId) allPlayersPoints[p.playerId] = (allPlayersPoints[p.playerId] || 0) + (Number(p.points) || 0);
-                        if (p.playerId2) allPlayersPoints[p.playerId2] = (allPlayersPoints[p.playerId2] || 0) + (Number(p.points) || 0);
+                        if (p.playerId) {
+                            allPlayersPoints[p.playerId] = (allPlayersPoints[p.playerId] || 0) + (Number(p.points) || 0);
+                            rankingPlayerIds.add(p.playerId);
+                        }
+                        if (p.playerId2) {
+                            allPlayersPoints[p.playerId2] = (allPlayersPoints[p.playerId2] || 0) + (Number(p.points) || 0);
+                            rankingPlayerIds.add(p.playerId2);
+                        }
                     });
+                });
+
+                (completedRegistrationsRows || []).forEach((registration: any) => {
+                    const playerId = String(registration?.player_id || '').trim();
+                    const registrationStatus = String(registration?.status || '').toLowerCase();
+                    if (!playerId) return;
+                    if (registrationStatus === 'cancelled' || registrationStatus === 'rejected') return;
+                    rankingPlayerIds.add(playerId);
+                    if (!Object.prototype.hasOwnProperty.call(allPlayersPoints, playerId)) {
+                        allPlayersPoints[playerId] = 0;
+                    }
                 });
             }
 
-            const sortedRanking = Object.entries(allPlayersPoints).sort((a, b) => b[1] - a[1]);
+            if (Object.keys(allPlayersPoints).length > 0 && !Object.prototype.hasOwnProperty.call(allPlayersPoints, user.id)) {
+                allPlayersPoints[user.id] = 0;
+                rankingPlayerIds.add(user.id);
+            }
+
+            const rankingPlayerIdList = Array.from(rankingPlayerIds);
+            let rankingNameById: Record<string, string> = {};
+            if (rankingPlayerIdList.length > 0) {
+                const { data: rankingProfiles } = await supabase
+                    .from('public_profiles')
+                    .select('id, name')
+                    .in('id', rankingPlayerIdList);
+
+                rankingNameById = (rankingProfiles || []).reduce((acc: Record<string, string>, profile: any) => {
+                    acc[profile.id] = String(profile?.name || 'Jugador');
+                    return acc;
+                }, {});
+            }
+
+            const sortedRanking = Object.entries(allPlayersPoints).sort((a, b) => {
+                if ((b[1] || 0) !== (a[1] || 0)) return (b[1] || 0) - (a[1] || 0);
+                return String(rankingNameById[a[0]] || '').localeCompare(String(rankingNameById[b[0]] || ''));
+            });
             const userRankIndex = sortedRanking.findIndex(([id]) => id === user.id);
             const rank = userRankIndex !== -1 ? `#${userRankIndex + 1}` : '-';
 
