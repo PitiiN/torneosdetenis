@@ -13,6 +13,8 @@ import { TennisSpinner } from '@/components/TennisSpinner';
 import { resolveStorageAssetUrl } from '@/services/storage';
 import { AdminQuickActionsBar } from '@/components/navigation/AdminQuickActionsBar';
 import { getTournamentPlacements } from '@/services/ranking';
+import { formatDateDDMMYYYY, formatTime24, parseTimeRelaxed } from '@/utils/datetime';
+import { syncTournamentChampion, resolveChampionFromMatches } from '@/services/tournamentChampion';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const COURT_OPTIONS = Array.from({ length: 20 }, (_current, index) => `Cancha ${index + 1}`);
@@ -106,15 +108,11 @@ export default function AdminTournamentDetailScreen() {
     const padTwo = (value: number) => String(value).padStart(2, '0');
     const formatScheduleDate = (scheduledAt?: string | null) => {
         if (!scheduledAt) return null;
-        const date = new Date(scheduledAt);
-        if (Number.isNaN(date.getTime())) return null;
-        return date.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        return formatDateDDMMYYYY(scheduledAt);
     };
     const formatScheduleTime = (scheduledAt?: string | null) => {
         if (!scheduledAt) return null;
-        const date = new Date(scheduledAt);
-        if (Number.isNaN(date.getTime())) return null;
-        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return formatTime24(scheduledAt);
     };
 
     const collectPlayerIds = (registrations: any[], tournamentMatches: any[]) => {
@@ -496,12 +494,26 @@ export default function AdminTournamentDetailScreen() {
             const hydratedMatches = hydrateMatches(loadedMatches, profileMapById);
             const nextAvatarMap = Object.entries(profileMapById).reduce((acc: Record<string, string | null>, [playerId, profile]) => {
                 acc[playerId] = profile.avatarUrl || null;
-                return acc;
+            return acc;
             }, {});
 
             setPlayers(hydratedPlayers);
             setMatches(hydratedMatches);
             setPlayerAvatarById(nextAvatarMap);
+
+            // Sync champion if missing from description
+            if (!(tourData.description || '').includes('[CHAMPION:')) {
+                syncTournamentChampion(id, supabase).then(newChampName => {
+                    if (newChampName) {
+                        setTournament((prev: any) => prev ? { 
+                            ...prev, 
+                            description: (prev.description || '').includes('[CHAMPION:') 
+                                ? prev.description 
+                                : `${prev.description || ''} [CHAMPION:${newChampName}]`.trim() 
+                        } : prev);
+                    }
+                });
+            }
 
             // check and move byes
             const byeResolved = await checkAndProcessByes(hydratedMatches, tourData.description);
@@ -614,20 +626,20 @@ export default function AdminTournamentDetailScreen() {
             }
 
             if (normalizedDate) {
-                const validTime = /^([01]\d|2[0-3]):([0-5]\d)$/.test(normalizedTime);
+                const validTime = parseTimeRelaxed(normalizedTime);
                 if (!validTime) {
-                    Alert.alert('Error', 'Ingresa una hora válida en formato HH:MM.');
+                    Alert.alert('Error', 'Ingresa una hora válida (ej: 18:30 o 1830).');
                     return;
                 }
 
-                const localDateTime = new Date(`${normalizedDate}T${normalizedTime}:00`);
+                const localDateTime = new Date(`${normalizedDate}T${validTime}:00`);
                 if (Number.isNaN(localDateTime.getTime())) {
                     Alert.alert('Error', 'La fecha u hora ingresada no es válida.');
                     return;
                 }
                 scheduledAt = localDateTime.toISOString();
             }
-
+            
             const { error } = await supabase
                 .from('matches')
                 .update({
@@ -638,7 +650,10 @@ export default function AdminTournamentDetailScreen() {
 
             if (error) throw error;
             
-            await loadTournamentData();
+            applyMatchPatchLocally(selectedMatch.id, { 
+                scheduled_at: scheduledAt, 
+                court: normalizedCourt 
+            });
             setIsScheduleModalVisible(false);
             Alert.alert('Éxito', 'Horario y cancha guardados.');
         } catch (error) {
@@ -651,7 +666,7 @@ export default function AdminTournamentDetailScreen() {
     const resolveWinnerIds = (match: any, scoreValue: any) => {
         const scoreText = getScoreText(scoreValue);
         if (!scoreText || /^W\.?O\.?$/i.test(scoreText)) {
-            return { w1: null, w2: null };
+            return { w1: null, w2: null, side: null };
         }
 
         const sets = scoreText.split(/\s*,\s*/).filter(Boolean);
@@ -667,10 +682,10 @@ export default function AdminTournamentDetailScreen() {
             if (b > a) playerBWins += 1;
         });
 
-        if (playerAWins === playerBWins) return { w1: null, w2: null };
+        if (playerAWins === playerBWins) return { w1: null, w2: null, side: null };
         return playerAWins > playerBWins 
-            ? { w1: match.player_a_id, w2: match.player_a2_id }
-            : { w1: match.player_b_id, w2: match.player_b2_id };
+            ? { w1: match.player_a_id, w2: match.player_a2_id, side: 'A' }
+            : { w1: match.player_b_id, w2: match.player_b2_id, side: 'B' };
     };
 
     const getNextMatchLink = (match: any, sourceMatches: any[]) => {
@@ -689,14 +704,24 @@ export default function AdminTournamentDetailScreen() {
             });
 
         const currentRoundMatches = bracketMatches.filter(candidate => candidate.round_number === match.round_number);
-        const nextRoundMatches = bracketMatches.filter(candidate => candidate.round_number === (match.round_number || 0) + 1);
+        // Ensure we only look for the next round in the same bracket (exclude placement matches)
+        const nextRoundMatches = bracketMatches.filter(candidate => 
+            candidate.round_number === (match.round_number || 0) + 1 &&
+            !/3er|4to|5to|6to|puesto/i.test(String(candidate.round || ''))
+        );
         if (nextRoundMatches.length === 0) return null;
 
         const currentIndex = currentRoundMatches.findIndex(candidate => candidate.id === match.id);
         if (currentIndex === -1) return null;
 
+        // BUG FIX: Do not propagate from Final rounds to consolation/ranking matches
+        if (String(match.round || '').toLowerCase().includes('final')) return null;
+
         const nextMatch = nextRoundMatches[Math.floor(currentIndex / 2)];
         if (!nextMatch) return null;
+
+        // BUG FIX: Do not propagate from Final rounds to consolation/ranking matches
+        if (String(match.round || '').toLowerCase().includes('final')) return null;
 
         const nextSlotField = currentIndex % 2 === 0 ? 'player_a_id' : 'player_b_id';
         const nextSlotField2 = currentIndex % 2 === 0 ? 'player_a2_id' : 'player_b2_id';
@@ -707,14 +732,16 @@ export default function AdminTournamentDetailScreen() {
         match: any,
         winnerId: string | null,
         winner2Id: string | null = null,
-        sourceMatches: any[] = matches
+        sourceMatches: any[] = matches,
+        winnerSide?: 'A' | 'B'
     ) {
-        if (!winnerId || String(match.round || '').startsWith('Grupo ')) return;
+        if (!winnerId && !winnerSide) return;
+        if (String(match.round || '').startsWith('Grupo ')) return;
 
         const nextLink = getNextMatchLink(match, sourceMatches);
         if (!nextLink) return;
         const { nextMatch, nextSlotField, nextSlotField2 } = nextLink;
-        
+
         const updateData: any = { [nextSlotField]: winnerId };
         if (IS_DOUBLES) {
             updateData[nextSlotField2] = winner2Id || null;
@@ -726,11 +753,37 @@ export default function AdminTournamentDetailScreen() {
             .eq('id', nextMatch.id);
 
         if (error) throw error;
-        const mergedMatches = sourceMatches
-            .filter(currentMatch => currentMatch.id !== nextMatch.id)
-            .concat({ ...nextMatch, ...updateData });
-        await checkAndProcessByes(mergedMatches, tournament?.description);
-    };
+        applyMatchPatchLocally(nextMatch.id, updateData);
+
+        // ADVANCE MANUAL PLAYERS
+        const targetSide = nextSlotField.startsWith('player_a') ? 'A' : 'B';
+        const manualSlots = tournament?.description ? parseManualAssignments(tournament.description).matchSlots?.[match.id] || {} : {};
+        
+        // Correctly resolve manual participant names using the string keys
+        const p1Key = getMatchManualKey(winnerSide === 'A' ? 1 : 3);
+        const p2Key = getMatchManualKey(winnerSide === 'A' ? 2 : 4);
+        
+        const winnerP1 = manualSlots[p1Key];
+        const winnerP2 = manualSlots[p2Key];
+
+        if (winnerP1 || winnerP2) {
+            await updateTournamentDescription(current => {
+                const nextMatchSlots = { ...(current.matchSlots?.[nextMatch.id] || {}) };
+                const targetOffsetStart = targetSide === 'A' ? 1 : 3;
+                
+                if (winnerP1) nextMatchSlots[getMatchManualKey(targetOffsetStart)] = winnerP1;
+                if (winnerP2) nextMatchSlots[getMatchManualKey(targetOffsetStart + 1 as MatchSlot)] = winnerP2;
+
+                return {
+                    ...current,
+                    matchSlots: {
+                        ...(current.matchSlots || {}),
+                        [nextMatch.id]: nextMatchSlots
+                    }
+                };
+            });
+        }
+    }
 
     async function checkAndProcessByes(allMatches: any[], descriptionOverride?: string | null) {
         if (isRoundRobinFormat(tournament?.format)) return false;
@@ -805,7 +858,7 @@ export default function AdminTournamentDetailScreen() {
                     candidateMatch.id === m.id ? updatedCurrentMatch : candidateMatch
                 );
                 resolvedAnyBye = true;
-                await propagateWinnerToNextMatch(updatedCurrentMatch, winnerId, winner2Id, workingMatches);
+                await propagateWinnerToNextMatch(updatedCurrentMatch, winnerId, winner2Id, workingMatches, isABye ? 'B' : 'A');
             }
         }
         return resolvedAnyBye;
@@ -820,9 +873,30 @@ export default function AdminTournamentDetailScreen() {
                 {
                     text: 'Finalizar',
                     onPress: async () => {
+                        const finalMatch = [...matches]
+                            .filter(m => !String(m.round || '').includes('Grupo') && !String(m.round || '').toLowerCase().includes('puesto'))
+                            .sort((a, b) => (b.round_number || 0) - (a.round_number || 0))[0];
+                        
+                        let championName = '';
+                        if (finalMatch?.status === 'finished') {
+                            const winnerId = finalMatch.winner_id;
+                            if (winnerId) {
+                                championName = getPlayerName(winnerId);
+                            } else {
+                                // Resolve for manual player by checking score
+                                const { side } = resolveWinnerIds(finalMatch, finalMatch.score);
+                                championName = getDisplayName(finalMatch, side === 'B' ? 3 : 1);
+                            }
+                        }
+
                         const { error } = await supabase
                             .from('tournaments')
-                            .update({ status: 'finished' })
+                            .update({ 
+                                status: 'finished',
+                                description: tournament?.description 
+                                    ? `${tournament.description.replace(/\[CHAMPION:.+?\]/g, '').trim()} [CHAMPION:${championName}]`
+                                    : `[CHAMPION:${championName}]`
+                            })
                             .eq('id', id);
 
                         if (error) {
@@ -848,7 +922,7 @@ export default function AdminTournamentDetailScreen() {
             .join(', ');
 
         try {
-            const { w1, w2 } = resolveWinnerIds(selectedMatch, finalScore);
+            const { w1, w2, side } = resolveWinnerIds(selectedMatch, finalScore);
             const { error } = await supabase
                 .from('matches')
                 .update({ 
@@ -860,8 +934,42 @@ export default function AdminTournamentDetailScreen() {
                 .eq('id', selectedMatch.id);
 
             if (error) throw error;
-            await propagateWinnerToNextMatch(selectedMatch, w1, w2);
-            await loadTournamentData();
+                if (side) {
+                    await propagateWinnerToNextMatch(selectedMatch, w1, w2 || null, matches, side as 'A' | 'B');
+                    
+                    // Use the robust resolution logic to get the champion name (handles manual participants)
+                    // We simulate the updated matches state by patching the matches array locally for the call
+                    const patchedMatches = matches.map(m => 
+                        m.id === selectedMatch.id 
+                            ? { ...m, score: finalScore, winner_id: w1, winner_2_id: w2, status: 'finished' } 
+                            : m
+                    );
+                    
+                    const championName = resolveChampionFromMatches(
+                        patchedMatches,
+                        players,
+                        tournament?.description
+                    );
+                    
+                    if (championName) {
+                        const cleanDescription = (tournament?.description || '').replace(/\[CHAMPION:.+?\]/g, '').trim();
+                        const newDescription = cleanDescription 
+                            ? `${cleanDescription} [CHAMPION:${championName}]`
+                            : `[CHAMPION:${championName}]`;
+                        
+                        await supabase
+                            .from('tournaments')
+                            .update({ description: newDescription.trim() })
+                            .eq('id', id);
+                    }
+                }
+
+            applyMatchPatchLocally(selectedMatch.id, {
+                score: finalScore,
+                winner_id: w1,
+                winner_2_id: w2,
+                status: 'finished'
+            });
             setIsEditModalVisible(false);
         } catch (error) {
             Alert.alert('Error', 'No se pudo guardar el resultado.');
@@ -3030,6 +3138,40 @@ export default function AdminTournamentDetailScreen() {
         return fetchFinalRoundRobinMatchesFromDb();
     };
 
+    const generateRRPlacementMatches = async () => {
+        try {
+            const placementRoundNames = ['3er y 4to Puesto RR', '5to y 6to Puesto RR'];
+            const matchesToCreate = [];
+            let lastOrder = matches.length > 0 ? Math.max(...matches.map(m => m.match_order || 0)) : 0;
+
+            for (const roundName of placementRoundNames) {
+                // Check if already exists
+                if (matches.some(m => m.round === roundName)) continue;
+                
+                matchesToCreate.push({
+                    tournament_id: id,
+                    round: roundName,
+                    round_number: 10, // Higher number to avoid propagation conflicts
+                    match_order: ++lastOrder,
+                    status: 'pending',
+                });
+            }
+
+            if (matchesToCreate.length === 0) {
+                Alert.alert('Info', 'Los partidos de posicionamiento ya existen o no son aplicables.');
+                return;
+            }
+
+            const { data, error } = await supabase.from('matches').insert(matchesToCreate).select();
+            if (error) throw error;
+            
+            setMatches(prev => [...prev, ...(data || [])]);
+            Alert.alert('Éxito', 'Partidos de posicionamiento generados.');
+        } catch (error) {
+            Alert.alert('Error', 'No se pudieron generar los partidos.');
+        }
+    };
+
     const generateRoundRobinFinals = async (qualifiersPerGroup: number) => {
         try {
             const seenQualifiers = new Set<string>();
@@ -3657,12 +3799,20 @@ export default function AdminTournamentDetailScreen() {
                 ) : isRoundRobin ? (
                     activeTab === 'finales' ? (
                     <View style={{ gap: spacing.md }}>
-                        <TouchableOpacity
-                            style={[styles.modalBtn, styles.modalBtnSave, { alignSelf: 'flex-start', marginBottom: spacing.sm }]}
-                            onPress={handleGenerateRoundRobinFinals}
-                        >
-                            <Text style={styles.modalBtnSaveText}>Generar llaves</Text>
-                        </TouchableOpacity>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.sm }}>
+                            <TouchableOpacity
+                                style={[styles.modalBtn, styles.modalBtnSave, { flex: 1, minWidth: 120, paddingHorizontal: spacing.sm }]}
+                                onPress={handleGenerateRoundRobinFinals}
+                            >
+                                <Text style={[styles.modalBtnSaveText, { textAlign: 'center' }]}>Generar llaves</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.modalBtn, styles.modalBtnCancel, { flex: 1, minWidth: 120, paddingHorizontal: spacing.sm }]}
+                                onPress={generateRRPlacementMatches}
+                            >
+                                <Text style={[styles.modalBtnCancelText, { textAlign: 'center' }]}>Generar partidos 3°/5°/etc.</Text>
+                            </TouchableOpacity>
+                        </View>
                         {finalRoundRobinMatches.map(m => (
                             <TouchableOpacity key={m.id} style={[styles.matchCard, { paddingVertical: spacing.lg }]} onPress={() => handleMatchPress(m)}>
                                 <Text style={styles.roundText}>{m.round}</Text>
@@ -4053,16 +4203,20 @@ export default function AdminTournamentDetailScreen() {
                         <Text style={styles.modalTitle}>Editar Resultado</Text>
                         {selectedMatch && (
                             <Text style={styles.modalSubtitle}>
-                                {getDisplayName(selectedMatch, 1)} vs {getDisplayName(selectedMatch, 2)}
+                                {getDisplayName(selectedMatch, 1)}{IS_DOUBLES ? ` / ${getDisplayName(selectedMatch, 2)}` : ''} vs {getDisplayName(selectedMatch, 3)}{IS_DOUBLES ? ` / ${getDisplayName(selectedMatch, 4)}` : ''}
                             </Text>
                         )}
                         {selectedMatch && (
                             <View style={{ gap: spacing.md, marginVertical: spacing.md }}>
                                 {/* Column Headers */}
                                 <View style={{ flexDirection: 'row', paddingLeft: 60, gap: spacing.md, marginBottom: -spacing.sm }}>
-                                    <Text style={{ flex: 1, color: colors.textSecondary, fontSize: 10, fontWeight: '700', textAlign: 'center' }} numberOfLines={1}>{getDisplayName(selectedMatch, 1)}</Text>
+                                    <Text style={{ flex: 1, color: colors.textSecondary, fontSize: 10, fontWeight: '700', textAlign: 'center' }} numberOfLines={2}>
+                                        {getDisplayName(selectedMatch, 1)}{IS_DOUBLES ? ` / ${getDisplayName(selectedMatch, 2)}` : ''}
+                                    </Text>
                                     <View style={{ width: 10 }} />
-                                    <Text style={{ flex: 1, color: colors.textSecondary, fontSize: 10, fontWeight: '700', textAlign: 'center' }} numberOfLines={1}>{getDisplayName(selectedMatch, 2)}</Text>
+                                    <Text style={{ flex: 1, color: colors.textSecondary, fontSize: 10, fontWeight: '700', textAlign: 'center' }} numberOfLines={2}>
+                                        {getDisplayName(selectedMatch, 3)}{IS_DOUBLES ? ` / ${getDisplayName(selectedMatch, 4)}` : ''}
+                                    </Text>
                                 </View>
 
                                 {setScores.map((set, idx) => (
@@ -4251,7 +4405,7 @@ export default function AdminTournamentDetailScreen() {
                     <Text style={styles.modalSectionTitle}>
                         {assignmentTargets.length > 0 ? 'Participantes Registrados (toque para asignar al bloque activo)' : 'Participantes Registrados'}
                     </Text>
-                    <ScrollView style={{ maxHeight: 300 }}>
+                    <ScrollView style={{ maxHeight: 600 }}>
                         {IS_DOUBLES && assignmentTargets.length > 0 && selectableDoublesTeamRows.map((team) => (
                             <TouchableOpacity
                                 key={team.id}
@@ -4650,7 +4804,7 @@ function getStyles(colors: any) {
         modalBtnCancel: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
         modalBtnSave: { backgroundColor: colors.primary[500] },
         modalBtnCancelText: { color: colors.text, fontWeight: '600' },
-        modalBtnSaveText: { color: '#fff', fontWeight: '700' },
+        modalBtnSaveText: { color: '#fff', fontWeight: '700', textAlign: 'center', flex: 1 },
 
         // Player Selection Modal Styles
         modalContainer: { flex: 1, backgroundColor: colors.background },

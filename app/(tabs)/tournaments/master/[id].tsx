@@ -15,6 +15,7 @@ import {
 } from '@/services/registrationRequests';
 import { RegistrationProofModal } from '@/components/tournaments/RegistrationProofModal';
 import { normalizeTournamentStatus } from '@/services/tournamentStatus';
+import { resolveChampionFromMatches } from '@/services/tournamentChampion';
 
 type MasterTournament = {
   id: string;
@@ -39,6 +40,7 @@ type Championship = {
   format: string | null;
   registration_fee: number | null;
   start_date: string | null;
+  description: string | null;
 };
 
 type LatestRequest = {
@@ -76,6 +78,40 @@ const formatRegistrationDeadline = (dateValue?: string | null, timeValue?: strin
   const timeLabel = String(timeValue || '').slice(0, 5) || '23:59';
   return `${dateLabel} ${timeLabel}`;
 };
+
+function ChampionName({ championship }: { championship: Championship }) {
+  const [resolvedName, setResolvedName] = useState<string | null>(null);
+  const tagManager = (championship.description || '').match(/\[CHAMPION:(.+?)\]/)?.[1];
+
+  useEffect(() => {
+    if (tagManager || championship.status !== 'finished') return;
+
+    const resolve = async () => {
+      try {
+        const [matchesRes, participantsRes] = await Promise.all([
+          supabase.from('matches').select('*').eq('tournament_id', championship.id),
+          supabase.from('tournament_participants').select('player_id, profiles(name)').eq('tournament_id', championship.id)
+        ]);
+
+        if (matchesRes.data) {
+          const name = resolveChampionFromMatches(matchesRes.data, participantsRes.data || [], championship.description);
+          if (name) setResolvedName(name);
+        }
+      } catch (e) {
+        console.error('Error resolving champion:', e);
+      }
+    };
+    resolve();
+  }, [championship.id, championship.status, championship.description, tagManager]);
+
+  const displayName = tagManager || resolvedName || 'Finalizado';
+
+  return (
+    <Text style={{ fontSize: 13, color: '#333', fontWeight: '800' }}>
+      {displayName}
+    </Text>
+  );
+}
 
 export default function TournamentMasterDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string | string[] }>();
@@ -122,7 +158,7 @@ export default function TournamentMasterDetailScreen() {
 
       const { data: championshipsData, error: championshipsError } = await supabase
         .from('tournaments')
-        .select('id, name, status, level, modality, format, registration_fee, start_date')
+        .select('id, name, status, level, modality, format, registration_fee, start_date, description')
         .eq('parent_tournament_id', masterRow.id);
 
       if (championshipsError) throw championshipsError;
@@ -409,6 +445,33 @@ export default function TournamentMasterDetailScreen() {
                 <Text style={styles.cardMeta}>Valor de Inscripcion: ${Number(championship.registration_fee || 0)}</Text>
                 <Text style={styles.cardMeta}>Formato: {championship.format || 'Sin formato'}</Text>
               </View>
+
+              {(() => {
+                const championName = (championship.description || '').match(/\[CHAMPION:(.+?)\]/)?.[1];
+                const isFinished = championship.status === 'finished';
+                if (!championName && !isFinished) return null;
+                
+                return (
+                  <View style={{ 
+                    marginTop: spacing.sm, 
+                    flexDirection: 'row', 
+                    alignItems: 'center', 
+                    backgroundColor: '#FFD70015', 
+                    padding: 8, 
+                    borderRadius: borderRadius.sm, 
+                    borderWidth: 1, 
+                    borderColor: '#FFD70040' 
+                  }}>
+                    <Ionicons name="trophy" size={16} color="#FFD700" style={{ marginRight: 8 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary, marginBottom: 1 }}>
+                        Campeón
+                      </Text>
+                      <ChampionName championship={championship} />
+                    </View>
+                  </View>
+                );
+              })()}
             </TouchableOpacity>
 
             {latestRequest && (

@@ -18,6 +18,8 @@ import { canManageOrganization, getCurrentUserAccessContext } from '@/services/a
 import { getModalityLabel, sortChampionships } from '@/services/championshipSorting';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { AdminQuickActionsBar } from '@/components/navigation/AdminQuickActionsBar';
+import { formatDateDDMMYYYY } from '@/utils/datetime';
+import { syncTournamentChampion } from '@/services/tournamentChampion';
 
 type MasterTournament = {
   id: string;
@@ -41,8 +43,10 @@ type Championship = {
   level: string | null;
   format: string | null;
   registration_fee: number | null;
-  max_players: number | null;
-  set_type: string | null;
+  max_players: number;
+  set_type: string;
+  status: string;
+  description: string | null;
 };
 
 const FORMATS = ['Eliminación Directa', 'Round Robin', 'Eliminación Directa con Repechaje'];
@@ -66,10 +70,7 @@ const createRowId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8
 
 const formatRegistrationDeadline = (dateValue?: string | null, timeValue?: string | null) => {
   if (!dateValue) return 'Sin definir';
-  const parsedDate = new Date(`${dateValue}T00:00:00`);
-  const dateLabel = Number.isNaN(parsedDate.getTime())
-    ? dateValue
-    : parsedDate.toLocaleDateString('es-ES');
+  const dateLabel = formatDateDDMMYYYY(dateValue);
   const timeLabel = String(timeValue || '').slice(0, 5) || '23:59';
   return `${dateLabel} ${timeLabel}`;
 };
@@ -147,11 +148,31 @@ export default function MasterTournamentAdminScreen() {
 
       const { data: championshipRows, error: championshipError } = await supabase
         .from('tournaments')
-        .select('id, name, modality, level, format, registration_fee, max_players, set_type')
+        .select('id, name, modality, level, format, registration_fee, max_players, set_type, status, description')
         .eq('parent_tournament_id', masterRow.id);
 
       if (championshipError) throw championshipError;
-      setChampionships(sortChampionships((championshipRows || []) as Championship[]));
+      const championships = sortChampionships((championshipRows || []) as Championship[]);
+      setChampionships(championships);
+
+      // Pro-actively sync championships that are finished but missing the champion tag
+      for (const champ of championships) {
+        if (champ.status === 'finished' && !(champ.description || '').includes('[CHAMPION:')) {
+          syncTournamentChampion(champ.id, supabase).then(newChampName => {
+            if (newChampName) {
+              setChampionships(current => 
+                current.map(c => c.id === champ.id 
+                  ? { ...c, description: (c.description || '').includes('[CHAMPION:') 
+                      ? c.description 
+                      : `${c.description || ''} [CHAMPION:${newChampName}]`.trim() 
+                  } 
+                  : c
+                )
+              );
+            }
+          });
+        }
+      }
     } catch (error: any) {
       const detail = String(error?.message || '').trim();
       Alert.alert(
@@ -363,13 +384,13 @@ export default function MasterTournamentAdminScreen() {
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.masterCard}>
-          <Text style={styles.masterText}>Inicio: {masterTournament.start_date || 'Sin fecha'}</Text>
-          <Text style={styles.masterText}>Termino: {masterTournament.end_date || 'Sin fecha'}</Text>
+          <Text style={styles.masterText}>Inicio: {formatDateDDMMYYYY(masterTournament.start_date)}</Text>
+          <Text style={styles.masterText}>Termino: {formatDateDDMMYYYY(masterTournament.end_date)}</Text>
           <Text style={styles.masterText}>
             Cierre inscripciones: {formatRegistrationDeadline(masterTournament.registration_close_at, masterTournament.registration_close_time)}
           </Text>
           <Text style={styles.masterText}>
-            {masterTournament.address || ''}{masterTournament.address && masterTournament.comuna ? ', ' : ''}{masterTournament.comuna || ''}
+            {masterTournament.address || ''}{(masterTournament.address && masterTournament.comuna) ? ', ' : ''}{masterTournament.comuna || ''}
           </Text>
           <Text style={styles.masterText}>Superficie: {masterTournament.surface || 'Sin superficie'}</Text>
         </View>
@@ -399,6 +420,35 @@ export default function MasterTournamentAdminScreen() {
             <Text style={styles.championshipMeta}>Categoria: {championship.level || 'Sin categoria'}</Text>
             <Text style={styles.championshipMeta}>Valor de Inscripcion: ${Number(championship.registration_fee || 0)}</Text>
             <Text style={styles.championshipMeta}>Formato: {championship.format || 'Sin formato'}</Text>
+            
+            {(() => {
+              const championName = (championship.description || '').match(/\[CHAMPION:(.+?)\]/)?.[1];
+              const isFinished = championship.status === 'finished';
+              if (!championName && !isFinished) return null;
+              
+              return (
+                <View style={{ 
+                  marginTop: spacing.sm, 
+                  flexDirection: 'row', 
+                  alignItems: 'center', 
+                  backgroundColor: '#FFD70015', 
+                  padding: 8, 
+                  borderRadius: borderRadius.sm, 
+                  borderWidth: 1, 
+                  borderColor: '#FFD70040' 
+                }}>
+                  <Ionicons name="trophy" size={16} color="#FFD700" style={{ marginRight: 8 }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textTertiary, marginBottom: 1 }}>
+                      Campeón
+                    </Text>
+                    <Text style={{ fontSize: 14, color: colors.text, fontWeight: '800' }}>
+                      {championName || 'Finalizado'}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })()}
             <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} style={{ alignSelf: 'flex-end' }} />
           </TouchableOpacity>
         ))}

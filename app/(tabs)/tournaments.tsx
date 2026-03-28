@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Dimensions, Image, Modal, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,8 +9,10 @@ import { supabase } from '@/services/supabase';
 import * as SecureStore from 'expo-secure-store';
 import { getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
+import { resolveChampionFromMatches } from '@/services/tournamentChampion';
 import { getCachedValue, setCachedValue } from '@/services/runtimeCache';
 import { getEffectiveTournamentStatus, normalizeTournamentStatus } from '@/services/tournamentStatus';
+import { formatDateDDMMYYYY } from '@/utils/datetime';
 
 const { width } = Dimensions.get('window');
 
@@ -75,10 +77,7 @@ const decodeEscapedUnicode = (value: unknown) =>
 
 const formatRegistrationDeadline = (dateValue?: string | null, timeValue?: string | null) => {
     if (!dateValue) return null;
-    const parsedDate = new Date(`${dateValue}T00:00:00`);
-    const dateLabel = Number.isNaN(parsedDate.getTime())
-        ? dateValue
-        : parsedDate.toLocaleDateString('es-ES');
+    const dateLabel = formatDateDDMMYYYY(dateValue);
     const timeLabel = String(timeValue || '').slice(0, 5) || '23:59';
     return `${dateLabel} ${timeLabel}`;
 };
@@ -97,6 +96,40 @@ const getEffectiveStatus = (tournament: Tournament) =>
         startDate: tournament.start_date,
         endDate: tournament.end_date || null
     });
+
+function ChampionName({ tournament }: { tournament: Tournament }) {
+    const [resolvedName, setResolvedName] = useState<string | null>(null);
+    const tagManager = (tournament.description || '').match(/\[CHAMPION:(.+?)\]/)?.[1];
+
+    useEffect(() => {
+        if (tagManager || (tournament.status !== 'finished' && normalizeTournamentStatus(tournament.status) !== 'finished')) return;
+
+        const resolve = async () => {
+            try {
+                const [matchesRes, participantsRes] = await Promise.all([
+                    supabase.from('matches').select('*').eq('tournament_id', tournament.id),
+                    supabase.from('tournament_participants').select('player_id, profiles(name)').eq('tournament_id', tournament.id)
+                ]);
+
+                if (matchesRes.data) {
+                    const name = resolveChampionFromMatches(matchesRes.data, participantsRes.data || [], tournament.description);
+                    if (name) setResolvedName(name);
+                }
+            } catch (e) {
+                console.error('Error resolving champion:', e);
+            }
+        };
+        resolve();
+    }, [tournament.id, tournament.status, tournament.description, tagManager]);
+
+    const displayName = tagManager || resolvedName || 'Finalizado';
+
+    return (
+        <Text style={{ fontSize: 14, color: '#333', fontWeight: '800' }}>
+            {displayName}
+        </Text>
+    );
+}
 
 export default function TorneosScreen() {
     const insets = useSafeAreaInsets();
@@ -795,11 +828,20 @@ export default function TorneosScreen() {
                                         <Ionicons name="trophy-outline" size={24} color={colors.primary[500]} />
                                     </View>
                                     <View style={styles.tournamentInfo}>
-                                        <Text style={styles.tournamentName} numberOfLines={1} ellipsizeMode="tail">{tournament.name}</Text>
+                                        <Text 
+                                            style={styles.tournamentName} 
+                                            numberOfLines={2} 
+                                            adjustsFontSizeToFit 
+                                            minimumFontScale={0.8}
+                                        >
+                                            {tournament.name}
+                                        </Text>
                                         <View style={styles.metaRow}>
                                             <View style={styles.metaItem}>
                                                 <Ionicons name="calendar-outline" size={12} color={colors.textTertiary} />
-                                                <Text style={styles.metaText} numberOfLines={1}>{new Date(tournament.start_date).toLocaleDateString('es-ES')}</Text>
+                                                <Text style={styles.metaText} numberOfLines={1}>
+                                                    {`Fecha de inicio: ${formatDateDDMMYYYY(tournament.start_date)}`}
+                                                </Text>
                                             </View>
                                             {!isMasterTournament && (
                                                 <View style={styles.metaItem}>
@@ -839,9 +881,35 @@ export default function TorneosScreen() {
                                                     </Text>
                                                 </View>
                                             )}
-                                        </View>
                                     </View>
+                                    {(() => {
+                                        const championName = (tournament.description || '').match(/\[CHAMPION:(.+?)\]/)?.[1];
+                                        const isFinished = tournament.status === 'finished' || getEffectiveStatus(tournament) === 'finished';
+                                        if (!championName && !isFinished) return null;
+                                        
+                                        return (
+                                            <View style={{ 
+                                                marginTop: spacing.sm, 
+                                                flexDirection: 'row', 
+                                                alignItems: 'center', 
+                                                backgroundColor: '#FFD70015', 
+                                                padding: 8, 
+                                                borderRadius: borderRadius.sm, 
+                                                borderWidth: 1, 
+                                                borderColor: '#FFD70040' 
+                                            }}>
+                                                <Ionicons name="trophy" size={18} color="#FFD700" style={{ marginRight: 8 }} />
+                                                <View style={{ flex: 1 }}>
+                                                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textTertiary, marginBottom: 1 }}>
+                                                        Campeón
+                                                    </Text>
+                                                    <ChampionName tournament={tournament} />
+                                                </View>
+                                            </View>
+                                        );
+                                    })()}
                                 </View>
+                            </View>
                                 <View style={styles.cardFooter}>
                                     <View style={styles.footerActions}>
                                         <View style={styles.detailsButton}>

@@ -140,14 +140,8 @@ export const createInitialMatches = ({
       participantOffset += size;
     });
 
-    const placementMatches =
-      groupNames.length > 2
-        ? ['Semifinales RR', 'Semifinales RR', 'Gran Final RR', '3er y 4to Puesto RR']
-        : [
-            'Gran Final RR',
-            '3er y 4to Puesto RR',
-            ...(Math.min(...groupSizes) >= 3 ? ['5to y 6to Puesto RR'] : []),
-          ];
+    // Optional placement matches (3rd, 5th, etc.) are now generated on-demand in the admin panel
+    const placementMatches: string[] = [];
 
     placementMatches.forEach((roundName, index) => {
       matches.push({
