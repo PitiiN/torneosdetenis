@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Dimensions, Image, Modal, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Dimensions, Image, Modal, Alert, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
@@ -645,34 +645,50 @@ export default function TorneosScreen() {
                             <Ionicons name="business-outline" size={14} color={colors.textSecondary} />
                             <Text style={styles.organizationInfoText}>{organizationInfo.name || orgName || 'Organización'}</Text>
                         </View>
-                        {organizationInfo.contact_email && (
-                            <View style={styles.organizationInfoRow}>
-                                <Ionicons name="mail-outline" size={14} color={colors.textSecondary} />
-                                <Text style={styles.organizationInfoText}>{organizationInfo.contact_email}</Text>
+                        
+                        {(organizationInfo.contact_whatsapp || organizationInfo.social_links || organizationInfo.photos_drive_url) && (
+                            <View style={styles.orgButtonsContainer}>
+                                {organizationInfo.contact_whatsapp && (
+                                    <TouchableOpacity 
+                                        style={[styles.orgButton, { backgroundColor: '#25D366' }]} 
+                                        onPress={() => {
+                                            const cleanNumber = organizationInfo.contact_whatsapp?.replace(/\D/g, '');
+                                            Linking.openURL(`https://wa.me/${cleanNumber}`);
+                                        }}
+                                    >
+                                        <Ionicons name="logo-whatsapp" size={18} color="#fff" />
+                                        <Text style={styles.orgButtonText}>WhatsApp</Text>
+                                    </TouchableOpacity>
+                                )}
+                                {organizationInfo.social_links && (
+                                    <TouchableOpacity 
+                                        style={[styles.orgButton, { backgroundColor: '#E4405F' }]} 
+                                        onPress={() => {
+                                            let url = organizationInfo.social_links?.trim() || '';
+                                            if (url.startsWith('@')) {
+                                                url = `https://instagram.com/${url.slice(1)}`;
+                                            } else if (!url.startsWith('http')) {
+                                                url = `https://instagram.com/${url}`;
+                                            }
+                                            Linking.openURL(url);
+                                        }}
+                                    >
+                                        <Ionicons name="logo-instagram" size={18} color="#fff" />
+                                        <Text style={styles.orgButtonText}>Instagram</Text>
+                                    </TouchableOpacity>
+                                )}
+                                {organizationInfo.photos_drive_url && (
+                                    <TouchableOpacity 
+                                        style={[styles.orgButton, { backgroundColor: '#4285F4' }]} 
+                                        onPress={() => Linking.openURL(organizationInfo.photos_drive_url!)}
+                                    >
+                                        <Ionicons name="images-outline" size={18} color="#fff" />
+                                        <Text style={styles.orgButtonText}>Fotos</Text>
+                                    </TouchableOpacity>
+                                )}
                             </View>
                         )}
-                        {organizationInfo.contact_whatsapp && (
-                            <View style={styles.organizationInfoRow}>
-                                <Ionicons name="logo-whatsapp" size={14} color={colors.textSecondary} />
-                                <Text style={styles.organizationInfoText}>{organizationInfo.contact_whatsapp}</Text>
-                            </View>
-                        )}
-                        {organizationInfo.social_links && (
-                            <View style={styles.organizationInfoRow}>
-                                <Ionicons name="globe-outline" size={14} color={colors.textSecondary} />
-                                <Text style={styles.organizationInfoText} numberOfLines={2}>
-                                    {organizationInfo.social_links}
-                                </Text>
-                            </View>
-                        )}
-                        {organizationInfo.photos_drive_url && (
-                            <View style={styles.organizationInfoRow}>
-                                <Ionicons name="images-outline" size={14} color={colors.textSecondary} />
-                                <Text style={styles.organizationInfoText} numberOfLines={2}>
-                                    {organizationInfo.photos_drive_url}
-                                </Text>
-                            </View>
-                        )}
+
                         {!hasOrganizationInfoDetails && (
                             <Text style={styles.organizationInfoText}>
                                 Esta organización aún no ha publicado información de contacto.
@@ -1049,6 +1065,27 @@ const getStyles = (colors: any) => StyleSheet.create({
         fontSize: 12,
         fontWeight: '600',
         lineHeight: 17,
+    },
+    orgButtonsContainer: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: spacing.sm,
+        marginTop: spacing.sm,
+    },
+    orgButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: spacing.md,
+        paddingVertical: 8,
+        borderRadius: borderRadius.lg,
+        gap: 6,
+        minWidth: 100,
+        justifyContent: 'center',
+    },
+    orgButtonText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '700',
     },
     actionCard: {
         flexDirection: 'row',

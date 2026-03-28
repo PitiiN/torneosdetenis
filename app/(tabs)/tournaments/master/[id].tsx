@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Keyboard, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -16,6 +16,7 @@ import {
 import { RegistrationProofModal } from '@/components/tournaments/RegistrationProofModal';
 import { normalizeTournamentStatus } from '@/services/tournamentStatus';
 import { resolveChampionFromMatches } from '@/services/tournamentChampion';
+import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
 
 type MasterTournament = {
   id: string;
@@ -29,6 +30,7 @@ type MasterTournament = {
   comuna: string | null;
   surface: string | null;
   is_tournament_master: boolean;
+  poster_url?: string | null;
 };
 
 type Championship = {
@@ -127,6 +129,7 @@ export default function TournamentMasterDetailScreen() {
   const [championships, setChampionships] = useState<Championship[]>([]);
   const [registeredTournamentIds, setRegisteredTournamentIds] = useState<Set<string>>(new Set());
   const [latestRequestsByTournamentId, setLatestRequestsByTournamentId] = useState<Record<string, LatestRequest>>({});
+  const [posterUrl, setPosterUrl] = useState<string | null>(null);
   const [selectedChampionship, setSelectedChampionship] = useState<Championship | null>(null);
   const [selectedProofUri, setSelectedProofUri] = useState<string | null>(null);
   const [selectedProofMimeType, setSelectedProofMimeType] = useState<string | null>(null);
@@ -139,7 +142,7 @@ export default function TournamentMasterDetailScreen() {
     try {
       const { data: masterData, error: masterError } = await supabase
         .from('tournaments')
-        .select('id, organization_id, name, status, start_date, registration_close_at, registration_close_time, address, comuna, surface, is_tournament_master')
+        .select('id, organization_id, name, status, start_date, registration_close_at, registration_close_time, address, comuna, surface, is_tournament_master, poster_url')
         .eq('id', masterTournamentId)
         .single();
 
@@ -155,6 +158,12 @@ export default function TournamentMasterDetailScreen() {
       }
 
       setMasterTournament(masterRow);
+
+      if (masterRow.poster_url) {
+        resolveStorageAssetUrlWithRetry(masterRow.poster_url).then(url => {
+          if (url) setPosterUrl(url);
+        });
+      }
 
       const { data: championshipsData, error: championshipsError } = await supabase
         .from('tournaments')
@@ -396,7 +405,13 @@ export default function TournamentMasterDetailScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {posterUrl && (
+          <View style={styles.posterContainer}>
+            <Image source={{ uri: posterUrl }} style={styles.posterImage} resizeMode="cover" />
+          </View>
+        )}
+
         <View style={styles.masterInfoCard}>
           <Text style={styles.masterInfoText}>
             {masterTournament.start_date
@@ -567,18 +582,37 @@ const getStyles = (colors: any) => StyleSheet.create({
     fontWeight: '800',
     textAlign: 'center',
   },
-  content: {
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
     padding: spacing.xl,
     paddingBottom: 42,
     gap: spacing.lg,
   },
   masterInfoCard: {
+    backgroundColor: colors.surface,
     borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    marginBottom: spacing.xl,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.surface,
-    padding: spacing.lg,
-    gap: spacing.xs,
+  },
+  posterContainer: {
+    width: '100%',
+    height: 240,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.xl,
+    overflow: 'hidden',
+    marginBottom: spacing.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  posterImage: {
+    width: '100%',
+    height: '100%',
   },
   masterInfoTitle: {
     color: colors.text,

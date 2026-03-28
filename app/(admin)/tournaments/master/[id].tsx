@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Modal, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Modal, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -20,6 +20,8 @@ import { TennisSpinner } from '@/components/TennisSpinner';
 import { AdminQuickActionsBar } from '@/components/navigation/AdminQuickActionsBar';
 import { formatDateDDMMYYYY } from '@/utils/datetime';
 import { syncTournamentChampion } from '@/services/tournamentChampion';
+import * as ImagePicker from 'expo-image-picker';
+import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
 
 type MasterTournament = {
   id: string;
@@ -34,6 +36,7 @@ type MasterTournament = {
   comuna: string | null;
   surface: string | null;
   is_tournament_master: boolean;
+  poster_url: string | null;
 };
 
 type Championship = {
@@ -95,6 +98,8 @@ export default function MasterTournamentAdminScreen() {
   const [masterTournament, setMasterTournament] = useState<MasterTournament | null>(null);
   const [championships, setChampionships] = useState<Championship[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [uploadingPoster, setUploadingPoster] = useState(false);
+  const [posterUrl, setPosterUrl] = useState<string | null>(null);
 
   const [modality, setModality] = useState<typeof MODALITIES[number]>('singles');
   const [category, setCategory] = useState(TOURNAMENT_CATEGORIES[0]);
@@ -123,7 +128,7 @@ export default function MasterTournamentAdminScreen() {
 
       const { data: masterData, error: masterError } = await supabase
         .from('tournaments')
-        .select('id, organization_id, name, status, start_date, end_date, registration_close_at, registration_close_time, address, comuna, surface, is_tournament_master')
+        .select('id, organization_id, name, status, start_date, end_date, registration_close_at, registration_close_time, address, comuna, surface, is_tournament_master, poster_url')
         .eq('id', masterTournamentId)
         .single();
 
@@ -154,6 +159,12 @@ export default function MasterTournamentAdminScreen() {
       if (championshipError) throw championshipError;
       const championships = sortChampionships((championshipRows || []) as Championship[]);
       setChampionships(championships);
+
+      if (masterRow.poster_url) {
+        resolveStorageAssetUrlWithRetry(masterRow.poster_url).then(url => {
+          if (url) setPosterUrl(url);
+        });
+      }
 
       // Pro-actively sync championships that are finished but missing the champion tag
       for (const champ of championships) {
@@ -352,6 +363,64 @@ export default function MasterTournamentAdminScreen() {
     });
   };
 
+  const handlePickPoster = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permiso requerido', 'Debes permitir el acceso a tu galeria.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.7,
+    });
+
+    if (!result.canceled && result.assets?.[0]) {
+      uploadPoster(result.assets[0]);
+    }
+  };
+
+  const uploadPoster = async (asset: ImagePicker.ImagePickerAsset) => {
+    if (!masterTournamentId) return;
+    setUploadingPoster(true);
+    try {
+      const uri = asset.uri;
+      const fileExt = uri.split('.').pop()?.toLowerCase() || 'jpg';
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `posters/${masterTournamentId}/${fileName}`;
+
+      const response = await fetch(uri);
+      const blob = await (response.blob ? response.blob() : (response as any).arrayBuffer());
+
+      const { error: uploadError } = await supabase.storage
+        .from('organizations') // Use 'organizations' bucket as per settings.tsx and storage.ts
+        .upload(filePath, blob, {
+          contentType: asset.mimeType || 'image/jpeg',
+          upsert: true,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { error: updateError } = await supabase
+        .from('tournaments')
+        .update({ poster_url: filePath })
+        .eq('id', masterTournamentId);
+
+      if (updateError) throw updateError;
+
+      const signedUrl = await resolveStorageAssetUrlWithRetry(filePath);
+      setPosterUrl(signedUrl || uri);
+      setMasterTournament(prev => prev ? { ...prev, poster_url: filePath } : null);
+      Alert.alert('Exito', 'Afiche subido correctamente.');
+    } catch (error: any) {
+      console.error('Error uploading poster:', error);
+      Alert.alert('Error', 'No se pudo subir el afiche: ' + (error.message || 'Error desconocido'));
+    } finally {
+      setUploadingPoster(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={[styles.container, styles.centerAll]}>
@@ -383,6 +452,25 @@ export default function MasterTournamentAdminScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.posterContainer}>
+          {uploadingPoster ? (
+            <TennisSpinner size={24} />
+          ) : posterUrl ? (
+            <>
+              <Image source={{ uri: posterUrl }} style={styles.posterImage} resizeMode="cover" />
+              <TouchableOpacity style={styles.uploadPosterBtn} onPress={handlePickPoster}>
+                <Ionicons name="camera" size={16} color="#fff" />
+                <Text style={styles.uploadPosterText}>Cambiar Afiche</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <TouchableOpacity style={styles.uploadPlaceholder} onPress={handlePickPoster}>
+              <Ionicons name="image-outline" size={40} color={colors.textTertiary} />
+              <Text style={styles.uploadPlaceholderText}>Subir Afiche (Poster)</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
         <View style={styles.masterCard}>
           <Text style={styles.masterText}>Inicio: {formatDateDDMMYYYY(masterTournament.start_date)}</Text>
           <Text style={styles.masterText}>Termino: {formatDateDDMMYYYY(masterTournament.end_date)}</Text>
@@ -745,13 +833,55 @@ const getStyles = (colors: any) => StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  posterContainer: {
+    width: '100%',
+    height: 220,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.xl,
+    overflow: 'hidden',
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  posterImage: {
+    width: '100%',
+    height: '100%',
+  },
+  uploadPosterBtn: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: borderRadius.full,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  uploadPosterText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  uploadPlaceholder: {
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  uploadPlaceholderText: {
+    color: colors.textTertiary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
   createButton: {
     height: 48,
     borderRadius: borderRadius.lg,
     backgroundColor: colors.primary[500],
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
     gap: spacing.sm,
   },
   createButtonText: {
