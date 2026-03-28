@@ -23,6 +23,36 @@ import { syncTournamentChampion } from '@/services/tournamentChampion';
 import * as ImagePicker from 'expo-image-picker';
 import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
 
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB for posters
+const BASE64_CHAR_MAP = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+const sanitizeBase64Payload = (value: string) => value.replace(/\s/g, '');
+
+const decodeBase64ToUint8Array = (value: string) => {
+  const sanitized = sanitizeBase64Payload(value);
+  if (!sanitized) return new Uint8Array(0);
+
+  const bytes: number[] = [];
+  let buffer = 0;
+  let bits = 0;
+
+  for (const char of sanitized) {
+    if (char === '=') break;
+    const currentIndex = BASE64_CHAR_MAP.indexOf(char);
+    if (currentIndex < 0) continue;
+
+    buffer = (buffer << 6) | currentIndex;
+    bits += 6;
+
+    if (bits >= 8) {
+      bits -= 8;
+      bytes.push((buffer >> bits) & 0xff);
+    }
+  }
+
+  return Uint8Array.from(bytes);
+};
+
 type MasterTournament = {
   id: string;
   organization_id: string;
@@ -374,6 +404,7 @@ export default function MasterTournamentAdminScreen() {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       quality: 0.7,
+      base64: true,
     });
 
     if (!result.canceled && result.assets?.[0]) {
@@ -390,12 +421,18 @@ export default function MasterTournamentAdminScreen() {
       const fileName = `${Date.now()}.${fileExt}`;
       const filePath = `posters/${masterTournamentId}/${fileName}`;
 
-      const response = await fetch(uri);
-      const blob = await (response.blob ? response.blob() : (response as any).arrayBuffer());
+      let fileData: Uint8Array | Blob | ArrayBuffer;
+
+      if (asset.base64) {
+        fileData = decodeBase64ToUint8Array(asset.base64);
+      } else {
+        const response = await fetch(uri);
+        fileData = await (response.blob ? response.blob() : (response as any).arrayBuffer());
+      }
 
       const { error: uploadError } = await supabase.storage
-        .from('organizations') // Use 'organizations' bucket as per settings.tsx and storage.ts
-        .upload(filePath, blob, {
+        .from('organizations')
+        .upload(filePath, fileData, {
           contentType: asset.mimeType || 'image/jpeg',
           upsert: true,
         });
