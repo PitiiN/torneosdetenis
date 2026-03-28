@@ -413,13 +413,13 @@ export default function MasterTournamentAdminScreen() {
   };
 
   const uploadPoster = async (asset: ImagePicker.ImagePickerAsset) => {
-    if (!masterTournamentId) return;
+    if (!masterTournamentId || !masterTournament) return;
     setUploadingPoster(true);
     try {
       const uri = asset.uri;
       const fileExt = uri.split('.').pop()?.toLowerCase() || 'jpg';
       const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `posters/${masterTournamentId}/${fileName}`;
+      const filePath = `posters/${masterTournament.organization_id}/${masterTournamentId}/${fileName}`;
 
       let fileData: Uint8Array | Blob | ArrayBuffer;
 
