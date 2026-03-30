@@ -178,11 +178,6 @@ export default function TournamentFinanceDetail() {
     }, { income: 0, debt: 0 });
   }, [registrations]);
 
-  const pendingRequestsCount = useMemo(
-    () => requests.filter((request) => request.status === 'pending').length,
-    [requests]
-  );
-
   const handleUpdateRegistration = async (registrationId: string, updates: Partial<Registration>) => {
     setSavingRegistration(registrationId);
     try {
@@ -280,10 +275,6 @@ export default function TournamentFinanceDetail() {
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Deuda Pendiente</Text>
               <Text style={[styles.summaryValue, { color: colors.error }]}>${totals.debt}</Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Solicitudes Pendientes</Text>
-              <Text style={[styles.summaryValue, { color: '#dc2626' }]}>{pendingRequestsCount}</Text>
             </View>
           </View>
 
@@ -726,6 +717,7 @@ function getStyles(colors: any) {
       color: colors.text,
       fontSize: 12,
       fontWeight: '800',
+      textAlign: 'center',
     },
     approvedHint: {
       color: colors.success,
@@ -805,6 +797,7 @@ function getStyles(colors: any) {
       fontSize: 10,
       fontWeight: '800',
       color: colors.textSecondary,
+      textAlign: 'center',
     },
     paymentToggleTextActive: {
       color: colors.text,
@@ -915,11 +908,13 @@ function getStyles(colors: any) {
       color: colors.text,
       fontWeight: '700',
       fontSize: 13,
+      textAlign: 'center',
     },
     modalBtnRejectText: {
       color: '#fff',
       fontWeight: '800',
       fontSize: 13,
+      textAlign: 'center',
     },
     previewOverlay: {
       flex: 1,

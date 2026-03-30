@@ -25,6 +25,7 @@ import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB for posters
 const BASE64_CHAR_MAP = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+const ADMIN_MASTER_POSTER_URL_CACHE = new Map<string, string | null>();
 
 const sanitizeBase64Payload = (value: string) => value.replace(/\s/g, '');
 
@@ -100,6 +101,24 @@ const DEFAULT_RANKING_ROWS = (): RankingPointRow[] => [
 ];
 
 const createRowId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const normalizeText = (value?: string | null) =>
+  String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+const isDoublesChampionshipLegacyAware = (championship: { modality?: string | null; name?: string | null }) => {
+  const modalityText = normalizeText(championship.modality);
+  if (modalityText.includes('doble') || modalityText.includes('double')) return true;
+
+  const nameText = normalizeText(championship.name);
+  return nameText.includes('doble') || nameText.includes('double');
+};
+
+const getChampionshipModalityLabel = (championship: { modality?: string | null; name?: string | null }) =>
+  isDoublesChampionshipLegacyAware(championship) ? 'Dobles' : 'Singles';
 
 const formatRegistrationDeadline = (dateValue?: string | null, timeValue?: string | null) => {
   if (!dateValue) return 'Sin definir';
@@ -191,9 +210,21 @@ export default function MasterTournamentAdminScreen() {
       setChampionships(championships);
 
       if (masterRow.poster_url) {
-        resolveStorageAssetUrlWithRetry(masterRow.poster_url).then(url => {
-          if (url) setPosterUrl(url);
-        });
+        const posterKey = String(masterRow.poster_url);
+        const cachedPosterUrl = ADMIN_MASTER_POSTER_URL_CACHE.get(posterKey);
+        if (cachedPosterUrl) {
+          setPosterUrl(cachedPosterUrl);
+        } else {
+          const resolvedPosterUrl = await resolveStorageAssetUrlWithRetry(masterRow.poster_url);
+          if (resolvedPosterUrl) {
+            ADMIN_MASTER_POSTER_URL_CACHE.set(posterKey, resolvedPosterUrl);
+            setPosterUrl(resolvedPosterUrl);
+          } else {
+            setPosterUrl(null);
+          }
+        }
+      } else {
+        setPosterUrl(null);
       }
 
       // Pro-actively sync championships that are finished but missing the champion tag
@@ -538,9 +569,16 @@ export default function MasterTournamentAdminScreen() {
           >
             <View style={styles.championshipRow}>
               <Text style={styles.championshipName} numberOfLines={1}>{championship.name}</Text>
-              <View style={styles.modalityChip}>
-                <Text style={styles.modalityChipText}>{getModalityLabel(championship.modality)}</Text>
-              </View>
+              {(() => {
+                const isDoublesChampionship = isDoublesChampionshipLegacyAware(championship);
+                return (
+                  <View style={[styles.modalityChip, isDoublesChampionship ? styles.modalityChipDoubles : styles.modalityChipSingles]}>
+                    <Text style={[styles.modalityChipText, isDoublesChampionship ? styles.modalityChipTextDoubles : styles.modalityChipTextSingles]}>
+                      {getChampionshipModalityLabel(championship)}
+                    </Text>
+                  </View>
+                );
+              })()}
             </View>
             <Text style={styles.championshipMeta}>Categoria: {championship.level || 'Sin categoria'}</Text>
             <Text style={styles.championshipMeta}>Valor de Inscripcion: ${Number(championship.registration_fee || 0)}</Text>
@@ -902,6 +940,7 @@ const getStyles = (colors: any) => StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '700',
+    textAlign: 'center',
   },
   uploadPlaceholder: {
     alignItems: 'center',
@@ -925,6 +964,7 @@ const getStyles = (colors: any) => StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '800',
+    textAlign: 'center',
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -967,12 +1007,25 @@ const getStyles = (colors: any) => StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
+  modalityChipSingles: {
     backgroundColor: colors.primary[500] + '20',
+    borderColor: colors.primary[500] + '35',
+  },
+  modalityChipDoubles: {
+    backgroundColor: colors.warning + '20',
+    borderColor: colors.warning + '35',
   },
   modalityChipText: {
-    color: colors.primary[500],
     fontSize: 10,
     fontWeight: '900',
+  },
+  modalityChipTextSingles: {
+    color: colors.primary[500],
+  },
+  modalityChipTextDoubles: {
+    color: colors.warning,
   },
   championshipMeta: {
     color: colors.textSecondary,
@@ -1146,6 +1199,7 @@ const getStyles = (colors: any) => StyleSheet.create({
     color: colors.primary[500],
     fontSize: 13,
     fontWeight: '700',
+    textAlign: 'center',
   },
   modalFooter: {
     borderTopWidth: 1,
@@ -1169,6 +1223,7 @@ const getStyles = (colors: any) => StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '800',
+    textAlign: 'center',
   },
   selectionOverlay: {
     flex: 1,
@@ -1208,5 +1263,6 @@ const getStyles = (colors: any) => StyleSheet.create({
     color: colors.primary[500],
     fontSize: 14,
     fontWeight: '700',
+    textAlign: 'center',
   },
 });

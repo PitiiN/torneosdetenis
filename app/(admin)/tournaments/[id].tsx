@@ -85,6 +85,7 @@ export default function AdminTournamentDetailScreen() {
     const [seedCountLimit, setSeedCountLimit] = useState(0);
     const [isFinalsCountModalVisible, setIsFinalsCountModalVisible] = useState(false);
     const [finalsCountInput, setFinalsCountInput] = useState('4');
+    const playerSearchBottomPadding = insets.bottom + spacing['3xl'];
 
     // Scheduling Modal
     const [isScheduleModalVisible, setIsScheduleModalVisible] = useState(false);
@@ -515,9 +516,13 @@ export default function AdminTournamentDetailScreen() {
                 });
             }
 
-            // check and move byes
-            const byeResolved = await checkAndProcessByes(hydratedMatches, tourData.description);
-            if (byeResolved) {
+            // Check and move byes
+            const byeResolved = await checkAndProcessByes(hydratedMatches, tourData.description, tourData.format);
+
+            // Repair historical progression for already-finished matches (winner -> next round, loser -> consolation)
+            const progressionRepaired = await repairFinishedMatchesProgression(hydratedMatches, tourData.format);
+
+            if (byeResolved || progressionRepaired) {
                 const { data: refreshedMatchesRaw, error: refreshedMatchesError } = await supabase
                     .from('matches')
                     .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, round, round_number, match_order, status, score, winner_id, winner_2_id, scheduled_at, court')
@@ -714,18 +719,51 @@ export default function AdminTournamentDetailScreen() {
         const currentIndex = currentRoundMatches.findIndex(candidate => candidate.id === match.id);
         if (currentIndex === -1) return null;
 
-        // BUG FIX: Do not propagate from Final rounds to consolation/ranking matches
-        if (String(match.round || '').toLowerCase().includes('final')) return null;
-
         const nextMatch = nextRoundMatches[Math.floor(currentIndex / 2)];
         if (!nextMatch) return null;
-
-        // BUG FIX: Do not propagate from Final rounds to consolation/ranking matches
-        if (String(match.round || '').toLowerCase().includes('final')) return null;
 
         const nextSlotField = currentIndex % 2 === 0 ? 'player_a_id' : 'player_b_id';
         const nextSlotField2 = currentIndex % 2 === 0 ? 'player_a2_id' : 'player_b2_id';
         return { nextMatch, nextSlotField, nextSlotField2 };
+    };
+
+    const getConsolationLinkForLoser = (match: any, sourceMatches: any[], formatOverride?: string | null) => {
+        if (!hasConsolationBracket(formatOverride ?? tournament?.format)) return null;
+        if (String(match.round || '').startsWith('Grupo ')) return null;
+        if (/^Consolaci/i.test(String(match.round || ''))) return null;
+        if (String(match.round || '').includes('RR')) return null;
+        if (/3er|4to|5to|6to|puesto/i.test(String(match.round || ''))) return null;
+        if (Number(match.round_number || 0) !== 1) return null;
+
+        const firstMainRoundMatches = sourceMatches
+            .filter((candidate) =>
+                !String(candidate.round || '').startsWith('Grupo ') &&
+                !/^Consolaci/i.test(String(candidate.round || '')) &&
+                !String(candidate.round || '').includes('RR') &&
+                !/3er|4to|5to|6to|puesto/i.test(String(candidate.round || '')) &&
+                Number(candidate.round_number || 0) === 1
+            )
+            .sort((a, b) => (a.match_order || 0) - (b.match_order || 0));
+
+        const consolationFirstRoundMatches = sourceMatches
+            .filter((candidate) =>
+                /^Consolaci/i.test(String(candidate.round || '')) &&
+                !/3er|4to|5to|6to|puesto/i.test(String(candidate.round || '')) &&
+                Number(candidate.round_number || 0) === 1
+            )
+            .sort((a, b) => (a.match_order || 0) - (b.match_order || 0));
+
+        if (!consolationFirstRoundMatches.length) return null;
+
+        const currentIndex = firstMainRoundMatches.findIndex((candidate) => candidate.id === match.id);
+        if (currentIndex === -1) return null;
+
+        const targetMatch = consolationFirstRoundMatches[Math.floor(currentIndex / 2)];
+        if (!targetMatch) return null;
+
+        const nextSlotField = currentIndex % 2 === 0 ? 'player_a_id' : 'player_b_id';
+        const nextSlotField2 = currentIndex % 2 === 0 ? 'player_a2_id' : 'player_b2_id';
+        return { nextMatch: targetMatch, nextSlotField, nextSlotField2 };
     };
 
     async function propagateWinnerToNextMatch(
@@ -735,29 +773,42 @@ export default function AdminTournamentDetailScreen() {
         sourceMatches: any[] = matches,
         winnerSide?: 'A' | 'B'
     ) {
-        if (!winnerId && !winnerSide) return;
-        if (String(match.round || '').startsWith('Grupo ')) return;
+        if (!winnerId && !winnerSide) return false;
+        if (String(match.round || '').startsWith('Grupo ')) return false;
 
         const nextLink = getNextMatchLink(match, sourceMatches);
-        if (!nextLink) return;
+        if (!nextLink) return false;
         const { nextMatch, nextSlotField, nextSlotField2 } = nextLink;
 
-        const updateData: any = { [nextSlotField]: winnerId };
-        if (IS_DOUBLES) {
+        const currentWinnerId = nextMatch?.[nextSlotField] || null;
+        const currentWinner2Id = nextMatch?.[nextSlotField2] || null;
+        if (winnerId && currentWinnerId && currentWinnerId !== winnerId) return false;
+        if (IS_DOUBLES && winner2Id && currentWinner2Id && currentWinner2Id !== (winner2Id || null)) return false;
+
+        let advancedAny = false;
+        const updateData: any = {};
+        if (winnerId && currentWinnerId !== winnerId) {
+            updateData[nextSlotField] = winnerId;
+        }
+        if (IS_DOUBLES && currentWinner2Id !== (winner2Id || null)) {
             updateData[nextSlotField2] = winner2Id || null;
         }
 
-        const { error } = await supabase
-            .from('matches')
-            .update(updateData)
-            .eq('id', nextMatch.id);
+        if (Object.keys(updateData).length > 0) {
+            const { error } = await supabase
+                .from('matches')
+                .update(updateData)
+                .eq('id', nextMatch.id);
 
-        if (error) throw error;
-        applyMatchPatchLocally(nextMatch.id, updateData);
+            if (error) throw error;
+            applyMatchPatchLocally(nextMatch.id, updateData);
+            advancedAny = true;
+        }
 
         // ADVANCE MANUAL PLAYERS
         const targetSide = nextSlotField.startsWith('player_a') ? 'A' : 'B';
-        const manualSlots = tournament?.description ? parseManualAssignments(tournament.description).matchSlots?.[match.id] || {} : {};
+        const parsedAssignments = tournament?.description ? parseManualAssignments(tournament.description) : { rrSlots: {}, matchSlots: {} };
+        const manualSlots = parsedAssignments.matchSlots?.[match.id] || {};
         
         // Correctly resolve manual participant names using the string keys
         const p1Key = getMatchManualKey(winnerSide === 'A' ? 1 : 3);
@@ -767,9 +818,20 @@ export default function AdminTournamentDetailScreen() {
         const winnerP2 = manualSlots[p2Key];
 
         if (winnerP1 || winnerP2) {
+            const targetOffsetStart = targetSide === 'A' ? 1 : 3;
+            const nextMatchSlots = parsedAssignments.matchSlots?.[nextMatch.id] || {};
+            const targetP1 = nextMatchSlots[getMatchManualKey(targetOffsetStart)];
+            const targetP2 = nextMatchSlots[getMatchManualKey(targetOffsetStart + 1 as MatchSlot)];
+            const needsManualUpdate =
+                (winnerP1 && normalizeManualNameKey(targetP1?.name) !== normalizeManualNameKey(winnerP1?.name)) ||
+                (winnerP2 && normalizeManualNameKey(targetP2?.name) !== normalizeManualNameKey(winnerP2?.name));
+
+            if (!needsManualUpdate) {
+                return advancedAny;
+            }
+
             await updateTournamentDescription(current => {
                 const nextMatchSlots = { ...(current.matchSlots?.[nextMatch.id] || {}) };
-                const targetOffsetStart = targetSide === 'A' ? 1 : 3;
                 
                 if (winnerP1) nextMatchSlots[getMatchManualKey(targetOffsetStart)] = winnerP1;
                 if (winnerP2) nextMatchSlots[getMatchManualKey(targetOffsetStart + 1 as MatchSlot)] = winnerP2;
@@ -782,11 +844,172 @@ export default function AdminTournamentDetailScreen() {
                     }
                 };
             });
+            advancedAny = true;
         }
+        return advancedAny;
     }
 
-    async function checkAndProcessByes(allMatches: any[], descriptionOverride?: string | null) {
-        if (isRoundRobinFormat(tournament?.format)) return false;
+    async function propagateLoserToConsolation(
+        match: any,
+        loserId: string | null,
+        loser2Id: string | null = null,
+        sourceMatches: any[] = matches,
+        loserSide?: 'A' | 'B',
+        formatOverride?: string | null
+    ) {
+        if (!hasConsolationBracket(formatOverride ?? tournament?.format)) return false;
+        if (!loserId && !loserSide) return false;
+        if (String(match.round || '').startsWith('Grupo ')) return false;
+
+        const nextLink = getConsolationLinkForLoser(match, sourceMatches, formatOverride);
+        if (!nextLink) return false;
+        const { nextMatch, nextSlotField, nextSlotField2 } = nextLink;
+
+        const loserDisplayName = loserSide ? getDisplayName(match, loserSide === 'A' ? 1 : 3) : '';
+        const loserDisplayName2 = IS_DOUBLES && loserSide ? getDisplayName(match, loserSide === 'A' ? 2 : 4) : '';
+        if (loserId === 'BYE' || isByeName(loserDisplayName) || (IS_DOUBLES && isByeName(loserDisplayName2))) {
+            return false;
+        }
+
+        const currentLoserId = nextMatch?.[nextSlotField] || null;
+        const currentLoser2Id = nextMatch?.[nextSlotField2] || null;
+        if (loserId && currentLoserId && currentLoserId !== loserId) return false;
+        if (IS_DOUBLES && loser2Id && currentLoser2Id && currentLoser2Id !== (loser2Id || null)) return false;
+
+        let advancedAny = false;
+        const updateData: any = {};
+        if (loserId && currentLoserId !== loserId) {
+            updateData[nextSlotField] = loserId;
+        }
+        if (IS_DOUBLES && currentLoser2Id !== (loser2Id || null)) {
+            updateData[nextSlotField2] = loser2Id || null;
+        }
+
+        if (Object.keys(updateData).length > 0) {
+            const { error } = await supabase
+                .from('matches')
+                .update(updateData)
+                .eq('id', nextMatch.id);
+
+            if (error) throw error;
+            applyMatchPatchLocally(nextMatch.id, updateData);
+            advancedAny = true;
+        }
+
+        const targetSide = nextSlotField.startsWith('player_a') ? 'A' : 'B';
+        const parsedAssignments = tournament?.description ? parseManualAssignments(tournament.description) : { rrSlots: {}, matchSlots: {} };
+        const manualSlots = parsedAssignments.matchSlots?.[match.id] || {};
+        const p1Key = getMatchManualKey(loserSide === 'A' ? 1 : 3);
+        const p2Key = getMatchManualKey(loserSide === 'A' ? 2 : 4);
+        const loserP1 = manualSlots[p1Key];
+        const loserP2 = manualSlots[p2Key];
+
+        if (loserP1 || loserP2) {
+            const targetOffsetStart = targetSide === 'A' ? 1 : 3;
+            const nextMatchSlots = parsedAssignments.matchSlots?.[nextMatch.id] || {};
+            const targetP1 = nextMatchSlots[getMatchManualKey(targetOffsetStart)];
+            const targetP2 = nextMatchSlots[getMatchManualKey(targetOffsetStart + 1 as MatchSlot)];
+            const needsManualUpdate =
+                (loserP1 && normalizeManualNameKey(targetP1?.name) !== normalizeManualNameKey(loserP1?.name)) ||
+                (loserP2 && normalizeManualNameKey(targetP2?.name) !== normalizeManualNameKey(loserP2?.name));
+
+            if (!needsManualUpdate) {
+                return advancedAny;
+            }
+
+            await updateTournamentDescription(current => {
+                const nextMatchSlots = { ...(current.matchSlots?.[nextMatch.id] || {}) };
+
+                if (loserP1) nextMatchSlots[getMatchManualKey(targetOffsetStart)] = loserP1;
+                if (loserP2) nextMatchSlots[getMatchManualKey(targetOffsetStart + 1 as MatchSlot)] = loserP2;
+
+                return {
+                    ...current,
+                    matchSlots: {
+                        ...(current.matchSlots || {}),
+                        [nextMatch.id]: nextMatchSlots
+                    }
+                };
+            });
+            advancedAny = true;
+        }
+        return advancedAny;
+    }
+
+    async function repairFinishedMatchesProgression(allMatches: any[], formatOverride?: string | null) {
+        if (isRoundRobinFormat(formatOverride ?? tournament?.format)) return false;
+        if (!allMatches.length) return false;
+
+        const finishedMatches = [...allMatches]
+            .filter((match) =>
+                !String(match.round || '').startsWith('Grupo ') &&
+                !/3er|4to|5to|6to|puesto/i.test(String(match.round || '')) &&
+                (
+                    ['finished', 'completed', 'finalized'].includes(String(match.status || '').toLowerCase()) ||
+                    Boolean(getScoreText(match.score))
+                )
+            )
+            .sort((a, b) => {
+                if ((a.round_number || 0) !== (b.round_number || 0)) {
+                    return (a.round_number || 0) - (b.round_number || 0);
+                }
+                return (a.match_order || 0) - (b.match_order || 0);
+            });
+
+        if (!finishedMatches.length) return false;
+
+        let repairedAny = false;
+        for (const match of finishedMatches) {
+            let winnerId: string | null = match.winner_id || null;
+            let winner2Id: string | null = match.winner_2_id || null;
+            let winnerSide: 'A' | 'B' | null = null;
+
+            if (winnerId && winnerId === match.player_a_id) winnerSide = 'A';
+            if (winnerId && winnerId === match.player_b_id) winnerSide = 'B';
+
+            if (!winnerSide) {
+                const resolved = resolveWinnerIds(match, match.score);
+                if (resolved.side) {
+                    winnerSide = resolved.side as 'A' | 'B';
+                    winnerId = winnerId || resolved.w1 || null;
+                    winner2Id = winner2Id || resolved.w2 || null;
+                }
+            }
+
+            if (!winnerSide) continue;
+
+            const advancedWinner = await propagateWinnerToNextMatch(
+                match,
+                winnerId,
+                winner2Id,
+                allMatches,
+                winnerSide
+            );
+            if (advancedWinner) repairedAny = true;
+
+            const loserSide = winnerSide === 'A' ? 'B' : 'A';
+            const loserId = loserSide === 'A' ? match.player_a_id : match.player_b_id;
+            const loser2Id = loserSide === 'A' ? match.player_a2_id : match.player_b2_id;
+            const advancedLoser = await propagateLoserToConsolation(
+                match,
+                loserId || null,
+                loser2Id || null,
+                allMatches,
+                loserSide,
+                formatOverride
+            );
+            if (advancedLoser) repairedAny = true;
+        }
+
+        return repairedAny;
+    }
+
+    async function checkAndProcessByes(
+        allMatches: any[],
+        descriptionOverride?: string | null,
+        formatOverride?: string | null
+    ) {
+        if (isRoundRobinFormat(formatOverride ?? tournament?.format)) return false;
 
         const isByeValue = (value: unknown) => {
             const normalized = String(value || '')
@@ -936,6 +1159,10 @@ export default function AdminTournamentDetailScreen() {
             if (error) throw error;
                 if (side) {
                     await propagateWinnerToNextMatch(selectedMatch, w1, w2 || null, matches, side as 'A' | 'B');
+                    const loserSide = side === 'A' ? 'B' : 'A';
+                    const loserId = loserSide === 'A' ? selectedMatch.player_a_id : selectedMatch.player_b_id;
+                    const loser2Id = loserSide === 'A' ? selectedMatch.player_a2_id : selectedMatch.player_b2_id;
+                    await propagateLoserToConsolation(selectedMatch, loserId || null, loser2Id || null, matches, loserSide);
                     
                     // Use the robust resolution logic to get the champion name (handles manual participants)
                     // We simulate the updated matches state by patching the matches array locally for the call
@@ -1534,6 +1761,19 @@ export default function AdminTournamentDetailScreen() {
         }
 
         return linesBySeed;
+    };
+
+    const buildFullSeedLinesForBracket = (bracketSize: number, seedCount: number) => {
+        const normalizedBracketSize = Math.max(2, Math.floor(bracketSize || 2));
+        const effectiveSeedCount = Math.max(0, Math.min(Math.floor(seedCount || 0), normalizedBracketSize));
+        if (effectiveSeedCount === 0) return [] as number[];
+
+        const fullOrder = buildSeedOrder(normalizedBracketSize);
+        return Array.from({ length: effectiveSeedCount }, (_value, index) => {
+            const seedNumber = index + 1;
+            const line = fullOrder.findIndex((candidateSeed) => candidateSeed === seedNumber);
+            return line >= 0 ? line + 1 : seedNumber;
+        });
     };
 
     const buildRoundRobinSeedSlots = () => {
@@ -3230,14 +3470,31 @@ export default function AdminTournamentDetailScreen() {
                 return;
             }
 
-            const topByGroup = groupedStandings.map((group) => group.rows[0]).filter(Boolean);
-            const secondByGroup = groupedStandings.map((group) => group.rows[1]).filter(Boolean);
-
             let bracketSlots: any[] = Array.from({ length: bracketSize }, () => null);
-            if (roundRobinGroupNames.length === 2 && parsedPerGroup === 1 && topByGroup.length >= 2 && bracketSize === 2) {
-                bracketSlots = [topByGroup[0], topByGroup[1]];
-            } else if (roundRobinGroupNames.length === 2 && parsedPerGroup === 2 && secondByGroup.length >= 2 && bracketSize === 4) {
-                bracketSlots = [topByGroup[0], secondByGroup[1], secondByGroup[0], topByGroup[1]];
+            if (roundRobinGroupNames.length === 2) {
+                const groupAQualifiers = groupedStandings[0]?.rows.slice(0, parsedPerGroup) || [];
+                const groupBQualifiers = groupedStandings[1]?.rows.slice(0, parsedPerGroup) || [];
+                const effectivePerGroup = Math.min(parsedPerGroup, groupAQualifiers.length, groupBQualifiers.length);
+
+                if (effectivePerGroup > 0) {
+                    const mirroredEntries: any[] = [];
+                    const topBlockCount = Math.ceil(effectivePerGroup / 2);
+
+                    // Group A top half vs Group B mirrored bottom half.
+                    for (let index = 0; index < topBlockCount; index++) {
+                        mirroredEntries.push(groupAQualifiers[index], groupBQualifiers[effectivePerGroup - 1 - index]);
+                    }
+                    // Group B top half vs Group A mirrored bottom half.
+                    for (let index = 0; index < effectivePerGroup - topBlockCount; index++) {
+                        mirroredEntries.push(groupBQualifiers[index], groupAQualifiers[effectivePerGroup - 1 - index]);
+                    }
+
+                    mirroredEntries.forEach((entry, index) => {
+                        if (index < bracketSize) {
+                            bracketSlots[index] = entry;
+                        }
+                    });
+                }
             } else if (roundRobinGroupNames.length === 1 && parsedPerGroup === 4 && sortedGlobalStandings.length >= 4 && bracketSize === 4) {
                 bracketSlots = [
                     sortedGlobalStandings[0],
@@ -3247,7 +3504,7 @@ export default function AdminTournamentDetailScreen() {
                 ];
             } else {
                 const qualifiers = sortedGlobalStandings.slice(0, normalizedQualifiersCount);
-                const seedLines = buildSeedLinesForDraw(bracketSize, normalizedQualifiersCount);
+                const seedLines = buildFullSeedLinesForBracket(bracketSize, normalizedQualifiersCount);
                 qualifiers.forEach((entry, index) => {
                     const line = seedLines[index] || (index + 1);
                     if (line >= 1 && line <= bracketSize) {
@@ -3493,6 +3750,12 @@ export default function AdminTournamentDetailScreen() {
         return 'Por definir';
     };
 
+    const formatRoundLabel = (roundValue?: string | null) =>
+        String(roundValue || '')
+            .replace(/^Consolaci[oó]n\s*-\s*/i, 'Repechaje - ')
+            .replace(/^Consolaci[oó]n\b/i, 'Repechaje')
+            .trim();
+
     const getDisplayAvatar = (match: any, slot: MatchSlot) => {
         const playerId = getPlayerIdBySlot(match, slot);
         return getPlayerAvatar(playerId);
@@ -3622,7 +3885,7 @@ export default function AdminTournamentDetailScreen() {
                         </TouchableOpacity>
                         {hasConsolation && (
                             <TouchableOpacity style={[styles.tab, activeTab === 'consolacion' && styles.activeTab]} onPress={() => setActiveTab('consolacion')}>
-                                <Text numberOfLines={1} style={[styles.tabText, activeTab === 'consolacion' && styles.activeTabText]}>Consolación</Text>
+                                <Text numberOfLines={1} style={[styles.tabText, activeTab === 'consolacion' && styles.activeTabText]}>Repechaje</Text>
                             </TouchableOpacity>
                         )}
                         <TouchableOpacity style={[styles.tab, activeTab === 'participantes' && styles.activeTab]} onPress={() => setActiveTab('participantes')}>
@@ -3815,7 +4078,7 @@ export default function AdminTournamentDetailScreen() {
                         </View>
                         {finalRoundRobinMatches.map(m => (
                             <TouchableOpacity key={m.id} style={[styles.matchCard, { paddingVertical: spacing.lg }]} onPress={() => handleMatchPress(m)}>
-                                <Text style={styles.roundText}>{m.round}</Text>
+                                <Text style={styles.roundText}>{formatRoundLabel(m.round)}</Text>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md }}>
                                     {/* Team A */}
                                     <View style={{ flex: 1, gap: spacing.sm }}>
@@ -4047,7 +4310,7 @@ export default function AdminTournamentDetailScreen() {
 
                                     return (
                                         <View key={roundNum} style={{ width: 260 }}>
-                                            <Text style={[styles.roundTitle, { marginBottom: spacing.lg }]}>{roundMatches[0]?.round}</Text>
+                                            <Text style={[styles.roundTitle, { marginBottom: spacing.lg }]}>{formatRoundLabel(roundMatches[0]?.round)}</Text>
 
                                             <View style={{ marginTop: initialMarginTop }}>
                                                 {roundMatches.map((m, mIdx) => {
@@ -4074,7 +4337,7 @@ export default function AdminTournamentDetailScreen() {
                                                         >
                                                             {m.round === '3er y 4to Puesto' && (
                                                                 <View style={{ backgroundColor: colors.background, paddingVertical: 4 }}>
-                                                                    <Text style={{ textAlign: 'center', fontSize: 10, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase' }}>{m.round}</Text>
+                                                                    <Text style={{ textAlign: 'center', fontSize: 10, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase' }}>{formatRoundLabel(m.round)}</Text>
                                                                 </View>
                                                             )}
                                                             <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: colors.background, backgroundColor: (m.winner_id === m.player_a_id || m.winner_2_id === m.player_a2_id) ? colors.primary[500] + '15' : colors.surface }}>
@@ -4279,7 +4542,7 @@ export default function AdminTournamentDetailScreen() {
                     style={styles.modalContainer}
                     behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 >
-                    <View style={styles.modalHeader}>
+                    <View style={[styles.modalHeader, { paddingTop: Math.max(spacing.xl, insets.top + spacing.sm) }]}>
                         <Text style={styles.modalTitle}>
                             {assignmentTargets.length > 0 ? 'Asignar Jugadores' : (IS_DOUBLES ? 'Agregar dupla' : 'Agregar Participante')}
                         </Text>
@@ -4498,32 +4761,38 @@ export default function AdminTournamentDetailScreen() {
                         )}
                     </View>
 
-                    {isSearching ? (
-                        <TennisSpinner size={18} style={{ marginTop: spacing.md }} />
-                    ) : (
-                        <ScrollView style={{ maxHeight: 200 }}>
-                            {searchResults.map((user) => (
-                                <TouchableOpacity 
-                                    key={user.id} 
-                                    style={styles.playerSearchItem}
-                                    onPress={async () => {
-                                        if (assignmentTargets.length === 0 && IS_DOUBLES) {
-                                            await registerParticipant(user.id, { keepModalOpen: true });
-                                            togglePendingDoublesTeamMember(user.id);
-                                            return;
-                                        }
-                                        await updateMatchPlayer(user.id);
-                                    }}
-                                >
-                                    <View>
-                                        <Text style={styles.playerSearchName}>{user.name}</Text>
-                                        <Text style={styles.playerSearchRole}>Usuario del sistema</Text>
-                                    </View>
-                                    <Ionicons name="add-circle-outline" size={20} color={colors.primary[500]} />
-                                </TouchableOpacity>
-                            ))}
-                        </ScrollView>
-                    )}
+                    <View style={{ paddingBottom: Math.max(insets.bottom, spacing.lg) }}>
+                        {isSearching ? (
+                            <TennisSpinner size={18} style={{ marginTop: spacing.md }} />
+                        ) : (
+                            <ScrollView
+                                style={{ maxHeight: 200 }}
+                                contentContainerStyle={{ paddingBottom: playerSearchBottomPadding }}
+                                keyboardShouldPersistTaps="handled"
+                            >
+                                {searchResults.map((user) => (
+                                    <TouchableOpacity
+                                        key={user.id}
+                                        style={styles.playerSearchItem}
+                                        onPress={async () => {
+                                            if (assignmentTargets.length === 0 && IS_DOUBLES) {
+                                                await registerParticipant(user.id, { keepModalOpen: true });
+                                                togglePendingDoublesTeamMember(user.id);
+                                                return;
+                                            }
+                                            await updateMatchPlayer(user.id);
+                                        }}
+                                    >
+                                        <View>
+                                            <Text style={styles.playerSearchName}>{user.name}</Text>
+                                            <Text style={styles.playerSearchRole}>Usuario del sistema</Text>
+                                        </View>
+                                        <Ionicons name="add-circle-outline" size={20} color={colors.primary[500]} />
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+                        )}
+                    </View>
                 </KeyboardAvoidingView>
             </Modal>
 
@@ -4772,7 +5041,7 @@ function getStyles(colors: any) {
         emptyMatches: { alignItems: 'center', marginTop: spacing['4xl'], gap: spacing.md },
         emptyMatchesText: { fontSize: 16, color: colors.textSecondary },
         generateBtn: { backgroundColor: colors.primary[500], paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: borderRadius.lg },
-        generateBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+        generateBtnText: { color: '#fff', fontWeight: '700', fontSize: 14, textAlign: 'center' },
 
         matchesContainer: { gap: spacing.md },
         matchCard: { backgroundColor: colors.surface, padding: spacing.md, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border },
@@ -4803,8 +5072,8 @@ function getStyles(colors: any) {
         modalBtn: { flex: 1, height: 48, borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center' },
         modalBtnCancel: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
         modalBtnSave: { backgroundColor: colors.primary[500] },
-        modalBtnCancelText: { color: colors.text, fontWeight: '600' },
-        modalBtnSaveText: { color: '#fff', fontWeight: '700', textAlign: 'center', flex: 1 },
+        modalBtnCancelText: { color: colors.text, fontWeight: '600', textAlign: 'center' },
+        modalBtnSaveText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
 
         // Player Selection Modal Styles
         modalContainer: { flex: 1, backgroundColor: colors.background },
@@ -4942,16 +5211,19 @@ function getStyles(colors: any) {
             color: '#fff',
             fontSize: 11,
             fontWeight: '800',
+            textAlign: 'center',
         },
         assignmentActionSecondaryText: {
             color: colors.text,
             fontSize: 11,
             fontWeight: '700',
+            textAlign: 'center',
         },
         assignmentActionDangerText: {
             color: colors.error,
             fontSize: 11,
             fontWeight: '800',
+            textAlign: 'center',
         },
         modalSectionTitle: {
             fontSize: 14,

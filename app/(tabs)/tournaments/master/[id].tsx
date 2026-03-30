@@ -53,6 +53,7 @@ type LatestRequest = {
 };
 
 const OPEN_STATUSES = new Set(['open', 'in_progress']);
+const MASTER_POSTER_URL_CACHE = new Map<string, string | null>();
 
 const formatStatus = (status?: string | null) => {
   const normalizedStatus = normalizeTournamentStatus(status);
@@ -70,6 +71,13 @@ const toErrorMessage = (error: unknown) => {
   }
   return 'Error desconocido';
 };
+
+const normalizeText = (value?: string | null) =>
+  String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 
 const formatRegistrationDeadline = (dateValue?: string | null, timeValue?: string | null) => {
   if (!dateValue) return 'Sin definir';
@@ -114,6 +122,17 @@ function ChampionName({ championship }: { championship: Championship }) {
     </Text>
   );
 }
+
+const isDoublesChampionshipLegacyAware = (championship: Championship) => {
+  const modalityText = normalizeText(championship.modality);
+  if (modalityText.includes('doble') || modalityText.includes('double')) return true;
+
+  const nameText = normalizeText(championship.name);
+  return nameText.includes('doble') || nameText.includes('double');
+};
+
+const getChampionshipModalityLabel = (championship: Championship) =>
+  isDoublesChampionshipLegacyAware(championship) ? 'Dobles' : 'Singles';
 
 export default function TournamentMasterDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string | string[] }>();
@@ -160,9 +179,21 @@ export default function TournamentMasterDetailScreen() {
       setMasterTournament(masterRow);
 
       if (masterRow.poster_url) {
-        resolveStorageAssetUrlWithRetry(masterRow.poster_url).then(url => {
-          if (url) setPosterUrl(url);
-        });
+        const posterKey = String(masterRow.poster_url);
+        const cachedPosterUrl = MASTER_POSTER_URL_CACHE.get(posterKey);
+        if (cachedPosterUrl) {
+          setPosterUrl(cachedPosterUrl);
+        } else {
+          const resolvedPosterUrl = await resolveStorageAssetUrlWithRetry(masterRow.poster_url);
+          if (resolvedPosterUrl) {
+            MASTER_POSTER_URL_CACHE.set(posterKey, resolvedPosterUrl);
+            setPosterUrl(resolvedPosterUrl);
+          } else {
+            setPosterUrl(null);
+          }
+        }
+      } else {
+        setPosterUrl(null);
       }
 
       const { data: championshipsData, error: championshipsError } = await supabase
@@ -449,12 +480,29 @@ export default function TournamentMasterDetailScreen() {
               }}
               activeOpacity={0.85}
             >
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardName} numberOfLines={1}>{championship.name}</Text>
-                <View style={styles.modalityChip}>
-                  <Text style={styles.modalityChipText}>{getModalityLabel(championship.modality)}</Text>
-                </View>
-              </View>
+              {(() => {
+                const isDoublesChampionship = isDoublesChampionshipLegacyAware(championship);
+                return (
+                  <View style={styles.cardHeader}>
+                    <Text style={styles.cardName} numberOfLines={1}>{championship.name}</Text>
+                    <View
+                      style={[
+                        styles.modalityChip,
+                        isDoublesChampionship ? styles.modalityChipDoubles : styles.modalityChipSingles,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.modalityChipText,
+                          isDoublesChampionship ? styles.modalityChipTextDoubles : styles.modalityChipTextSingles,
+                        ]}
+                      >
+                        {getChampionshipModalityLabel(championship)}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })()}
               <View style={styles.cardRows}>
                 <Text style={styles.cardMeta}>Categoria: {championship.level || 'Sin categoria'}</Text>
                 <Text style={styles.cardMeta}>Valor de Inscripcion: ${Number(championship.registration_fee || 0)}</Text>
@@ -670,12 +718,25 @@ const getStyles = (colors: any) => StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
+  modalityChipSingles: {
     backgroundColor: colors.primary[500] + '20',
+    borderColor: colors.primary[500] + '35',
+  },
+  modalityChipDoubles: {
+    backgroundColor: colors.warning + '20',
+    borderColor: colors.warning + '35',
   },
   modalityChipText: {
-    color: colors.primary[500],
     fontSize: 10,
     fontWeight: '900',
+  },
+  modalityChipTextSingles: {
+    color: colors.primary[500],
+  },
+  modalityChipTextDoubles: {
+    color: colors.warning,
   },
   cardRows: {
     gap: 2,
