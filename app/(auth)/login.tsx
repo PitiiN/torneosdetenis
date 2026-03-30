@@ -260,6 +260,7 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 18,
         fontWeight: '700',
+        textAlign: 'center',
     },
     registerButton: {
         marginTop: spacing.xl,
@@ -269,5 +270,6 @@ const styles = StyleSheet.create({
         color: colors.primary[400],
         fontSize: 14,
         fontWeight: '600',
+        textAlign: 'center',
     },
 });

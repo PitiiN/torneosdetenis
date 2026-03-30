@@ -428,6 +428,7 @@ const getStyles = (colors: any) => StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '800',
+    textAlign: 'center',
   },
   modalOverlay: {
     flex: 1,
@@ -467,5 +468,6 @@ const getStyles = (colors: any) => StyleSheet.create({
     color: colors.primary[500],
     fontSize: 14,
     fontWeight: '700',
+    textAlign: 'center',
   },
 });

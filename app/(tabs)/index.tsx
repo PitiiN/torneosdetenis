@@ -385,6 +385,7 @@ const getStyles = (colors: any) => StyleSheet.create({
         fontSize: 13,
         color: colors.textSecondary,
         fontWeight: '600',
+        textAlign: 'center',
     },
     activeFilterChipText: {
         color: '#fff',
@@ -444,6 +445,7 @@ const getStyles = (colors: any) => StyleSheet.create({
         fontSize: 12,
         color: colors.textTertiary,
         fontWeight: '500',
+        textAlign: 'center',
     },
     emptyState: {
         flex: 1,
@@ -505,5 +507,6 @@ const getStyles = (colors: any) => StyleSheet.create({
         fontSize: 16,
         color: colors.primary[500],
         fontWeight: '700',
+        textAlign: 'center',
     },
 });

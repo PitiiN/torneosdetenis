@@ -466,6 +466,7 @@ const getStyles = (colors: any) => StyleSheet.create({
     filterButtonText: {
         color: colors.textSecondary,
         fontWeight: '700',
+        textAlign: 'center',
     },
     filterButtonTextActive: {
         color: '#fff',
@@ -621,6 +622,7 @@ const getStyles = (colors: any) => StyleSheet.create({
     pageButtonText: {
         color: colors.textSecondary,
         fontWeight: '700',
+        textAlign: 'center',
     },
     pageButtonTextActive: {
         color: '#fff',
@@ -673,7 +675,8 @@ const getStyles = (colors: any) => StyleSheet.create({
     modalityBtnText: { 
         fontSize: 13, 
         fontWeight: '600', 
-        color: colors.textSecondary 
+        color: colors.textSecondary,
+        textAlign: 'center'
     },
     modalityBtnTextActive: { 
         color: colors.primary[500], 

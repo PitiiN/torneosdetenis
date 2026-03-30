@@ -1167,12 +1167,12 @@ const getStyles = (colors: any) => StyleSheet.create({
         borderBottomColor: colors.primary[500] + '40',
     },
     miniSaveBtn: { marginTop: spacing.md, backgroundColor: colors.primary[500], paddingVertical: 8, paddingHorizontal: spacing.md, borderRadius: borderRadius.md, alignSelf: 'flex-start' },
-    miniSaveBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+    miniSaveBtnText: { color: '#fff', fontSize: 13, fontWeight: '700', textAlign: 'center' },
 
     modalitySelector: { flexDirection: 'row', backgroundColor: colors.surfaceSecondary, borderRadius: borderRadius.lg, padding: 4, marginTop: spacing.md },
     modalityBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: borderRadius.md },
     modalityBtnActive: { backgroundColor: colors.surface, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 },
-    modalityBtnText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+    modalityBtnText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, textAlign: 'center' },
     modalityBtnTextActive: { color: colors.primary[500], fontWeight: '700' },
 
     contextSelector: {
@@ -1513,6 +1513,7 @@ const getStyles = (colors: any) => StyleSheet.create({
         color: colors.textSecondary,
         fontSize: 12,
         fontWeight: '700',
+        textAlign: 'center',
     },
     levelChipTextActive: {
         color: '#fff',

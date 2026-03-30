@@ -1335,11 +1335,14 @@ const getStyles = (colors: any) => StyleSheet.create({
         borderRadius: borderRadius.lg,
         borderWidth: 1,
         borderColor: colors.border,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     backToHomeText: {
         color: colors.primary[500],
         fontWeight: '700',
         fontSize: 14,
+        textAlign: 'center',
     },
     modalOverlay: {
         flex: 1,
