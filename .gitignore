@@ -29,3 +29,7 @@ android/build/
 android/app/build/
 android/app/.cxx/
 ios/build/
+
+# Firebase native config files (should not be versioned)
+google-services.json
+GoogleService-Info.plist
