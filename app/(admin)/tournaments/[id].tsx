@@ -15,6 +15,7 @@ import { AdminQuickActionsBar } from '@/components/navigation/AdminQuickActionsB
 import { getTournamentPlacements } from '@/services/ranking';
 import { formatDateDDMMYYYY, formatTime24, parseTimeRelaxed } from '@/utils/datetime';
 import { syncTournamentChampion, resolveChampionFromMatches } from '@/services/tournamentChampion';
+import { notifyTournamentUsers } from '@/services/pushNotifications';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const COURT_OPTIONS = Array.from({ length: 20 }, (_current, index) => `Cancha ${index + 1}`);
@@ -114,6 +115,77 @@ export default function AdminTournamentDetailScreen() {
     const formatScheduleTime = (scheduledAt?: string | null) => {
         if (!scheduledAt) return null;
         return formatTime24(scheduledAt);
+    };
+    const getNotifiablePlayerIdsFromMatch = (match: any) => {
+        const candidateIds = [match?.player_a_id, match?.player_a2_id, match?.player_b_id, match?.player_b2_id]
+            .map((value) => String(value || '').trim())
+            .filter((value) => UUID_PATTERN.test(value));
+        return [...new Set(candidateIds)];
+    };
+    const isMatchFullyDefinedForNotification = (match: any) => {
+        if (!match) return false;
+        if (IS_DOUBLES) {
+            return [match?.player_a_id, match?.player_a2_id, match?.player_b_id, match?.player_b2_id]
+                .every((value) => UUID_PATTERN.test(String(value || '').trim()));
+        }
+        return [match?.player_a_id, match?.player_b_id]
+            .every((value) => UUID_PATTERN.test(String(value || '').trim()));
+    };
+    const buildMatchPairingLabel = (match: any) => {
+        const teamA = IS_DOUBLES
+            ? `${getDisplayName(match, 1)} / ${getDisplayName(match, 2)}`
+            : getDisplayName(match, 1);
+        const teamB = IS_DOUBLES
+            ? `${getDisplayName(match, 3)} / ${getDisplayName(match, 4)}`
+            : getDisplayName(match, 3);
+        return `${teamA} vs ${teamB}`;
+    };
+    const notifyDefinedKnockoutMatch = async (match: any) => {
+        const tournamentId = String(id || '').trim();
+        if (!UUID_PATTERN.test(tournamentId)) return;
+
+        const recipientIds = getNotifiablePlayerIdsFromMatch(match);
+        if (!recipientIds.length) return;
+
+        await notifyTournamentUsers({
+            tournamentId,
+            userIds: recipientIds,
+            type: 'next_match_defined',
+            title: 'Nuevo enfrentamiento definido',
+            body: `Tu proximo partido ya esta definido: ${buildMatchPairingLabel(match)}.`,
+            matchId: String(match?.id || '').trim() || null,
+            data: {
+                type: 'next_match_defined',
+                tournamentId,
+                matchId: String(match?.id || '').trim() || null,
+            },
+        });
+    };
+    const notifyScheduledMatchUpdate = async (match: any, nextScheduledAt: string | null, nextCourt: string) => {
+        const tournamentId = String(id || '').trim();
+        if (!UUID_PATTERN.test(tournamentId)) return;
+
+        const recipientIds = getNotifiablePlayerIdsFromMatch(match);
+        if (!recipientIds.length) return;
+
+        const dateLabel = nextScheduledAt ? (formatScheduleDate(nextScheduledAt) || 'Sin fecha') : 'Sin fecha';
+        const timeLabel = nextScheduledAt ? (formatScheduleTime(nextScheduledAt) || '') : '';
+        const courtLabel = nextCourt || 'Cancha por definir';
+        const scheduleLabel = `${dateLabel}${timeLabel ? ` ${timeLabel}` : ''}`.trim();
+
+        await notifyTournamentUsers({
+            tournamentId,
+            userIds: recipientIds,
+            type: 'match_schedule_updated',
+            title: 'Partido reprogramado',
+            body: `Se actualizo el partido ${buildMatchPairingLabel(match)}. Nueva programacion: ${scheduleLabel} - ${courtLabel}.`,
+            matchId: String(match?.id || '').trim() || null,
+            data: {
+                type: 'match_schedule_updated',
+                tournamentId,
+                matchId: String(match?.id || '').trim() || null,
+            },
+        });
     };
 
     const collectPlayerIds = (registrations: any[], tournamentMatches: any[]) => {
@@ -618,6 +690,8 @@ export default function AdminTournamentDetailScreen() {
         setSavingSchedule(true);
 
         try {
+            const previousScheduledAt = selectedMatch.scheduled_at || null;
+            const previousCourt = String(selectedMatch.court || '');
             const normalizedDate = String(scheduleData.date || '').trim();
             const normalizedTime = String(scheduleData.time || '').trim();
             const normalizedCourt = COURT_OPTIONS.includes(String(scheduleData.court || '').trim())
@@ -659,6 +733,15 @@ export default function AdminTournamentDetailScreen() {
                 scheduled_at: scheduledAt, 
                 court: normalizedCourt 
             });
+            const hasSchedulingChanges =
+                previousScheduledAt !== scheduledAt || previousCourt !== normalizedCourt;
+            if (hasSchedulingChanges) {
+                await notifyScheduledMatchUpdate(
+                    { ...selectedMatch, scheduled_at: scheduledAt, court: normalizedCourt },
+                    scheduledAt,
+                    normalizedCourt
+                );
+            }
             setIsScheduleModalVisible(false);
             Alert.alert('Éxito', 'Horario y cancha guardados.');
         } catch (error) {
@@ -771,7 +854,8 @@ export default function AdminTournamentDetailScreen() {
         winnerId: string | null,
         winner2Id: string | null = null,
         sourceMatches: any[] = matches,
-        winnerSide?: 'A' | 'B'
+        winnerSide?: 'A' | 'B',
+        notifyOnDefinedMatch = false
     ) {
         if (!winnerId && !winnerSide) return false;
         if (String(match.round || '').startsWith('Grupo ')) return false;
@@ -779,6 +863,8 @@ export default function AdminTournamentDetailScreen() {
         const nextLink = getNextMatchLink(match, sourceMatches);
         if (!nextLink) return false;
         const { nextMatch, nextSlotField, nextSlotField2 } = nextLink;
+        const wasFullyDefinedBefore = isMatchFullyDefinedForNotification(nextMatch);
+        let projectedNextMatch = { ...nextMatch };
 
         const currentWinnerId = nextMatch?.[nextSlotField] || null;
         const currentWinner2Id = nextMatch?.[nextSlotField2] || null;
@@ -789,9 +875,11 @@ export default function AdminTournamentDetailScreen() {
         const updateData: any = {};
         if (winnerId && currentWinnerId !== winnerId) {
             updateData[nextSlotField] = winnerId;
+            projectedNextMatch = { ...projectedNextMatch, [nextSlotField]: winnerId };
         }
         if (IS_DOUBLES && currentWinner2Id !== (winner2Id || null)) {
             updateData[nextSlotField2] = winner2Id || null;
+            projectedNextMatch = { ...projectedNextMatch, [nextSlotField2]: winner2Id || null };
         }
 
         if (Object.keys(updateData).length > 0) {
@@ -826,25 +914,31 @@ export default function AdminTournamentDetailScreen() {
                 (winnerP1 && normalizeManualNameKey(targetP1?.name) !== normalizeManualNameKey(winnerP1?.name)) ||
                 (winnerP2 && normalizeManualNameKey(targetP2?.name) !== normalizeManualNameKey(winnerP2?.name));
 
-            if (!needsManualUpdate) {
-                return advancedAny;
+            if (needsManualUpdate) {
+                await updateTournamentDescription(current => {
+                    const nextMatchSlots = { ...(current.matchSlots?.[nextMatch.id] || {}) };
+                    
+                    if (winnerP1) nextMatchSlots[getMatchManualKey(targetOffsetStart)] = winnerP1;
+                    if (winnerP2) nextMatchSlots[getMatchManualKey(targetOffsetStart + 1 as MatchSlot)] = winnerP2;
+
+                    return {
+                        ...current,
+                        matchSlots: {
+                            ...(current.matchSlots || {}),
+                            [nextMatch.id]: nextMatchSlots
+                        }
+                    };
+                });
+                advancedAny = true;
             }
+        }
 
-            await updateTournamentDescription(current => {
-                const nextMatchSlots = { ...(current.matchSlots?.[nextMatch.id] || {}) };
-                
-                if (winnerP1) nextMatchSlots[getMatchManualKey(targetOffsetStart)] = winnerP1;
-                if (winnerP2) nextMatchSlots[getMatchManualKey(targetOffsetStart + 1 as MatchSlot)] = winnerP2;
-
-                return {
-                    ...current,
-                    matchSlots: {
-                        ...(current.matchSlots || {}),
-                        [nextMatch.id]: nextMatchSlots
-                    }
-                };
-            });
-            advancedAny = true;
+        if (
+            notifyOnDefinedMatch &&
+            !wasFullyDefinedBefore &&
+            isMatchFullyDefinedForNotification(projectedNextMatch)
+        ) {
+            await notifyDefinedKnockoutMatch(projectedNextMatch);
         }
         return advancedAny;
     }
@@ -855,7 +949,8 @@ export default function AdminTournamentDetailScreen() {
         loser2Id: string | null = null,
         sourceMatches: any[] = matches,
         loserSide?: 'A' | 'B',
-        formatOverride?: string | null
+        formatOverride?: string | null,
+        notifyOnDefinedMatch = false
     ) {
         if (!hasConsolationBracket(formatOverride ?? tournament?.format)) return false;
         if (!loserId && !loserSide) return false;
@@ -864,6 +959,8 @@ export default function AdminTournamentDetailScreen() {
         const nextLink = getConsolationLinkForLoser(match, sourceMatches, formatOverride);
         if (!nextLink) return false;
         const { nextMatch, nextSlotField, nextSlotField2 } = nextLink;
+        const wasFullyDefinedBefore = isMatchFullyDefinedForNotification(nextMatch);
+        let projectedNextMatch = { ...nextMatch };
 
         const loserDisplayName = loserSide ? getDisplayName(match, loserSide === 'A' ? 1 : 3) : '';
         const loserDisplayName2 = IS_DOUBLES && loserSide ? getDisplayName(match, loserSide === 'A' ? 2 : 4) : '';
@@ -880,9 +977,11 @@ export default function AdminTournamentDetailScreen() {
         const updateData: any = {};
         if (loserId && currentLoserId !== loserId) {
             updateData[nextSlotField] = loserId;
+            projectedNextMatch = { ...projectedNextMatch, [nextSlotField]: loserId };
         }
         if (IS_DOUBLES && currentLoser2Id !== (loser2Id || null)) {
             updateData[nextSlotField2] = loser2Id || null;
+            projectedNextMatch = { ...projectedNextMatch, [nextSlotField2]: loser2Id || null };
         }
 
         if (Object.keys(updateData).length > 0) {
@@ -913,25 +1012,31 @@ export default function AdminTournamentDetailScreen() {
                 (loserP1 && normalizeManualNameKey(targetP1?.name) !== normalizeManualNameKey(loserP1?.name)) ||
                 (loserP2 && normalizeManualNameKey(targetP2?.name) !== normalizeManualNameKey(loserP2?.name));
 
-            if (!needsManualUpdate) {
-                return advancedAny;
+            if (needsManualUpdate) {
+                await updateTournamentDescription(current => {
+                    const nextMatchSlots = { ...(current.matchSlots?.[nextMatch.id] || {}) };
+
+                    if (loserP1) nextMatchSlots[getMatchManualKey(targetOffsetStart)] = loserP1;
+                    if (loserP2) nextMatchSlots[getMatchManualKey(targetOffsetStart + 1 as MatchSlot)] = loserP2;
+
+                    return {
+                        ...current,
+                        matchSlots: {
+                            ...(current.matchSlots || {}),
+                            [nextMatch.id]: nextMatchSlots
+                        }
+                    };
+                });
+                advancedAny = true;
             }
+        }
 
-            await updateTournamentDescription(current => {
-                const nextMatchSlots = { ...(current.matchSlots?.[nextMatch.id] || {}) };
-
-                if (loserP1) nextMatchSlots[getMatchManualKey(targetOffsetStart)] = loserP1;
-                if (loserP2) nextMatchSlots[getMatchManualKey(targetOffsetStart + 1 as MatchSlot)] = loserP2;
-
-                return {
-                    ...current,
-                    matchSlots: {
-                        ...(current.matchSlots || {}),
-                        [nextMatch.id]: nextMatchSlots
-                    }
-                };
-            });
-            advancedAny = true;
+        if (
+            notifyOnDefinedMatch &&
+            !wasFullyDefinedBefore &&
+            isMatchFullyDefinedForNotification(projectedNextMatch)
+        ) {
+            await notifyDefinedKnockoutMatch(projectedNextMatch);
         }
         return advancedAny;
     }
@@ -1125,6 +1230,27 @@ export default function AdminTournamentDetailScreen() {
                         if (error) {
                             Alert.alert('Error', 'No se pudo finalizar el torneo.');
                         } else {
+                            const tournamentId = String(id || '').trim();
+                            const participantIds = [...new Set(
+                                players
+                                    .map((player) => String(player?.player_id || '').trim())
+                                    .filter((playerId) => UUID_PATTERN.test(playerId))
+                            )];
+                            if (UUID_PATTERN.test(tournamentId) && participantIds.length > 0) {
+                                await notifyTournamentUsers({
+                                    tournamentId,
+                                    userIds: participantIds,
+                                    type: 'tournament_finished',
+                                    title: 'Torneo finalizado',
+                                    body: championName
+                                        ? `Felicitamos a ${championName} por coronarse campeon de ${tournament?.name || 'este torneo'}.`
+                                        : `${tournament?.name || 'Este torneo'} finalizo.`,
+                                    data: {
+                                        type: 'tournament_finished',
+                                        tournamentId,
+                                    },
+                                });
+                            }
                             await loadTournamentData();
                             Alert.alert('Éxito', 'Torneo finalizado.');
                         }
@@ -1158,11 +1284,11 @@ export default function AdminTournamentDetailScreen() {
 
             if (error) throw error;
                 if (side) {
-                    await propagateWinnerToNextMatch(selectedMatch, w1, w2 || null, matches, side as 'A' | 'B');
+                    await propagateWinnerToNextMatch(selectedMatch, w1, w2 || null, matches, side as 'A' | 'B', true);
                     const loserSide = side === 'A' ? 'B' : 'A';
                     const loserId = loserSide === 'A' ? selectedMatch.player_a_id : selectedMatch.player_b_id;
                     const loser2Id = loserSide === 'A' ? selectedMatch.player_a2_id : selectedMatch.player_b2_id;
-                    await propagateLoserToConsolation(selectedMatch, loserId || null, loser2Id || null, matches, loserSide);
+                    await propagateLoserToConsolation(selectedMatch, loserId || null, loser2Id || null, matches, loserSide, undefined, true);
                     
                     // Use the robust resolution logic to get the champion name (handles manual participants)
                     // We simulate the updated matches state by patching the matches array locally for the call
@@ -5250,6 +5376,7 @@ function getStyles(colors: any) {
         },
     });
 }
+
 
 
 

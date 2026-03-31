@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "553561684214",
+    "project_id": "torneosdetenis-4ef53",
+    "storage_bucket": "torneosdetenis-4ef53.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:553561684214:android:df443ec954bd1124d614d7",
+        "android_client_info": {
+          "package_name": "com.pitin.torneosdetenis"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBCP3OqWqVpSWsxg9QOjeQkGL6s59JFlqY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

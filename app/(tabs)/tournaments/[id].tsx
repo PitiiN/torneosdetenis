@@ -386,6 +386,7 @@ export default function TournamentDetailScreen() {
                 playerId: session.user.id,
                 assetUri: selectedProofUri,
                 mimeType: selectedProofMimeType,
+                tournamentName: tournament.name,
             });
 
             Alert.alert('Solicitud enviada', 'Tu comprobante fue enviado para revision.');

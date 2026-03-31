@@ -323,6 +323,7 @@ export default function TournamentMasterDetailScreen() {
         playerId: userId,
         assetUri: selectedProofUri,
         mimeType: selectedProofMimeType,
+        tournamentName: selectedChampionship.name,
       });
 
       Alert.alert('Solicitud enviada', 'Tu comprobante fue enviado al admin. Quedaste pendiente de revision.');

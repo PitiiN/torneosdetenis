@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { notifyTournamentAdminsOnRegistrationRequest } from './pushNotifications';
 
 const STORAGE_BUCKET = 'organizations';
 const ALLOWED_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp']);
@@ -99,6 +100,8 @@ export async function submitTournamentRegistrationRequest(options: {
   playerId: string;
   assetUri: string;
   mimeType?: string | null;
+  tournamentName?: string | null;
+  playerName?: string | null;
 }) {
   const { tournamentId, organizationId, playerId, assetUri, mimeType } = options;
 
@@ -145,6 +148,38 @@ export async function submitTournamentRegistrationRequest(options: {
     await supabase.storage.from(STORAGE_BUCKET).remove([proofPath]);
     throw error;
   }
+
+  const [tournamentNameResult, playerNameResult] = await Promise.allSettled([
+    options.tournamentName
+      ? Promise.resolve(String(options.tournamentName))
+      : supabase
+          .from('tournaments')
+          .select('name')
+          .eq('id', tournamentId)
+          .maybeSingle()
+          .then((response) => String(response.data?.name || 'Torneo')),
+    options.playerName
+      ? Promise.resolve(String(options.playerName))
+      : supabase
+          .from('public_profiles')
+          .select('name')
+          .eq('id', playerId)
+          .maybeSingle()
+          .then((response) => String(response.data?.name || 'Jugador')),
+  ]);
+
+  const resolvedTournamentName =
+    tournamentNameResult.status === 'fulfilled' ? tournamentNameResult.value : 'Torneo';
+  const resolvedPlayerName =
+    playerNameResult.status === 'fulfilled' ? playerNameResult.value : 'Jugador';
+
+  notifyTournamentAdminsOnRegistrationRequest({
+    tournamentId,
+    tournamentName: resolvedTournamentName,
+    playerName: resolvedPlayerName,
+  }).catch((notificationError) => {
+    console.warn('[registrationRequests] admin notification failed:', notificationError);
+  });
 
   return data as TournamentRegistrationRequest;
 }

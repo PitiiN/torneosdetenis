@@ -10,6 +10,7 @@ import { canManageOrganization, getCurrentUserAccessContext } from '@/services/a
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { resolveStorageAssetUrl } from '@/services/storage';
 import { AdminQuickActionsBar } from '@/components/navigation/AdminQuickActionsBar';
+import { notifyTournamentUsers } from '@/services/pushNotifications';
 
 type Registration = {
   id: string;
@@ -233,6 +234,19 @@ export default function TournamentFinanceDetail() {
         .eq('id', request.id);
 
       if (deleteRequestError) throw deleteRequestError;
+
+      if (status === 'approved') {
+        const playerId = String(request.player_id || '').trim();
+        if (UUID_PATTERN.test(playerId) && tournamentId) {
+          await notifyTournamentUsers({
+            tournamentId: String(tournamentId),
+            userIds: [playerId],
+            type: 'registration_approved',
+            title: 'Inscripcion aprobada',
+            body: `Tu inscripcion a ${tournament?.name || 'este torneo'} fue aprobada.`,
+          });
+        }
+      }
 
       setRejectTarget(null);
       setRejectReason('');

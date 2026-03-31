@@ -5,6 +5,7 @@ import { Session } from '@supabase/supabase-js';
 import { Image, Text, View } from 'react-native';
 import { ThemeProvider, darkTheme } from '@/theme';
 import { TennisSpinner } from '@/components/TennisSpinner';
+import { notificationService } from '@/services/notificationService';
 
 const MIN_BOOTSTRAP_LOADING_MS = 3000;
 
@@ -65,6 +66,36 @@ export default function RootLayout() {
       router.replace('/(tabs)');
     }
   }, [session, initialized, segments]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const syncPushTokenIfEnabled = async () => {
+      const userId = session?.user?.id;
+      if (!userId) return;
+
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('notifications_enabled')
+          .eq('id', userId)
+          .maybeSingle();
+
+        if (!isMounted) return;
+        if (profile?.notifications_enabled) {
+          await notificationService.registerForPushNotifications(userId);
+        }
+      } catch {
+        // Silent fallback: notification sync should never block app boot.
+      }
+    };
+
+    syncPushTokenIfEnabled();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [session?.user?.id]);
 
   if (!initialized) {
     return (
