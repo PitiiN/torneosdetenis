@@ -1,0 +1,15 @@
+# Keep EAS uploads clean from local artifacts and machine-specific paths
+.git
+node_modules
+.expo
+supabase/.temp
+antigravity-history
+vsc-history
+.vscode
+
+# Native build outputs
+android/.gradle
+android/build
+android/app/build
+android/app/.cxx
+ios/build

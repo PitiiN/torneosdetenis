@@ -22,3 +22,10 @@ antigravity-history/
 vsc-history/
 .vscode/
 *.local
+
+# Native build outputs (can leak machine-specific absolute paths into EAS uploads)
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+ios/build/
