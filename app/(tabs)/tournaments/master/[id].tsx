@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Keyboard, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Keyboard, Image, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -15,7 +15,7 @@ import {
 } from '@/services/registrationRequests';
 import { RegistrationProofModal } from '@/components/tournaments/RegistrationProofModal';
 import { normalizeTournamentStatus } from '@/services/tournamentStatus';
-import { resolveChampionFromMatches } from '@/services/tournamentChampion';
+import { extractChampionFromDescription, resolveChampionFromMatches } from '@/services/tournamentChampion';
 import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
 
 type MasterTournament = {
@@ -91,10 +91,12 @@ const formatRegistrationDeadline = (dateValue?: string | null, timeValue?: strin
 
 function ChampionName({ championship }: { championship: Championship }) {
   const [resolvedName, setResolvedName] = useState<string | null>(null);
-  const tagManager = (championship.description || '').match(/\[CHAMPION:(.+?)\]/)?.[1];
+  const tagManager = extractChampionFromDescription(championship.description);
+  const shouldForceResolve = String(championship.modality || '').toLowerCase().includes('doble')
+    || String(championship.format || '').toLowerCase().includes('repech');
 
   useEffect(() => {
-    if (tagManager || championship.status !== 'finished') return;
+    if ((!shouldForceResolve && tagManager) || championship.status !== 'finished') return;
 
     const resolve = async () => {
       try {
@@ -112,9 +114,9 @@ function ChampionName({ championship }: { championship: Championship }) {
       }
     };
     resolve();
-  }, [championship.id, championship.status, championship.description, tagManager]);
+  }, [championship.id, championship.status, championship.description, championship.format, championship.modality, shouldForceResolve, tagManager]);
 
-  const displayName = tagManager || resolvedName || 'Finalizado';
+  const displayName = resolvedName || tagManager || 'Finalizado';
 
   return (
     <Text style={{ fontSize: 13, color: '#333', fontWeight: '800' }}>
@@ -149,6 +151,7 @@ export default function TournamentMasterDetailScreen() {
   const [registeredTournamentIds, setRegisteredTournamentIds] = useState<Set<string>>(new Set());
   const [latestRequestsByTournamentId, setLatestRequestsByTournamentId] = useState<Record<string, LatestRequest>>({});
   const [posterUrl, setPosterUrl] = useState<string | null>(null);
+  const [isPosterModalVisible, setIsPosterModalVisible] = useState(false);
   const [selectedChampionship, setSelectedChampionship] = useState<Championship | null>(null);
   const [selectedProofUri, setSelectedProofUri] = useState<string | null>(null);
   const [selectedProofMimeType, setSelectedProofMimeType] = useState<string | null>(null);
@@ -439,9 +442,16 @@ export default function TournamentMasterDetailScreen() {
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {posterUrl && (
-          <View style={styles.posterContainer}>
+          <TouchableOpacity
+            style={styles.posterContainer}
+            activeOpacity={0.95}
+            onPress={() => setIsPosterModalVisible(true)}
+          >
             <Image source={{ uri: posterUrl }} style={styles.posterImage} resizeMode="cover" />
-          </View>
+            <View style={styles.posterHint}>
+              <Text style={styles.posterHintText}>Tocar para ampliar</Text>
+            </View>
+          </TouchableOpacity>
         )}
 
         <View style={styles.masterInfoCard}>
@@ -511,7 +521,7 @@ export default function TournamentMasterDetailScreen() {
               </View>
 
               {(() => {
-                const championName = (championship.description || '').match(/\[CHAMPION:(.+?)\]/)?.[1];
+                const championName = extractChampionFromDescription(championship.description);
                 const isFinished = championship.status === 'finished';
                 if (!championName && !isFinished) return null;
                 
@@ -581,6 +591,31 @@ export default function TournamentMasterDetailScreen() {
           </View>
         )}
       </ScrollView>
+
+      <Modal
+        visible={isPosterModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsPosterModalVisible(false)}
+      >
+        <View style={styles.posterModalOverlay}>
+          <TouchableOpacity
+            style={styles.posterModalClose}
+            onPress={() => setIsPosterModalVisible(false)}
+          >
+            <Ionicons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.posterModalTouchable}
+            activeOpacity={1}
+            onPress={() => setIsPosterModalVisible(false)}
+          >
+            {posterUrl ? (
+              <Image source={{ uri: posterUrl }} style={styles.posterModalImage} resizeMode="contain" />
+            ) : null}
+          </TouchableOpacity>
+        </View>
+      </Modal>
 
       <RegistrationProofModal
         visible={isProofModalVisible}
@@ -660,6 +695,50 @@ const getStyles = (colors: any) => StyleSheet.create({
     alignItems: 'center',
   },
   posterImage: {
+    width: '100%',
+    height: '100%',
+  },
+  posterHint: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+  },
+  posterHintText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  posterModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  posterModalClose: {
+    position: 'absolute',
+    top: 48,
+    right: 24,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    zIndex: 2,
+  },
+  posterModalTouchable: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing['2xl'],
+  },
+  posterModalImage: {
     width: '100%',
     height: '100%',
   },

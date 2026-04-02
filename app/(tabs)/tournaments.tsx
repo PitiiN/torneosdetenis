@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Dimensions, Image, Modal, Alert, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Dimensions, Image, Alert, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
@@ -9,7 +9,7 @@ import { supabase } from '@/services/supabase';
 import * as SecureStore from 'expo-secure-store';
 import { getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
-import { resolveChampionFromMatches } from '@/services/tournamentChampion';
+import { extractChampionFromDescription, resolveChampionFromMatches } from '@/services/tournamentChampion';
 import { getCachedValue, setCachedValue } from '@/services/runtimeCache';
 import { getEffectiveTournamentStatus, normalizeTournamentStatus } from '@/services/tournamentStatus';
 import { formatDateDDMMYYYY } from '@/utils/datetime';
@@ -99,10 +99,12 @@ const getEffectiveStatus = (tournament: Tournament) =>
 
 function ChampionName({ tournament }: { tournament: Tournament }) {
     const [resolvedName, setResolvedName] = useState<string | null>(null);
-    const tagManager = (tournament.description || '').match(/\[CHAMPION:(.+?)\]/)?.[1];
+    const tagManager = extractChampionFromDescription(tournament.description);
+    const shouldForceResolve = String(tournament.modality || '').toLowerCase().includes('doble')
+        || String(tournament.format || '').toLowerCase().includes('repech');
 
     useEffect(() => {
-        if (tagManager || (tournament.status !== 'finished' && normalizeTournamentStatus(tournament.status) !== 'finished')) return;
+        if ((!shouldForceResolve && tagManager) || (tournament.status !== 'finished' && normalizeTournamentStatus(tournament.status) !== 'finished')) return;
 
         const resolve = async () => {
             try {
@@ -120,9 +122,9 @@ function ChampionName({ tournament }: { tournament: Tournament }) {
             }
         };
         resolve();
-    }, [tournament.id, tournament.status, tournament.description, tagManager]);
+    }, [tournament.id, tournament.status, tournament.description, tournament.format, tournament.modality, shouldForceResolve, tagManager]);
 
-    const displayName = tagManager || resolvedName || 'Finalizado';
+    const displayName = resolvedName || tagManager || 'Finalizado';
 
     return (
         <Text style={{ fontSize: 14, color: '#333', fontWeight: '800' }}>
@@ -156,8 +158,7 @@ export default function TorneosScreen() {
     const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
     const [userOrgId, setUserOrgId] = useState<string | null>(null);
     const [activeOrgId, setActiveOrgId] = useState<string | null>(normalizedRouteOrgId || null);
-    const [notifications, setNotifications] = useState<Array<{ id: string; title: string; body: string }>>([]);
-    const [isNotificationsVisible, setIsNotificationsVisible] = useState(false);
+    const [pendingRequestCountByMonth, setPendingRequestCountByMonth] = useState<Record<string, number>>({});
 
     const filters = ['Pr\u00F3ximos', 'En Curso', 'Finalizados'];
 
@@ -246,7 +247,6 @@ export default function TorneosScreen() {
         await fetchOrgDetails(nextOrgId);
         await fetchTournaments(nextOrgId, canManageOrg);
         await fetchRegistrations(access.session.user.id, nextOrgId);
-        await fetchNotifications(access.session.user.id, nextOrgId);
     }
 
     async function fetchOrgDetails(targetOrgId: string) {
@@ -321,107 +321,6 @@ export default function TorneosScreen() {
         setIsSuperAdmin(access.isSuperAdmin);
         return access;
     }
-    async function fetchNotifications(currentUserId: string, targetOrgId: string) {
-        try {
-            const items: Array<{ id: string; title: string; body: string }> = [];
-
-            const { data: publishedTournaments } = await supabase
-                .from('tournaments')
-                .select('id, name')
-                .eq('organization_id', targetOrgId)
-                .in('status', ['open', 'ongoing', 'in_progress'])
-                .order('start_date', { ascending: true })
-                .limit(5);
-
-            (publishedTournaments || []).forEach((tournament: any) => {
-                items.push({
-                    id: `pub-${tournament.id}`,
-                    title: 'Nuevo torneo disponible',
-                    body: `${tournament.name} ya fue publicado para inscripción.`,
-                });
-            });
-
-            const { data: registrations } = await supabase
-                .from('registrations')
-                .select('tournament_id')
-                .eq('player_id', currentUserId);
-
-            const tournamentIds = [...new Set((registrations || []).map((registration: any) => registration.tournament_id).filter(Boolean))];
-            if (tournamentIds.length > 0) {
-                const { data: userMatches } = await supabase
-                    .from('matches')
-                    .select('id, round, score, status')
-                    .in('tournament_id', tournamentIds)
-                    .or(`player_a_id.eq.${currentUserId},player_b_id.eq.${currentUserId}`)
-                    .order('match_order', { ascending: true })
-                    .limit(6);
-
-                (userMatches || []).forEach((match: any) => {
-                    items.push({
-                        id: `match-${match.id}`,
-                        title: match.status === 'finished' ? 'Resultado registrado' : 'Tu siguiente partido',
-                        body: match.status === 'finished'
-                            ? `${match.round}: resultado ${match.score || 'pendiente'}.`
-                            : `${match.round}: tu próximo partido ya fue publicado.`,
-                    });
-                });
-            }
-
-            const { data: requestUpdates } = await supabase
-                .from('tournament_registration_requests')
-                .select('id, tournament_id, status, rejection_reason, updated_at')
-                .eq('player_id', currentUserId)
-                .in('status', ['approved', 'rejected'])
-                .order('updated_at', { ascending: false })
-                .limit(8);
-
-            const requestTournamentIds = [...new Set(
-                (requestUpdates || [])
-                    .map((request: any) => String(request?.tournament_id || ''))
-                    .filter(Boolean)
-            )];
-
-            let requestTournamentNameById: Record<string, string> = {};
-            if (requestTournamentIds.length > 0) {
-                const { data: requestTournaments } = await supabase
-                    .from('tournaments')
-                    .select('id, name, organization_id')
-                    .in('id', requestTournamentIds);
-
-                requestTournamentNameById = (requestTournaments || [])
-                    .filter((tournament: any) => tournament.organization_id === targetOrgId)
-                    .reduce((acc: Record<string, string>, tournament: any) => {
-                        acc[tournament.id] = decodeEscapedUnicode(tournament.name || 'Torneo');
-                        return acc;
-                    }, {});
-            }
-
-            (requestUpdates || []).forEach((request: any) => {
-                const tournamentName = requestTournamentNameById[request.tournament_id];
-                if (!tournamentName) return;
-
-                if (request.status === 'approved') {
-                    items.push({
-                        id: `req-ok-${request.id}`,
-                        title: 'Inscripcion aprobada',
-                        body: `Tu comprobante de ${tournamentName} fue aprobado.`,
-                    });
-                    return;
-                }
-
-                items.push({
-                    id: `req-no-${request.id}`,
-                    title: 'Inscripcion rechazada',
-                    body: `Tu comprobante de ${tournamentName} fue rechazado: ${request.rejection_reason || 'sin motivo indicado'}.`,
-                });
-            });
-
-            setNotifications(items);
-        } catch (error) {
-            setNotifications([]);
-        }
-    }
-
     async function fetchRegistrations(currentUserId: string, targetOrgId: string) {
         try {
             const registrationCacheKey = `registrations:${currentUserId}:${targetOrgId}`;
@@ -492,6 +391,63 @@ export default function TorneosScreen() {
             
             const { data, error } = await query;
             if (error) throw error;
+
+            if (canManageOrg) {
+                const minYear = Math.min(...YEARS);
+                const maxYear = Math.max(...YEARS);
+
+                const { data: childTournaments, error: childTournamentsError } = await supabase
+                    .from('tournaments')
+                    .select('id, start_date')
+                    .eq('organization_id', targetOrgId)
+                    .eq('is_tournament_master', false)
+                    .gte('start_date', `${minYear}-01-01`)
+                    .lte('start_date', `${maxYear}-12-31`);
+
+                if (childTournamentsError) throw childTournamentsError;
+
+                const tournamentIds = (childTournaments || [])
+                    .map((row: any) => String(row?.id || ''))
+                    .filter(Boolean);
+
+                const monthKeyByTournamentId = (childTournaments || []).reduce((acc: Record<string, string>, row: any) => {
+                    const tournamentId = String(row?.id || '');
+                    const rawDate = String(row?.start_date || '').trim();
+                    if (!tournamentId || !rawDate) return acc;
+
+                    const parsedDate = new Date(`${rawDate}T00:00:00`);
+                    if (Number.isNaN(parsedDate.getTime())) return acc;
+
+                    acc[tournamentId] = `${parsedDate.getFullYear()}-${parsedDate.getMonth()}`;
+                    return acc;
+                }, {});
+
+                if (tournamentIds.length === 0) {
+                    setPendingRequestCountByMonth({});
+                } else {
+                    const { data: pendingRows, error: pendingRowsError } = await supabase
+                        .from('tournament_registration_requests')
+                        .select('tournament_id')
+                        .eq('status', 'pending')
+                        .in('tournament_id', tournamentIds);
+
+                    if (pendingRowsError) throw pendingRowsError;
+
+                    const nextMonthMap = (pendingRows || []).reduce((acc: Record<string, number>, row: any) => {
+                        const tournamentId = String(row?.tournament_id || '');
+                        const monthKey = monthKeyByTournamentId[tournamentId];
+                        if (!monthKey) return acc;
+
+                        acc[monthKey] = (acc[monthKey] || 0) + 1;
+                        return acc;
+                    }, {});
+
+                    setPendingRequestCountByMonth(nextMonthMap);
+                }
+            } else {
+                setPendingRequestCountByMonth({});
+            }
+
             setTournaments(
                 (data || []).map((tournament: any) => ({
                     ...tournament,
@@ -527,6 +483,7 @@ export default function TorneosScreen() {
                 60_000
             );
         } catch (error) {
+            setPendingRequestCountByMonth({});
         } finally {
             setLoading(false);
         }
@@ -630,9 +587,7 @@ export default function TorneosScreen() {
                         <Ionicons name="chevron-back" size={24} color={colors.text} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle} numberOfLines={1}>{orgName}</Text>
-                    <TouchableOpacity style={styles.iconButton} onPress={() => setIsNotificationsVisible(true)}>
-                        <Ionicons name="notifications-outline" size={24} color={colors.text} />
-                    </TouchableOpacity>
+                    <View style={styles.iconButton} />
                 </View>
             </View>
 
@@ -767,7 +722,18 @@ export default function TorneosScreen() {
                                     style={[styles.carouselItem, selectedMonth === idx && styles.carouselItemActive]}
                                     onPress={() => setSelectedMonth(idx)}
                                 >
-                                    <Text style={[styles.carouselText, selectedMonth === idx && styles.carouselTextActive]}>{month}</Text>
+                                    <View style={styles.carouselItemContent}>
+                                        <Text style={[styles.carouselText, selectedMonth === idx && styles.carouselTextActive]}>{month}</Text>
+                                        {canManage && pendingRequestCountByMonth[`${selectedYear}-${idx}`] > 0 && (
+                                            <View style={styles.monthNotificationBadge}>
+                                                <Text style={styles.monthNotificationBadgeText}>
+                                                    {pendingRequestCountByMonth[`${selectedYear}-${idx}`] > 99
+                                                        ? '99+'
+                                                        : pendingRequestCountByMonth[`${selectedYear}-${idx}`]}
+                                                </Text>
+                                            </View>
+                                        )}
+                                    </View>
                                 </TouchableOpacity>
                             ))}
                         </ScrollView>
@@ -899,7 +865,9 @@ export default function TorneosScreen() {
                                             )}
                                     </View>
                                     {(() => {
-                                        const championName = (tournament.description || '').match(/\[CHAMPION:(.+?)\]/)?.[1];
+                                        if (isMasterTournament) return null;
+
+                                        const championName = extractChampionFromDescription(tournament.description);
                                         const isFinished = tournament.status === 'finished' || getEffectiveStatus(tournament) === 'finished';
                                         if (!championName && !isFinished) return null;
                                         
@@ -975,28 +943,6 @@ export default function TorneosScreen() {
                 )}
             </ScrollView>
 
-            <Modal visible={isNotificationsVisible} transparent animationType="fade">
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalCard}>
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Notificaciones</Text>
-                            <TouchableOpacity onPress={() => setIsNotificationsVisible(false)}>
-                                <Ionicons name="close" size={22} color={colors.text} />
-                            </TouchableOpacity>
-                        </View>
-                        <ScrollView showsVerticalScrollIndicator={false}>
-                            {notifications.length > 0 ? notifications.map((item) => (
-                                <View key={item.id} style={styles.notificationRow}>
-                                    <Text style={styles.notificationTitle}>{item.title}</Text>
-                                    <Text style={styles.notificationBody}>{item.body}</Text>
-                                </View>
-                            )) : (
-                                <Text style={styles.notificationEmpty}>No hay notificaciones por ahora.</Text>
-                            )}
-                        </ScrollView>
-                    </View>
-                </View>
-            </Modal>
         </View>
     );
 }
@@ -1156,6 +1102,11 @@ const getStyles = (colors: any) => StyleSheet.create({
         minWidth: 70,
         alignItems: 'center',
     },
+    carouselItemContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
     carouselItemActive: {
         backgroundColor: colors.primary[500] + '20',
         borderColor: colors.primary[500],
@@ -1167,6 +1118,21 @@ const getStyles = (colors: any) => StyleSheet.create({
     },
     carouselTextActive: {
         color: colors.primary[500],
+    },
+    monthNotificationBadge: {
+        minWidth: 16,
+        height: 16,
+        borderRadius: 8,
+        paddingHorizontal: 4,
+        backgroundColor: '#dc2626',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    monthNotificationBadgeText: {
+        color: '#fff',
+        fontSize: 9,
+        fontWeight: '900',
+        lineHeight: 11,
     },
     sectionHeader: {
         flexDirection: 'row',

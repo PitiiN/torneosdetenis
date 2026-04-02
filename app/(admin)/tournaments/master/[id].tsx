@@ -19,7 +19,12 @@ import { getModalityLabel, sortChampionships } from '@/services/championshipSort
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { AdminQuickActionsBar } from '@/components/navigation/AdminQuickActionsBar';
 import { formatDateDDMMYYYY } from '@/utils/datetime';
-import { syncTournamentChampion } from '@/services/tournamentChampion';
+import {
+  buildDescriptionWithChampion,
+  extractChampionFromDescription,
+  resolveChampionFromMatches,
+  syncTournamentChampion
+} from '@/services/tournamentChampion';
 import * as ImagePicker from 'expo-image-picker';
 import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
 
@@ -120,6 +125,48 @@ const isDoublesChampionshipLegacyAware = (championship: { modality?: string | nu
 const getChampionshipModalityLabel = (championship: { modality?: string | null; name?: string | null }) =>
   isDoublesChampionshipLegacyAware(championship) ? 'Dobles' : 'Singles';
 
+function ChampionName({ championship }: { championship: Championship }) {
+  const { colors } = useTheme();
+  const [resolvedName, setResolvedName] = useState<string | null>(null);
+  const championFromTag = extractChampionFromDescription(championship.description);
+  const shouldForceResolve = String(championship.modality || '').toLowerCase().includes('doble')
+    || String(championship.format || '').toLowerCase().includes('repech');
+
+  useEffect(() => {
+    if ((!shouldForceResolve && championFromTag) || championship.status !== 'finished') return;
+
+    let isMounted = true;
+    const resolve = async () => {
+      try {
+        const [matchesRes, participantsRes] = await Promise.all([
+          supabase.from('matches').select('*').eq('tournament_id', championship.id),
+          supabase.from('tournament_participants').select('player_id, profiles(name)').eq('tournament_id', championship.id)
+        ]);
+
+        if (!isMounted || !matchesRes.data) return;
+        const championName = resolveChampionFromMatches(
+          matchesRes.data,
+          participantsRes.data || [],
+          championship.description
+        );
+        if (championName) setResolvedName(championName);
+      } catch (error) {
+        console.error('Error resolving championship champion:', error);
+      }
+    };
+
+    resolve();
+    return () => { isMounted = false; };
+  }, [championship.id, championship.status, championship.description, championship.format, championship.modality, championFromTag, shouldForceResolve]);
+
+  const displayName = resolvedName || championFromTag || 'Finalizado';
+  return (
+    <Text style={{ fontSize: 14, color: colors.text, fontWeight: '800' }}>
+      {displayName}
+    </Text>
+  );
+}
+
 const formatRegistrationDeadline = (dateValue?: string | null, timeValue?: string | null) => {
   if (!dateValue) return 'Sin definir';
   const dateLabel = formatDateDDMMYYYY(dateValue);
@@ -149,6 +196,7 @@ export default function MasterTournamentAdminScreen() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [uploadingPoster, setUploadingPoster] = useState(false);
   const [posterUrl, setPosterUrl] = useState<string | null>(null);
+  const [expandedPosterUrl, setExpandedPosterUrl] = useState<string | null>(null);
 
   const [modality, setModality] = useState<typeof MODALITIES[number]>('singles');
   const [category, setCategory] = useState(TOURNAMENT_CATEGORIES[0]);
@@ -229,14 +277,14 @@ export default function MasterTournamentAdminScreen() {
 
       // Pro-actively sync championships that are finished but missing the champion tag
       for (const champ of championships) {
-        if (champ.status === 'finished' && !(champ.description || '').includes('[CHAMPION:')) {
+        if (champ.status === 'finished' && !extractChampionFromDescription(champ.description)) {
           syncTournamentChampion(champ.id, supabase).then(newChampName => {
             if (newChampName) {
               setChampionships(current => 
                 current.map(c => c.id === champ.id 
-                  ? { ...c, description: (c.description || '').includes('[CHAMPION:') 
+                  ? { ...c, description: extractChampionFromDescription(c.description)
                       ? c.description 
-                      : `${c.description || ''} [CHAMPION:${newChampName}]`.trim() 
+                      : buildDescriptionWithChampion(c.description, newChampName)
                   } 
                   : c
                 )
@@ -525,7 +573,16 @@ export default function MasterTournamentAdminScreen() {
             <TennisSpinner size={24} />
           ) : posterUrl ? (
             <>
-              <Image source={{ uri: posterUrl }} style={styles.posterImage} resizeMode="cover" />
+              <TouchableOpacity
+                activeOpacity={0.95}
+                style={styles.posterTapTarget}
+                onPress={() => setExpandedPosterUrl(posterUrl)}
+              >
+                <Image source={{ uri: posterUrl }} style={styles.posterImage} resizeMode="cover" />
+                <View style={styles.posterHint}>
+                  <Text style={styles.posterHintText}>Tocar para ampliar</Text>
+                </View>
+              </TouchableOpacity>
               <TouchableOpacity style={styles.uploadPosterBtn} onPress={handlePickPoster}>
                 <Ionicons name="camera" size={16} color="#fff" />
                 <Text style={styles.uploadPosterText}>Cambiar Afiche</Text>
@@ -585,7 +642,7 @@ export default function MasterTournamentAdminScreen() {
             <Text style={styles.championshipMeta}>Formato: {championship.format || 'Sin formato'}</Text>
             
             {(() => {
-              const championName = (championship.description || '').match(/\[CHAMPION:(.+?)\]/)?.[1];
+              const championName = extractChampionFromDescription(championship.description);
               const isFinished = championship.status === 'finished';
               if (!championName && !isFinished) return null;
               
@@ -605,9 +662,7 @@ export default function MasterTournamentAdminScreen() {
                     <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textTertiary, marginBottom: 1 }}>
                       Campeón
                     </Text>
-                    <Text style={{ fontSize: 14, color: colors.text, fontWeight: '800' }}>
-                      {championName || 'Finalizado'}
-                    </Text>
+                    <ChampionName championship={championship} />
                   </View>
                 </View>
               );
@@ -625,6 +680,31 @@ export default function MasterTournamentAdminScreen() {
       </ScrollView>
 
       <AdminQuickActionsBar active="tournaments" organizationId={masterTournament.organization_id} />
+
+      <Modal
+        visible={Boolean(expandedPosterUrl)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setExpandedPosterUrl(null)}
+      >
+        <View style={styles.posterModalOverlay}>
+          <TouchableOpacity
+            style={styles.posterModalClose}
+            onPress={() => setExpandedPosterUrl(null)}
+          >
+            <Ionicons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.posterModalTouchable}
+            activeOpacity={1}
+            onPress={() => setExpandedPosterUrl(null)}
+          >
+            {expandedPosterUrl ? (
+              <Image source={{ uri: expandedPosterUrl }} style={styles.posterModalImage} resizeMode="contain" />
+            ) : null}
+          </TouchableOpacity>
+        </View>
+      </Modal>
 
       <Modal visible={showCreateModal} animationType="slide" onRequestClose={() => !creating && setShowCreateModal(false)}>
         <KeyboardAvoidingView
@@ -921,6 +1001,54 @@ const getStyles = (colors: any) => StyleSheet.create({
     alignItems: 'center',
   },
   posterImage: {
+    width: '100%',
+    height: '100%',
+  },
+  posterTapTarget: {
+    width: '100%',
+    height: '100%',
+  },
+  posterHint: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+  },
+  posterHintText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  posterModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  posterModalClose: {
+    position: 'absolute',
+    top: 48,
+    right: 24,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    zIndex: 2,
+  },
+  posterModalTouchable: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing['2xl'],
+  },
+  posterModalImage: {
     width: '100%',
     height: '100%',
   },
@@ -1266,3 +1394,4 @@ const getStyles = (colors: any) => StyleSheet.create({
     textAlign: 'center',
   },
 });
+

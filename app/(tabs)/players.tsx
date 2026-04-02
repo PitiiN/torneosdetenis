@@ -129,10 +129,17 @@ export default function PlayersScreen() {
 
             if (tournamentsError) throw tournamentsError;
 
-            const completedTournaments = (tournaments || []).filter((tournament: any) => {
-                if (modality === 'dobles') return tournament.modality === 'dobles';
-                return !tournament.modality || tournament.modality === 'singles';
-            });
+            const completedTournaments = (tournaments || [])
+                .filter((tournament: any) => {
+                    if (modality === 'dobles') return tournament.modality === 'dobles';
+                    return !tournament.modality || tournament.modality === 'singles';
+                })
+                .sort((leftTournament: any, rightTournament: any) => {
+                    const leftDate = new Date(leftTournament.end_date || leftTournament.start_date || 0).getTime();
+                    const rightDate = new Date(rightTournament.end_date || rightTournament.start_date || 0).getTime();
+                    if (rightDate !== leftDate) return rightDate - leftDate;
+                    return String(rightTournament.id || '').localeCompare(String(leftTournament.id || ''));
+                });
             if (completedTournaments.length === 0) {
                 setRankingRows([]);
                 return;

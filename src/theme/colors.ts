@@ -57,4 +57,4 @@ export const lightTheme = {
 };
 
 export type ThemeColors = typeof darkTheme;
-export const colors = darkTheme; // Default to dark for compatibility
+export const colors = lightTheme; // Default to light for compatibility

@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Image } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
@@ -9,11 +9,9 @@ import * as SecureStore from 'expo-secure-store';
 import { DateField } from '@/components/DateField';
 import { CHILEAN_COMUNAS } from '@/constants/tournamentOptions';
 import { Modal } from 'react-native';
-import { resolveStorageAssetUrl } from '@/services/storage';
+import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { getCachedValue, setCachedValue } from '@/services/runtimeCache';
-
-const { width } = Dimensions.get('window');
 
 interface Organization {
     id: string;
@@ -45,6 +43,7 @@ export default function InicioScreen() {
     const router = useRouter();
     const { colors } = useTheme();
     const styles = getStyles(colors);
+    const { width: screenWidth } = useWindowDimensions();
     const [organizations, setOrganizations] = useState<Organization[]>([]);
     const [sourceOrganizations, setSourceOrganizations] = useState<Organization[]>([]);
     const [openTournaments, setOpenTournaments] = useState<OpenTournamentRef[]>([]);
@@ -81,6 +80,14 @@ export default function InicioScreen() {
     useEffect(() => {
         applyFilters();
     }, [sourceOrganizations, openTournaments, selectedComuna, selectedDate]);
+
+    const orgCardWidth = useMemo(() => {
+        const horizontalPadding = spacing.xl * 2;
+        const interCardGap = spacing.md;
+        const availableWidth = screenWidth - horizontalPadding - interCardGap;
+        const computed = Math.floor(availableWidth / 2);
+        return Math.max(148, computed);
+    }, [screenWidth]);
 
     const applyFilters = () => {
         const tournamentsByOrg = openTournaments.reduce((acc, tournament) => {
@@ -134,7 +141,11 @@ export default function InicioScreen() {
 
             const enrichedOrganizations = await Promise.all(
                 ((orgData || []) as Organization[]).map(async (organization) => {
-                    const signedLogo = await resolveStorageAssetUrl(organization.logo_url, 900);
+                    const signedLogo = await resolveStorageAssetUrlWithRetry(organization.logo_url, {
+                        expiresInSeconds: 900,
+                        attempts: 3,
+                        baseDelayMs: 250,
+                    });
                     const rawLogoUrl = String(organization.logo_url || '').trim();
                     const storageUrlFallback = /^https?:\/\//i.test(rawLogoUrl) && rawLogoUrl.includes('/storage/v1/object/')
                         ? rawLogoUrl
@@ -171,6 +182,59 @@ export default function InicioScreen() {
             setLoading(false);
         }
     }
+
+    useEffect(() => {
+        let active = true;
+        const organizationsWithMissingSignedLogo = sourceOrganizations.filter((org) => org.logo_url && !org.logo_signed_url);
+        if (organizationsWithMissingSignedLogo.length === 0) return;
+
+        (async () => {
+            const logoPairs = await Promise.all(
+                organizationsWithMissingSignedLogo.map(async (org) => {
+                    const signedLogo = await resolveStorageAssetUrlWithRetry(org.logo_url, {
+                        expiresInSeconds: 900,
+                        attempts: 3,
+                        baseDelayMs: 350,
+                    });
+                    return { id: org.id, signedLogo };
+                })
+            );
+
+            if (!active) return;
+
+            const resolvedById = new Map(
+                logoPairs
+                    .filter((entry) => Boolean(entry.signedLogo))
+                    .map((entry) => [entry.id, entry.signedLogo as string])
+            );
+
+            if (resolvedById.size === 0) return;
+
+            setSourceOrganizations((prev) => {
+                const nextOrganizations = prev.map((org) => {
+                    const nextLogo = resolvedById.get(org.id);
+                    if (!nextLogo) return org;
+                    return { ...org, logo_signed_url: nextLogo };
+                });
+
+                setCachedValue<HomeCachePayload>(
+                    HOME_RUNTIME_CACHE_KEY,
+                    {
+                        savedAt: Date.now(),
+                        organizations: nextOrganizations,
+                        openTournaments,
+                    },
+                    HOME_CACHE_TTL_MS
+                );
+
+                return nextOrganizations;
+            });
+        })();
+
+        return () => {
+            active = false;
+        };
+    }, [sourceOrganizations, openTournaments]);
 
     return (
         <View style={styles.container}>
@@ -243,7 +307,7 @@ export default function InicioScreen() {
                         {organizations.map((org) => (
                             <TouchableOpacity 
                                 key={org.id} 
-                                style={styles.orgCard}
+                                style={[styles.orgCard, { width: orgCardWidth }]}
                                 onPress={async () => {
                                     await SecureStore.setItemAsync('selected_org_id', org.id);
                                     await SecureStore.setItemAsync('selected_org_name', org.name);
@@ -407,7 +471,6 @@ const getStyles = (colors: any) => StyleSheet.create({
         gap: spacing.md,
     },
     orgCard: {
-        width: (width - spacing.xl * 2 - spacing.md) / 2,
         backgroundColor: colors.surface,
         borderRadius: borderRadius['2xl'],
         padding: spacing.xl,

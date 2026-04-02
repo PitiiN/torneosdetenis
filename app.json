@@ -5,7 +5,7 @@
     "version": "3.0.8",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "scheme": "torneosdetenis",
     "splash": {
       "image": "./assets/LogoSweetSpot.png",
@@ -28,6 +28,10 @@
       },
       "package": "com.pitin.torneosdetenis",
       "googleServicesFile": "./google-services.json",
+      "notification": {
+        "icon": "./assets/notification-icon.png",
+        "color": "#0f172a"
+      },
       "versionCode": 8,
       "blockedPermissions": [
         "android.permission.CAMERA",
@@ -54,7 +58,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/LogoSweetSpot.png",
+          "icon": "./assets/notification-icon.png",
           "color": "#0f172a"
         }
       ],

@@ -112,8 +112,7 @@ const getPlacementPoints = (
     }
   }
 
-  // Fallback: permitir rangos manuales de texto libre para fases posteriores.
-  // Se asignan por orden de creación a partir de la etapa 5 (Octavos / Ronda 1).
+  // Fallback for free-text ranges in late rounds.
   if (stage >= 5) {
     const fallbackKeys = Object.keys(pointsMap).filter((key) => {
       const normalized = normalizeKey(key);
@@ -134,15 +133,39 @@ const getPlacementPoints = (
   return 0;
 };
 
+const isGroupRound = (roundName: string) => normalizeKey(roundName).startsWith('grupo ');
+
+const isConsolationRound = (roundName: string) => {
+  const normalized = normalizeKey(roundName);
+  return normalized.includes('consolaci') || normalized.includes('repech');
+};
+
+const isPlacementRound = (roundName: string) => {
+  const normalized = normalizeKey(roundName);
+  if (!normalized) return false;
+  return /(^|\s)(3er|4to|5to|6to)\b/.test(normalized) || normalized.includes('puesto');
+};
+
+const isMainBracketRound = (roundName: string) =>
+  !isGroupRound(roundName) &&
+  !isConsolationRound(roundName) &&
+  !isPlacementRound(roundName);
+
+const isFinalRoundName = (roundName: string) => {
+  const normalized = normalizeKey(roundName);
+  if (!normalized) return false;
+  if (normalized.includes('gran final')) return true;
+  if (normalized.includes('semi')) return false;
+  if (normalized.includes('cuart')) return false;
+  if (normalized.includes('octav')) return false;
+  if (normalized.includes('puesto')) return false;
+  return /\bfinal\b/.test(normalized);
+};
+
 export const getTournamentPlacements = (tournament: any, matches: any[]) => {
   const pointsMap = parseRankingPoints(tournament?.description);
   const directEliminationMatches = (matches || [])
-    .filter((match) => {
-      const roundName = String(match?.round || '');
-      if (roundName.startsWith('Grupo ')) return false;
-      if (/^Consolaci/i.test(roundName)) return false;
-      return true;
-    })
+    .filter((match) => isMainBracketRound(String(match?.round || '')))
     .sort((a, b) => {
       if ((a.round_number || 0) !== (b.round_number || 0)) {
         return (a.round_number || 0) - (b.round_number || 0);
@@ -150,25 +173,43 @@ export const getTournamentPlacements = (tournament: any, matches: any[]) => {
       return (a.match_order || 0) - (b.match_order || 0);
     });
 
-  const finalMatch = [...directEliminationMatches]
-    .reverse()
-    .find((match) => String(match.round || '').includes('Gran Final'));
-
   const placements: Array<{ playerId: string; playerId2?: string; place: string; points: number }> = [];
   const seenPlacementIds = new Set<string>();
 
   const pushPlacement = (playerId: string | null, playerId2: string | null | undefined, stage: number) => {
-    if (!playerId) return;
-    const uniqueKey = `${playerId}:${playerId2 || ''}:${stage}`;
+    if (!playerId || playerId === 'BYE') return;
+    const safePlayerId2 = playerId2 && playerId2 !== 'BYE' ? playerId2 : null;
+    const uniqueKey = `${playerId}:${safePlayerId2 || ''}:${stage}`;
     if (seenPlacementIds.has(uniqueKey)) return;
     seenPlacementIds.add(uniqueKey);
     placements.push({
       playerId,
-      playerId2: playerId2 || undefined,
+      playerId2: safePlayerId2 || undefined,
       place: String(stage),
       points: getPlacementPoints(pointsMap, stage),
     });
   };
+
+  if (!directEliminationMatches.length) return placements;
+
+  const numericRounds = directEliminationMatches
+    .map((match) => Number(match.round_number || 0))
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  if (!numericRounds.length) return placements;
+
+  const maxRound = Math.max(...numericRounds);
+
+  const maxRoundMatches = directEliminationMatches
+    .filter((match) => Number(match.round_number || 0) === maxRound)
+    .sort((a, b) => (a.match_order || 0) - (b.match_order || 0));
+
+  const finalCandidates = maxRoundMatches.filter((match) => isFinalRoundName(String(match.round || '')));
+  const finalPool = finalCandidates.length ? finalCandidates : maxRoundMatches;
+  const finalMatch =
+    finalPool.find((match) => !!match?.winner_id) ||
+    finalPool[finalPool.length - 1] ||
+    null;
 
   if (finalMatch?.winner_id) {
     pushPlacement(finalMatch.winner_id, finalMatch.winner_2_id || null, 1);
@@ -176,10 +217,6 @@ export const getTournamentPlacements = (tournament: any, matches: any[]) => {
     const { l1, l2 } = getMatchLoserIds(finalMatch);
     pushPlacement(l1, l2, 2);
   }
-
-  if (!directEliminationMatches.length) return placements;
-
-  const maxRound = Math.max(...directEliminationMatches.map((match) => Number(match.round_number || 0)));
 
   for (let round = maxRound - 1; round >= 1; round--) {
     const stage = maxRound - round + 2;

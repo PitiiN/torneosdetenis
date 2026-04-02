@@ -14,7 +14,12 @@ import { resolveStorageAssetUrl } from '@/services/storage';
 import { AdminQuickActionsBar } from '@/components/navigation/AdminQuickActionsBar';
 import { getTournamentPlacements } from '@/services/ranking';
 import { formatDateDDMMYYYY, formatTime24, parseTimeRelaxed } from '@/utils/datetime';
-import { syncTournamentChampion, resolveChampionFromMatches } from '@/services/tournamentChampion';
+import {
+    buildDescriptionWithChampion,
+    extractChampionFromDescription,
+    resolveChampionFromMatches,
+    syncTournamentChampion
+} from '@/services/tournamentChampion';
 import { notifyTournamentUsers } from '@/services/pushNotifications';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -575,14 +580,12 @@ export default function AdminTournamentDetailScreen() {
             setPlayerAvatarById(nextAvatarMap);
 
             // Sync champion if missing from description
-            if (!(tourData.description || '').includes('[CHAMPION:')) {
+            if (!extractChampionFromDescription(tourData.description)) {
                 syncTournamentChampion(id, supabase).then(newChampName => {
                     if (newChampName) {
                         setTournament((prev: any) => prev ? { 
                             ...prev, 
-                            description: (prev.description || '').includes('[CHAMPION:') 
-                                ? prev.description 
-                                : `${prev.description || ''} [CHAMPION:${newChampName}]`.trim() 
+                            description: buildDescriptionWithChampion(prev.description, newChampName)
                         } : prev);
                     }
                 });
@@ -1156,6 +1159,7 @@ export default function AdminTournamentDetailScreen() {
 
             let winnerId: string | null = null;
             let winner2Id: string | null = null;
+            const winnerSide: 'A' | 'B' = isABye ? 'B' : 'A';
             if (isABye) {
                 winnerId = m.player_b_id && m.player_b_id !== 'BYE' ? m.player_b_id : null;
                 winner2Id = m.player_b2_id && m.player_b2_id !== 'BYE' ? m.player_b2_id : null;
@@ -1164,13 +1168,15 @@ export default function AdminTournamentDetailScreen() {
                 winner2Id = m.player_a2_id && m.player_a2_id !== 'BYE' ? m.player_a2_id : null;
             }
 
-            if (!winnerId) continue;
-
             const updatePayload: any = {
                 score: 'W.O.',
-                winner_id: winnerId,
                 status: 'finished',
             };
+            if (winnerId) {
+                updatePayload.winner_id = winnerId;
+            } else {
+                updatePayload.winner_id = null;
+            }
             if (IS_DOUBLES) {
                 updatePayload.winner_2_id = winner2Id;
             }
@@ -1186,7 +1192,7 @@ export default function AdminTournamentDetailScreen() {
                     candidateMatch.id === m.id ? updatedCurrentMatch : candidateMatch
                 );
                 resolvedAnyBye = true;
-                await propagateWinnerToNextMatch(updatedCurrentMatch, winnerId, winner2Id, workingMatches, isABye ? 'B' : 'A');
+                await propagateWinnerToNextMatch(updatedCurrentMatch, winnerId, winner2Id, workingMatches, winnerSide);
             }
         }
         return resolvedAnyBye;
@@ -1201,29 +1207,17 @@ export default function AdminTournamentDetailScreen() {
                 {
                     text: 'Finalizar',
                     onPress: async () => {
-                        const finalMatch = [...matches]
-                            .filter(m => !String(m.round || '').includes('Grupo') && !String(m.round || '').toLowerCase().includes('puesto'))
-                            .sort((a, b) => (b.round_number || 0) - (a.round_number || 0))[0];
-                        
-                        let championName = '';
-                        if (finalMatch?.status === 'finished') {
-                            const winnerId = finalMatch.winner_id;
-                            if (winnerId) {
-                                championName = getPlayerName(winnerId);
-                            } else {
-                                // Resolve for manual player by checking score
-                                const { side } = resolveWinnerIds(finalMatch, finalMatch.score);
-                                championName = getDisplayName(finalMatch, side === 'B' ? 3 : 1);
-                            }
-                        }
+                        const championName = resolveChampionFromMatches(
+                            matches,
+                            players,
+                            tournament?.description
+                        );
 
                         const { error } = await supabase
                             .from('tournaments')
                             .update({ 
                                 status: 'finished',
-                                description: tournament?.description 
-                                    ? `${tournament.description.replace(/\[CHAMPION:.+?\]/g, '').trim()} [CHAMPION:${championName}]`
-                                    : `[CHAMPION:${championName}]`
+                                description: buildDescriptionWithChampion(tournament?.description, championName)
                             })
                             .eq('id', id);
 
@@ -1305,14 +1299,11 @@ export default function AdminTournamentDetailScreen() {
                     );
                     
                     if (championName) {
-                        const cleanDescription = (tournament?.description || '').replace(/\[CHAMPION:.+?\]/g, '').trim();
-                        const newDescription = cleanDescription 
-                            ? `${cleanDescription} [CHAMPION:${championName}]`
-                            : `[CHAMPION:${championName}]`;
+                        const newDescription = buildDescriptionWithChampion(tournament?.description, championName);
                         
                         await supabase
                             .from('tournaments')
-                            .update({ description: newDescription.trim() })
+                            .update({ description: newDescription })
                             .eq('id', id);
                     }
                 }
@@ -2927,6 +2918,9 @@ export default function AdminTournamentDetailScreen() {
             setManualPlayerName2('');
             setSearchQuery('');
             setSearchResults([]);
+            if (isByeName(trimmedName)) {
+                await loadTournamentData();
+            }
             if (keepModalOpen && assignmentTargets.length > 1) {
                 moveToNextAssignmentTarget();
             } else {
@@ -5056,11 +5050,14 @@ export default function AdminTournamentDetailScreen() {
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <Text style={styles.modalTitle}>Sembrar cuadro</Text>
-                        <Text style={[styles.modalDividerText, { marginBottom: spacing.sm }]}>
+                        <Text style={[styles.modalHelperText, { marginBottom: spacing.sm }]}>
                             ¿Cuántos sembrados quieres usar? Solo esos mejores rankings se distribuirán como cabezas de serie.
                         </Text>
-                        <Text style={[styles.modalDividerText, { marginBottom: spacing.sm }]}>
+                        <Text style={[styles.modalHelperText, { marginBottom: spacing.sm }]}>
                             Máximo disponible: {seedCountLimit}
+                        </Text>
+                        <Text style={[styles.modalHelperText, { marginBottom: spacing.md }]}>
+                            Ingresa el número de cabezas de serie que tenga el torneo. Estos se seleccionarán en base al ránking de los jugadores inscritos.
                         </Text>
                         <TextInput
                             style={[styles.scoreInput, { color: colors.text, textAlign: 'left' }]}
@@ -5098,7 +5095,7 @@ export default function AdminTournamentDetailScreen() {
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <Text style={styles.modalTitle}>Generar llaves finales</Text>
-                        <Text style={[styles.modalDividerText, { marginBottom: spacing.sm }]}>
+                        <Text style={[styles.modalHelperText, { marginBottom: spacing.sm }]}>
                             ¿Cuántas duplas clasifican por grupo a la siguiente ronda?
                         </Text>
                         <TextInput
@@ -5373,6 +5370,13 @@ function getStyles(colors: any) {
             textAlign: 'center',
             backgroundColor: colors.background,
             paddingHorizontal: spacing.sm,
+        },
+        modalHelperText: {
+            fontSize: 13,
+            lineHeight: 19,
+            fontWeight: '600',
+            color: colors.textSecondary,
+            textAlign: 'left',
         },
     });
 }

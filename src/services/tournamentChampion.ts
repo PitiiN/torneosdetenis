@@ -4,6 +4,66 @@ import { SupabaseClient } from '@supabase/supabase-js';
 
 type MatchSlot = 1 | 2 | 3 | 4;
 
+const CHAMPION_TAG_PREFIX = '[CHAMPION:';
+
+const normalizeChampionName = (value?: string | null): string | null => {
+    let cleaned = String(value || '').trim();
+    if (!cleaned) return null;
+
+    // Defensive cleanup for malformed values like "] [CHAMPION:Name"
+    const nestedTagIndex = cleaned.lastIndexOf(CHAMPION_TAG_PREFIX);
+    if (nestedTagIndex >= 0) {
+        cleaned = cleaned.slice(nestedTagIndex + CHAMPION_TAG_PREFIX.length);
+    }
+
+    cleaned = cleaned.replace(/\].*$/g, '').trim();
+    cleaned = cleaned.replace(/^[:\]\s-]+/g, '').trim();
+    cleaned = cleaned.replace(/\s{2,}/g, ' ').trim();
+
+    return cleaned || null;
+};
+
+export const extractChampionFromDescription = (description?: string | null): string | null => {
+    const text = String(description || '');
+    if (!text.includes(CHAMPION_TAG_PREFIX)) return null;
+
+    const allValidTags = [...text.matchAll(/\[CHAMPION:([^\]]+)\]/g)];
+    if (allValidTags.length > 0) {
+        const lastMatch = allValidTags[allValidTags.length - 1];
+        return normalizeChampionName(lastMatch[1]);
+    }
+
+    // Fallback for malformed trailing tag without closing "]"
+    const fallbackStart = text.lastIndexOf(CHAMPION_TAG_PREFIX);
+    if (fallbackStart >= 0) {
+        return normalizeChampionName(text.slice(fallbackStart + CHAMPION_TAG_PREFIX.length));
+    }
+
+    return null;
+};
+
+export const stripChampionTagFromDescription = (description?: string | null): string => {
+    return String(description || '')
+        .replace(/\[CHAMPION:[^\]]*\]/g, ' ')
+        .replace(/\[CHAMPION:[^\]]*$/g, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+};
+
+export const buildDescriptionWithChampion = (
+    description: string | null | undefined,
+    championName?: string | null
+): string | null => {
+    const cleanDescription = stripChampionTagFromDescription(description);
+    const normalizedChampion = normalizeChampionName(championName || null);
+
+    if (!normalizedChampion) return cleanDescription || null;
+
+    return cleanDescription
+        ? `${cleanDescription} [CHAMPION:${normalizedChampion}]`
+        : `[CHAMPION:${normalizedChampion}]`;
+};
+
 export const parseManualAssignments = (description?: string | null) => {
     const match = (description || '').match(/\[MANUAL_ASSIGNMENTS:([^\]]+)\]/);
     if (!match?.[1]) {
@@ -131,11 +191,13 @@ export const resolveChampionFromMatches = (
     if (!matches || matches.length === 0) return null;
 
     // 1. Find potential final match (highest round number, not consolation/repechage/groups/puesto)
-    const bracketMatches = matches.filter(m => 
-        !String(m.round || '').includes('Grupo') && 
-        !String(m.round || '').toLowerCase().includes('puesto') &&
-        !String(m.round || '').toLowerCase().includes('consolaci')
-    );
+    const bracketMatches = matches.filter(m => {
+        const roundText = String(m.round || '').toLowerCase();
+        return !roundText.includes('grupo') &&
+            !roundText.includes('puesto') &&
+            !roundText.includes('consolaci') &&
+            !roundText.includes('repech');
+    });
 
     if (bracketMatches.length === 0) {
         // Fallback for Round Robin only tournaments - highest match_order in the last group?
@@ -152,11 +214,30 @@ export const resolveChampionFromMatches = (
 
     // 2. Resolve winner
     const manualAssignments = parseManualAssignments(description);
-    const { w1, side } = resolveWinnerIds(finalMatch, finalMatch.score);
+    const { w1, w2, side } = resolveWinnerIds(finalMatch, finalMatch.score);
     
     if (w1 || side) {
-        const name = getDisplayName(finalMatch, side === 'A' ? 1 : 3, manualAssignments, participants);
-        return name === 'Por definir' ? null : name;
+        const winnerStartSlot = side === 'A' ? 1 : 3;
+        const winnerPrimaryName = getDisplayName(finalMatch, winnerStartSlot, manualAssignments, participants);
+        if (winnerPrimaryName === 'Por definir') return null;
+
+        const isDoublesFinal = !!(
+            finalMatch.player_a2_id ||
+            finalMatch.player_b2_id ||
+            manualAssignments.matchSlots?.[finalMatch.id]?.player_a2 ||
+            manualAssignments.matchSlots?.[finalMatch.id]?.player_b2 ||
+            w2
+        );
+
+        if (!isDoublesFinal) return winnerPrimaryName;
+
+        const winnerSecondarySlot = (winnerStartSlot + 1) as MatchSlot;
+        const winnerSecondaryName = getDisplayName(finalMatch, winnerSecondarySlot, manualAssignments, participants);
+        if (!winnerSecondaryName || winnerSecondaryName === 'Por definir' || winnerSecondaryName === 'BYE') {
+            return winnerPrimaryName;
+        }
+
+        return `${winnerPrimaryName} / ${winnerSecondaryName}`;
     }
 
     return null;
@@ -181,9 +262,9 @@ export const syncTournamentChampion = async (
         if (tourError || !tourData) return null;
 
         // Skip if it already has a champion tag (unless we want to force re-sync)
-        if ((tourData.description || '').includes('[CHAMPION:')) {
-            const match = tourData.description.match(/\[CHAMPION:(.*?)\]/);
-            return match ? match[1] : null;
+        const existingChampion = extractChampionFromDescription(tourData.description);
+        if (existingChampion) {
+            return existingChampion;
         }
 
         // 2. Fetch matches and participants for this tournament
@@ -203,14 +284,11 @@ export const syncTournamentChampion = async (
         if (!championName) return null;
 
         // 3. Update tournament description
-        const cleanDescription = (tourData.description || '').replace(/\[CHAMPION:.+?\]/g, '').trim();
-        const newDescription = cleanDescription 
-            ? `${cleanDescription} [CHAMPION:${championName}]`
-            : `[CHAMPION:${championName}]`;
+        const newDescription = buildDescriptionWithChampion(tourData.description, championName);
 
         await supabase
             .from('tournaments')
-            .update({ description: newDescription.trim() })
+            .update({ description: newDescription })
             .eq('id', tournamentId);
 
         return championName;

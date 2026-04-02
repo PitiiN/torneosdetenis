@@ -18,7 +18,7 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 const THEME_STORAGE_KEY = 'app_theme_preference';
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [theme, setTheme] = useState<ThemeType>('dark');
+    const [theme, setTheme] = useState<ThemeType>('light');
 
     useEffect(() => {
         loadTheme();
@@ -64,10 +64,10 @@ export const useOptionalTheme = () => useContext(ThemeContext);
 
 // STATIC EXPORTS for compatibility
 // Warning: These will NOT react to theme changes if used directly in StyleSheet.create
-export const colors = darkTheme;
+export const colors = lightTheme;
 
 export const theme = {
-    colors: darkTheme,
+    colors: lightTheme,
     typography,
     spacing,
     borderRadius,

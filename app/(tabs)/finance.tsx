@@ -31,6 +31,7 @@ export default function FinanceScreen() {
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
     const [tournaments, setTournaments] = useState<Tournament[]>([]);
     const [pendingRequestCountByTournament, setPendingRequestCountByTournament] = useState<Record<string, number>>({});
+    const [pendingRequestCountByMonth, setPendingRequestCountByMonth] = useState<Record<number, number>>({});
     
     // Super Admin States
     const [isSuperAdmin, setIsSuperAdmin] = useState(false);
@@ -151,8 +152,58 @@ export default function FinanceScreen() {
 
             if (!storedOrgId) {
                 setTournaments([]);
+                setPendingRequestCountByMonth({});
                 setLoading(false);
                 return;
+            }
+
+            const yearStart = `${selectedYear}-01-01`;
+            const yearEnd = `${selectedYear}-12-31`;
+
+            const { data: yearlyTournamentRows, error: yearlyTournamentError } = await supabase
+                .from('tournaments')
+                .select('id, start_date')
+                .eq('organization_id', storedOrgId)
+                .eq('is_tournament_master', false)
+                .gte('start_date', yearStart)
+                .lte('start_date', yearEnd);
+
+            if (yearlyTournamentError) throw yearlyTournamentError;
+
+            const yearlyTournamentIds = (yearlyTournamentRows || [])
+                .map((row: any) => String(row?.id || ''))
+                .filter(Boolean);
+            const monthByTournamentId = (yearlyTournamentRows || []).reduce((acc: Record<string, number>, row: any) => {
+                const tournamentId = String(row?.id || '');
+                const startDate = String(row?.start_date || '').trim();
+                if (!tournamentId || !startDate) return acc;
+
+                const parsedDate = new Date(`${startDate}T00:00:00`);
+                if (Number.isNaN(parsedDate.getTime())) return acc;
+
+                acc[tournamentId] = parsedDate.getMonth();
+                return acc;
+            }, {});
+
+            if (yearlyTournamentIds.length === 0) {
+                setPendingRequestCountByMonth({});
+            } else {
+                const { data: yearlyPendingRows, error: yearlyPendingError } = await supabase
+                    .from('tournament_registration_requests')
+                    .select('tournament_id')
+                    .eq('status', 'pending')
+                    .in('tournament_id', yearlyTournamentIds);
+
+                if (yearlyPendingError) throw yearlyPendingError;
+
+                const nextMonthPendingMap = (yearlyPendingRows || []).reduce((acc: Record<number, number>, row: any) => {
+                    const tournamentId = String(row?.tournament_id || '');
+                    const month = monthByTournamentId[tournamentId];
+                    if (month === undefined) return acc;
+                    acc[month] = (acc[month] || 0) + 1;
+                    return acc;
+                }, {});
+                setPendingRequestCountByMonth(nextMonthPendingMap);
             }
 
             const cacheKey = `finance:tournaments:${storedOrgId}:${selectedYear}:${selectedMonth}`;
@@ -169,8 +220,6 @@ export default function FinanceScreen() {
                 .eq('is_tournament_master', false)
                 .order('start_date', { ascending: false });
 
-            const yearStart = `${selectedYear}-01-01`;
-            const yearEnd = `${selectedYear}-12-31`;
             query = query.gte('start_date', yearStart).lte('start_date', yearEnd);
 
             const monthStart = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-01`;
@@ -208,6 +257,7 @@ export default function FinanceScreen() {
         } catch (error) {
             setTournaments([]);
             setPendingRequestCountByTournament({});
+            setPendingRequestCountByMonth({});
         } finally {
             setLoading(false);
         }
@@ -272,7 +322,16 @@ export default function FinanceScreen() {
                                 style={[styles.filterChip, selectedMonth === index && styles.filterChipActive]}
                                 onPress={() => setSelectedMonth(index)}
                             >
-                                <Text style={[styles.filterChipText, selectedMonth === index && styles.filterChipTextActive]}>{month}</Text>
+                                <View style={styles.monthChipContent}>
+                                    <Text style={[styles.filterChipText, selectedMonth === index && styles.filterChipTextActive]}>{month}</Text>
+                                    {pendingRequestCountByMonth[index] > 0 && (
+                                        <View style={styles.monthPendingBadge}>
+                                            <Text style={styles.monthPendingBadgeText}>
+                                                {pendingRequestCountByMonth[index] > 99 ? '99+' : pendingRequestCountByMonth[index]}
+                                            </Text>
+                                        </View>
+                                    )}
+                                </View>
                             </TouchableOpacity>
                         ))}
                     </ScrollView>
@@ -442,6 +501,26 @@ const getStyles = (colors: any) => StyleSheet.create({
         backgroundColor: colors.background,
         minWidth: 60,
         alignItems: 'center',
+    },
+    monthChipContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    monthPendingBadge: {
+        minWidth: 16,
+        height: 16,
+        borderRadius: 8,
+        paddingHorizontal: 4,
+        backgroundColor: '#dc2626',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    monthPendingBadgeText: {
+        color: '#fff',
+        fontSize: 9,
+        fontWeight: '900',
+        lineHeight: 11,
     },
     filterChipActive: {
         backgroundColor: colors.primary[500],

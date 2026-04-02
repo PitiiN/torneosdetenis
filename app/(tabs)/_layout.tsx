@@ -5,30 +5,93 @@ import { useTheme } from '@/theme';
 import { StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getCurrentUserAccessContext } from '@/services/accessControl';
+import * as SecureStore from 'expo-secure-store';
+import { supabase } from '@/services/supabase';
 
 export default function TabsLayout() {
     const insets = useSafeAreaInsets();
     const { colors } = useTheme();
     const [isAdmin, setIsAdmin] = useState(false);
+    const [adminOrganizationId, setAdminOrganizationId] = useState<string | null>(null);
+    const [pendingFinanceCount, setPendingFinanceCount] = useState(0);
 
     const refreshAccessContext = useCallback(async () => {
         const access = await getCurrentUserAccessContext();
         if (!access) {
             setIsAdmin(false);
+            setAdminOrganizationId(null);
+            setPendingFinanceCount(0);
             return;
         }
 
         setIsAdmin(Boolean(access.isAdmin));
+        let resolvedOrgId: string | null = null;
+        if (access.isSuperAdmin) {
+            resolvedOrgId = await SecureStore.getItemAsync('selected_org_id');
+        }
+        if (!resolvedOrgId) {
+            resolvedOrgId = access.profile.org_id || (await SecureStore.getItemAsync('selected_org_id'));
+        }
+        setAdminOrganizationId(resolvedOrgId);
     }, []);
+
+    const refreshPendingFinanceCount = useCallback(async () => {
+        if (!isAdmin || !adminOrganizationId) {
+            setPendingFinanceCount(0);
+            return;
+        }
+
+        try {
+            const { data: tournamentRows, error: tournamentError } = await supabase
+                .from('tournaments')
+                .select('id')
+                .eq('organization_id', adminOrganizationId)
+                .eq('is_tournament_master', false);
+
+            if (tournamentError) throw tournamentError;
+
+            const tournamentIds = (tournamentRows || [])
+                .map((row: any) => String(row?.id || ''))
+                .filter(Boolean);
+
+            if (tournamentIds.length === 0) {
+                setPendingFinanceCount(0);
+                return;
+            }
+
+            const { count, error: pendingError } = await supabase
+                .from('tournament_registration_requests')
+                .select('id', { head: true, count: 'exact' })
+                .eq('status', 'pending')
+                .in('tournament_id', tournamentIds);
+
+            if (pendingError) throw pendingError;
+            setPendingFinanceCount(Number(count || 0));
+        } catch {
+            setPendingFinanceCount(0);
+        }
+    }, [adminOrganizationId, isAdmin]);
 
     useEffect(() => {
         refreshAccessContext();
     }, [refreshAccessContext]);
 
+    useEffect(() => {
+        refreshPendingFinanceCount();
+        if (!isAdmin) return;
+
+        const interval = setInterval(() => {
+            refreshPendingFinanceCount();
+        }, 45_000);
+
+        return () => clearInterval(interval);
+    }, [isAdmin, refreshPendingFinanceCount]);
+
     useFocusEffect(
         useCallback(() => {
             refreshAccessContext();
-        }, [refreshAccessContext])
+            refreshPendingFinanceCount();
+        }, [refreshAccessContext, refreshPendingFinanceCount])
     );
 
     const styles = getStyles(colors);
@@ -83,6 +146,13 @@ export default function TabsLayout() {
                 options={{
                     title: 'Finanzas',
                     href: isAdmin ? '/finance' : null,
+                    tabBarBadge:
+                        isAdmin && pendingFinanceCount > 0
+                            ? pendingFinanceCount > 99
+                                ? '99+'
+                                : pendingFinanceCount
+                            : undefined,
+                    tabBarBadgeStyle: styles.tabBarBadge,
                     tabBarIcon: ({ color, focused }) => (
                         <Ionicons name={focused ? 'card' : 'card-outline'} size={22} color={color} />
                     ),
@@ -147,5 +217,11 @@ const getStyles = (colors: any) =>
             fontWeight: '700',
             marginTop: -4,
             color: colors.textTertiary,
+        },
+        tabBarBadge: {
+            backgroundColor: '#EF4444',
+            color: '#fff',
+            fontSize: 10,
+            fontWeight: '800',
         },
     });

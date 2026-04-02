@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions, Alert, TextInput, Modal, BackHandler, Platform, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions, Alert, TextInput, Modal, BackHandler, Platform, RefreshControl, Linking, KeyboardAvoidingView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
@@ -16,6 +16,7 @@ import { TennisSpinner } from '@/components/TennisSpinner';
 const { width } = Dimensions.get('window');
 const BACKHAND_FIELD = 'rev\u00E9s';
 const VIEW_TOGGLE_BLOCKED_EMAILS = new Set(['javier.aravena25@gmail.com']);
+const PRIVACY_POLICY_URL = 'https://pitiin.github.io/torneosdetenis/privacy.html';
 
 const getScoreText = (scoreValue: any): string => {
     if (scoreValue === null || scoreValue === undefined) return '';
@@ -79,6 +80,11 @@ export default function ProfileScreen() {
     const [allOrganizations, setAllOrganizations] = useState<any[]>([]);
     const [orgSearch, setOrgSearch] = useState('');
     const [showOrgSearchModal, setShowOrgSearchModal] = useState(false);
+    const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmNewPassword, setConfirmNewPassword] = useState('');
+    const [updatingPassword, setUpdatingPassword] = useState(false);
 
     useEffect(() => {
         const backAction = () => {
@@ -90,6 +96,10 @@ export default function ProfileScreen() {
                 setShowOrgSearchModal(false);
                 return true;
             }
+            if (showPrivacyModal) {
+                setShowPrivacyModal(false);
+                return true;
+            }
             return false;
         };
 
@@ -99,7 +109,7 @@ export default function ProfileScreen() {
         );
 
         return () => backHandler.remove();
-    }, [showContextModal, showOrgSearchModal]);
+    }, [showContextModal, showOrgSearchModal, showPrivacyModal]);
 
     useEffect(() => {
         loadProfileData();
@@ -455,7 +465,7 @@ export default function ProfileScreen() {
             if (error) throw error;
             setUser({ ...user, location: newLocation });
         } catch (error) {
-            Alert.alert('Error', 'No se pudo actualizar la ubicación.');
+            Alert.alert('Error', 'No se pudo actualizar la ubicaciÃ³n.');
         }
     };
 
@@ -469,7 +479,7 @@ export default function ProfileScreen() {
             if (error) throw error;
             setUser({ ...user, phone: newPhone.trim() });
         } catch (error) {
-            Alert.alert('Error', 'No se pudo actualizar el teléfono.');
+            Alert.alert('Error', 'No se pudo actualizar el telÃ©fono.');
         }
     };
 
@@ -499,9 +509,83 @@ export default function ProfileScreen() {
             setUser({ ...user, notifications_enabled: newValue });
         } catch (error) {
             console.error(error);
-            Alert.alert('Error', 'No se pudo actualizar la configuración de notificaciones.');
+            Alert.alert('Error', 'No se pudo actualizar la configuraciÃ³n de notificaciones.');
         } finally {
             setUpdating(false);
+        }
+    };
+
+    const handleOpenPrivacyPolicy = async () => {
+        try {
+            const canOpen = await Linking.canOpenURL(PRIVACY_POLICY_URL);
+            if (!canOpen) {
+                Alert.alert('Aviso', 'No se pudo abrir el enlace de privacidad.');
+                return;
+            }
+            await Linking.openURL(PRIVACY_POLICY_URL);
+        } catch {
+            Alert.alert('Aviso', 'No se pudo abrir el enlace de privacidad.');
+        }
+    };
+
+    const handleUpdatePassword = async () => {
+        const trimmedCurrentPassword = currentPassword.trim();
+        const trimmedNewPassword = newPassword.trim();
+        const trimmedConfirmPassword = confirmNewPassword.trim();
+
+        if (!trimmedCurrentPassword) {
+            Alert.alert('Error', 'Debes ingresar tu contraseÃ±a actual.');
+            return;
+        }
+
+        if (!trimmedNewPassword) {
+            Alert.alert('Error', 'Debes ingresar una nueva contraseÃ±a.');
+            return;
+        }
+
+        if (trimmedNewPassword.length < 8) {
+            Alert.alert('Error', 'La nueva contraseÃ±a debe tener al menos 8 caracteres.');
+            return;
+        }
+
+        if (trimmedConfirmPassword !== trimmedNewPassword) {
+            Alert.alert('Error', 'La confirmaciÃ³n no coincide con la nueva contraseÃ±a.');
+            return;
+        }
+
+        const email = String(currentUserEmail || '').trim().toLowerCase();
+        if (!email) {
+            Alert.alert('Error', 'No pudimos validar tu correo para cambiar la contraseÃ±a.');
+            return;
+        }
+
+        setUpdatingPassword(true);
+        try {
+            const { error: reauthError } = await supabase.auth.signInWithPassword({
+                email,
+                password: trimmedCurrentPassword,
+            });
+            if (reauthError) {
+                Alert.alert('Error', 'La contraseÃ±a actual no es correcta.');
+                return;
+            }
+
+            const { error: updatePasswordError } = await supabase.auth.updateUser({
+                password: trimmedNewPassword,
+            });
+            if (updatePasswordError) {
+                throw updatePasswordError;
+            }
+
+            setCurrentPassword('');
+            setNewPassword('');
+            setConfirmNewPassword('');
+            setShowPrivacyModal(false);
+            Alert.alert('Ã‰xito', 'Tu contraseÃ±a se actualizÃ³ correctamente.');
+        } catch (error: any) {
+            Alert.alert('Error', error?.message || 'No se pudo actualizar la contraseÃ±a.');
+        } finally {
+            setUpdatingPassword(false);
         }
     };
 
@@ -519,7 +603,7 @@ export default function ProfileScreen() {
                 })
                 .eq('id', user.id);
             if (error) throw error;
-            Alert.alert('Éxito', 'Cambios guardados correctamente.');
+            Alert.alert('Ã‰xito', 'Cambios guardados correctamente.');
             setIsEditingBackhand(false);
             setIsEditingDominantHand(false);
         } catch (error) {
@@ -583,7 +667,7 @@ export default function ProfileScreen() {
             const signedAvatar = await resolveStorageAssetUrlWithRetry(filePath, { attempts: 4, baseDelayMs: 350 });
             setProfileAvatarUrl(signedAvatar || '');
             setUser({ ...user, avatar_url: filePath });
-            Alert.alert('Éxito', 'Foto de perfil actualizada.');
+            Alert.alert('Ã‰xito', 'Foto de perfil actualizada.');
         } catch (error) {
             console.error('Error uploading avatar:', error);
             Alert.alert('Error', 'No se pudo subir la imagen.');
@@ -675,7 +759,7 @@ export default function ProfileScreen() {
                                             value={user.phone || ''}
                                             onChangeText={(val) => setUser({ ...user, phone: val })}
                                             onBlur={() => handleUpdatePhone(user.phone)}
-                                            placeholder="Teléfono..."
+                                            placeholder="TelÃ©fono..."
                                             placeholderTextColor={colors.textTertiary}
                                             keyboardType="phone-pad"
                                         />
@@ -699,7 +783,7 @@ export default function ProfileScreen() {
 
                             <View style={styles.extraFields}>
                                 <TouchableOpacity style={styles.extraField} onPress={() => setIsEditingBackhand(true)}>
-                                    <Text style={styles.extraFieldLabel}>Revés:</Text>
+                                    <Text style={styles.extraFieldLabel}>RevÃ©s:</Text>
                                     {isEditingBackhand ? (
                                         <TextInput
                                             style={styles.extraFieldInput}
@@ -754,7 +838,7 @@ export default function ProfileScreen() {
                             <View style={styles.contextInfo}>
                                 <Ionicons name="filter-outline" size={16} color={colors.primary[500]} />
                                 <Text style={styles.contextText}>
-                                    {selectedContext ? `${selectedContext.org_name} · ${selectedContext.level}` : 'Filtrar por Organización/Nivel'}
+                                    {selectedContext ? `${selectedContext.org_name} Â· ${selectedContext.level}` : 'Filtrar por OrganizaciÃ³n/Nivel'}
                                 </Text>
                             </View>
                             <Ionicons name="chevron-forward" size={16} color={colors.primary[500]} />
@@ -781,7 +865,7 @@ export default function ProfileScreen() {
                 {/* Stats Bento */}
                 <View style={styles.statsGrid}>
                     <View style={styles.mainRankCard}>
-                        <Text style={styles.statLabel} numberOfLines={1}>POSICIÓN RANKING</Text>
+                        <Text style={styles.statLabel} numberOfLines={1}>POSICIÃ“N RANKING</Text>
                         <View>
                             <Text style={styles.rankValue}>{stats.rank}</Text>
                             <View style={styles.rankStatus}>
@@ -861,11 +945,11 @@ export default function ProfileScreen() {
                             </View>
                             <View style={styles.historyInfo}>
                                 <Text style={styles.historyName}>{t.name}</Text>
-                                <Text style={styles.historyMeta}>{t.level} · {t.format} · {t.modality === 'dobles' ? 'Dobles' : 'Singles'}</Text>
+                                <Text style={styles.historyMeta}>{t.level} Â· {t.format} Â· {t.modality === 'dobles' ? 'Dobles' : 'Singles'}</Text>
                             </View>
                             <View style={styles.historyResult}>
-                                <View style={t.place.includes('1°') ? styles.winnerBadge : styles.resultBadge}>
-                                    <Text style={t.place.includes('1°') ? styles.winnerBadgeText : styles.resultBadgeText}>
+                                <View style={t.place.includes('1Â°') ? styles.winnerBadge : styles.resultBadge}>
+                                    <Text style={t.place.includes('1Â°') ? styles.winnerBadgeText : styles.resultBadgeText}>
                                         {t.place}
                                     </Text>
                                 </View>
@@ -874,13 +958,13 @@ export default function ProfileScreen() {
                         </TouchableOpacity>
                     )) : (
                         <View style={styles.emptyCard}>
-                            <Text style={styles.emptyText}>No has participado en torneos aún.</Text>
+                            <Text style={styles.emptyText}>No has participado en torneos aÃºn.</Text>
                         </View>
                     )}
                 </View>
                 {/* Account Settings */}
                 <View style={styles.settingsSection}>
-                    <Text style={styles.settingsTitle}>Configuración de Cuenta</Text>
+                    <Text style={styles.settingsTitle}>ConfiguraciÃ³n de Cuenta</Text>
 
                     <View style={styles.settingsGrid}>
                         <TouchableOpacity style={styles.settingItem} onPress={handleToggleNotifications}>
@@ -900,13 +984,13 @@ export default function ProfileScreen() {
                             </View>
                         </TouchableOpacity>
 
-                        <TouchableOpacity style={styles.settingItem}>
+                        <TouchableOpacity style={styles.settingItem} onPress={() => setShowPrivacyModal(true)}>
                             <View style={styles.settingIcon}>
                                 <Ionicons name="lock-closed-outline" size={20} color={colors.textSecondary} />
                             </View>
                             <View style={styles.settingText}>
                                 <Text style={styles.settingLabel}>Privacidad</Text>
-                                <Text style={styles.settingDesc}>Contraseña y visibilidad</Text>
+                                <Text style={styles.settingDesc}>ContraseÃ±a y visibilidad</Text>
                             </View>
                             <Ionicons name="chevron-forward" size={20} color={colors.border} />
                         </TouchableOpacity>
@@ -917,7 +1001,7 @@ export default function ProfileScreen() {
                             </View>
                             <View style={styles.settingText}>
                                 <Text style={styles.settingLabel}>Modo Oscuro</Text>
-                                <Text style={styles.settingDesc}>Cambiar el tema de la aplicación</Text>
+                                <Text style={styles.settingDesc}>Cambiar el tema de la aplicaciÃ³n</Text>
                             </View>
                             <View style={[styles.themeToggle, { backgroundColor: isDark ? colors.primary[500] : colors.surfaceSecondary }]}>
                                 <View style={[styles.themeToggleCircle, { alignSelf: isDark ? 'flex-end' : 'flex-start' }]} />
@@ -929,7 +1013,7 @@ export default function ProfileScreen() {
                                 <Ionicons name="log-out-outline" size={20} color={colors.error} />
                             </View>
                             <View style={styles.settingText}>
-                                <Text style={[styles.settingLabel, { color: colors.error }]}>Cerrar Sesión</Text>
+                                <Text style={[styles.settingLabel, { color: colors.error }]}>Cerrar SesiÃ³n</Text>
                                 <Text style={styles.settingDesc}>Salir de tu cuenta</Text>
                             </View>
                         </TouchableOpacity>
@@ -942,7 +1026,7 @@ export default function ProfileScreen() {
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Ver Estadísticas en:</Text>
+                            <Text style={styles.modalTitle}>Ver EstadÃ­sticas en:</Text>
                             <TouchableOpacity onPress={() => setShowContextModal(false)}>
                                 <Ionicons name="close" size={24} color="#fff" />
                             </TouchableOpacity>
@@ -958,7 +1042,7 @@ export default function ProfileScreen() {
                                     }}
                                 >
                                     <Text style={[styles.ctxItemText, selectedContext?.org_id === ctx.org_id && selectedContext.level === ctx.level && styles.ctxItemTextActive]}>
-                                        {ctx.org_name} · {ctx.level}
+                                        {ctx.org_name} Â· {ctx.level}
                                     </Text>
                                 </TouchableOpacity>
                             ))}
@@ -979,7 +1063,7 @@ export default function ProfileScreen() {
                         </View>
                         <TextInput
                             style={styles.modalSearchInput}
-                            placeholder="Buscar organización..."
+                            placeholder="Buscar organizaciÃ³n..."
                             placeholderTextColor={colors.textTertiary}
                             value={orgSearch}
                             onChangeText={setOrgSearch}
@@ -991,7 +1075,7 @@ export default function ProfileScreen() {
                                     <View key={org.id} style={styles.orgGroup}>
                                         <Text style={styles.orgGroupName}>{org.name}</Text>
                                         <View style={styles.levelChips}>
-                                            {['Primera', 'Segunda', 'Tercera', 'Cuarta', 'Quinta', 'Honor', 'Escalafón'].map(lvl => (
+                                            {['Primera', 'Segunda', 'Tercera', 'Cuarta', 'Quinta', 'Honor', 'EscalafÃ³n'].map(lvl => (
                                                 <TouchableOpacity
                                                     key={lvl}
                                                     style={[styles.levelChip, selectedContext?.org_id === org.id && selectedContext.level === lvl && styles.levelChipActive]}
@@ -1010,6 +1094,88 @@ export default function ProfileScreen() {
                         </ScrollView>
                     </View>
                 </View>
+            </Modal>
+
+                        <Modal
+                visible={showPrivacyModal}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setShowPrivacyModal(false)}
+            >
+                <KeyboardAvoidingView
+                    style={styles.modalOverlay}
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                >
+                    <View style={[styles.modalContent, styles.privacyModalContent]}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Privacidad y Seguridad</Text>
+                            <TouchableOpacity onPress={() => setShowPrivacyModal(false)}>
+                                <Ionicons name="close" size={24} color="#fff" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <ScrollView
+                            style={{ maxHeight: '100%' }}
+                            contentContainerStyle={styles.privacyModalBody}
+                            keyboardShouldPersistTaps="handled"
+                            showsVerticalScrollIndicator={false}
+                        >
+                            <TouchableOpacity style={styles.privacyLinkButton} onPress={handleOpenPrivacyPolicy}>
+                                <Ionicons name="document-text-outline" size={18} color={colors.primary[500]} />
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.privacyLinkTitle}>Política de Privacidad</Text>
+                                    <Text style={styles.privacyLinkDesc}>Abrir documento publicado en GitHub Pages</Text>
+                                </View>
+                                <Ionicons name="open-outline" size={18} color={colors.textSecondary} />
+                            </TouchableOpacity>
+
+                            <View style={styles.privacyFormCard}>
+                                <Text style={styles.privacySectionTitle}>Cambiar contraseña</Text>
+                                <TextInput
+                                    style={styles.privacyInput}
+                                    placeholder="Contraseña actual"
+                                    placeholderTextColor={colors.textTertiary}
+                                    secureTextEntry
+                                    value={currentPassword}
+                                    onChangeText={setCurrentPassword}
+                                    autoCapitalize="none"
+                                />
+                                <TextInput
+                                    style={styles.privacyInput}
+                                    placeholder="Nueva contraseña"
+                                    placeholderTextColor={colors.textTertiary}
+                                    secureTextEntry
+                                    value={newPassword}
+                                    onChangeText={setNewPassword}
+                                    autoCapitalize="none"
+                                />
+                                <TextInput
+                                    style={styles.privacyInput}
+                                    placeholder="Confirmar nueva contraseña"
+                                    placeholderTextColor={colors.textTertiary}
+                                    secureTextEntry
+                                    value={confirmNewPassword}
+                                    onChangeText={setConfirmNewPassword}
+                                    autoCapitalize="none"
+                                />
+                                <TouchableOpacity
+                                    style={[styles.privacySaveButton, updatingPassword && styles.privacySaveButtonDisabled]}
+                                    onPress={handleUpdatePassword}
+                                    disabled={updatingPassword}
+                                >
+                                    {updatingPassword ? (
+                                        <TennisSpinner size={16} color="#fff" />
+                                    ) : (
+                                        <>
+                                            <Ionicons name="shield-checkmark-outline" size={16} color="#fff" />
+                                            <Text style={styles.privacySaveButtonText}>Actualizar contraseña</Text>
+                                        </>
+                                    )}
+                                </TouchableOpacity>
+                            </View>
+                        </ScrollView>
+                    </View>
+                </KeyboardAvoidingView>
             </Modal>
         </View>
     );
@@ -1442,6 +1608,12 @@ const getStyles = (colors: any) => StyleSheet.create({
         borderTopLeftRadius: borderRadius['3xl'],
         borderTopRightRadius: borderRadius['3xl'],
     },
+    privacyModalContent: {
+        maxHeight: '85%',
+    },
+    privacyModalBody: {
+        paddingBottom: spacing.lg,
+    },
     modalHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -1479,6 +1651,69 @@ const getStyles = (colors: any) => StyleSheet.create({
         borderWidth: 1,
         borderColor: colors.border,
         marginBottom: spacing.md,
+    },
+    privacyLinkButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+        backgroundColor: colors.background,
+        borderRadius: borderRadius.lg,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: spacing.md,
+        marginBottom: spacing.lg,
+    },
+    privacyLinkTitle: {
+        color: colors.text,
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    privacyLinkDesc: {
+        color: colors.textSecondary,
+        fontSize: 11,
+    },
+    privacyFormCard: {
+        backgroundColor: colors.background,
+        borderRadius: borderRadius.lg,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: spacing.md,
+        gap: spacing.sm,
+    },
+    privacySectionTitle: {
+        color: colors.text,
+        fontSize: 14,
+        fontWeight: '800',
+        marginBottom: 2,
+    },
+    privacyInput: {
+        height: 46,
+        borderRadius: borderRadius.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        color: colors.text,
+        paddingHorizontal: spacing.md,
+        fontSize: 13,
+        fontWeight: '600',
+    },
+    privacySaveButton: {
+        marginTop: spacing.xs,
+        height: 44,
+        borderRadius: borderRadius.md,
+        backgroundColor: colors.primary[500],
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.xs,
+    },
+    privacySaveButtonDisabled: {
+        opacity: 0.6,
+    },
+    privacySaveButtonText: {
+        color: '#fff',
+        fontSize: 13,
+        fontWeight: '800',
     },
     orgGroup: {
         marginBottom: spacing.xl,
@@ -1657,5 +1892,6 @@ const getStyles = (colors: any) => StyleSheet.create({
         color: colors.error,
     },
 });
+
 
 
