@@ -313,7 +313,7 @@ export default function ProfileScreen() {
             const tournamentIds = tournamentsForContext.map((tournament: any) => tournament.id);
             const { data: userMatchesRows, error: userMatchesError } = await supabase
                 .from('matches')
-                .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, score, status')
+                .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, round_number, match_order, score, status')
                 .in('tournament_id', tournamentIds)
                 .or(`player_a_id.eq.${user.id},player_a2_id.eq.${user.id},player_b_id.eq.${user.id},player_b2_id.eq.${user.id}`);
 
@@ -368,7 +368,7 @@ export default function ProfileScreen() {
                 const completedTournamentIds = completedTournaments.map((tournament: any) => tournament.id);
                 const { data: allMatchesRows, error: allMatchesError } = await supabase
                     .from('matches')
-                    .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, score, status')
+                    .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, round_number, match_order, score, status')
                     .in('tournament_id', completedTournamentIds);
 
                 if (allMatchesError) throw allMatchesError;
@@ -388,7 +388,7 @@ export default function ProfileScreen() {
                 completedTournaments.forEach((t: any) => {
                     const placements = getTournamentPlacements(t, matchesByTour[t.id] || []);
                     placements.forEach((p: any) => {
-                        if ((p.playerId === user.id || p.playerId2 === user.id) && p.place === '1') trophies += 1;
+                        if ((p.playerId === user.id || p.playerId2 === user.id) && String(p.place) === '1') trophies += 1;
                         if (p.playerId) {
                             allPlayersPoints[p.playerId] = (allPlayersPoints[p.playerId] || 0) + (Number(p.points) || 0);
                             rankingPlayerIds.add(p.playerId);
@@ -435,8 +435,9 @@ export default function ProfileScreen() {
                 if ((b[1] || 0) !== (a[1] || 0)) return (b[1] || 0) - (a[1] || 0);
                 return String(rankingNameById[a[0]] || '').localeCompare(String(rankingNameById[b[0]] || ''));
             });
-            const userRankIndex = sortedRanking.findIndex(([id]) => id === user.id);
-            const rank = userRankIndex !== -1 ? `#${userRankIndex + 1}` : '-';
+            const userScore = allPlayersPoints[user.id] || 0;
+            const playersAhead = Object.values(allPlayersPoints).filter(score => score > userScore).length;
+            const rank = Object.prototype.hasOwnProperty.call(allPlayersPoints, user.id) ? `#${playersAhead + 1}` : '-';
 
             setStats({
                 rank,
@@ -465,7 +466,7 @@ export default function ProfileScreen() {
             if (error) throw error;
             setUser({ ...user, location: newLocation });
         } catch (error) {
-            Alert.alert('Error', 'No se pudo actualizar la ubicaciÃ³n.');
+            Alert.alert('Error', 'No se pudo actualizar la ubicación.');
         }
     };
 
@@ -479,7 +480,7 @@ export default function ProfileScreen() {
             if (error) throw error;
             setUser({ ...user, phone: newPhone.trim() });
         } catch (error) {
-            Alert.alert('Error', 'No se pudo actualizar el telÃ©fono.');
+            Alert.alert('Error', 'No se pudo actualizar el teléfono.');
         }
     };
 
@@ -509,7 +510,7 @@ export default function ProfileScreen() {
             setUser({ ...user, notifications_enabled: newValue });
         } catch (error) {
             console.error(error);
-            Alert.alert('Error', 'No se pudo actualizar la configuraciÃ³n de notificaciones.');
+            Alert.alert('Error', 'No se pudo actualizar la configuración de notificaciones.');
         } finally {
             setUpdating(false);
         }
@@ -534,28 +535,28 @@ export default function ProfileScreen() {
         const trimmedConfirmPassword = confirmNewPassword.trim();
 
         if (!trimmedCurrentPassword) {
-            Alert.alert('Error', 'Debes ingresar tu contraseÃ±a actual.');
+            Alert.alert('Error', 'Debes ingresar tu contraseña actual.');
             return;
         }
 
         if (!trimmedNewPassword) {
-            Alert.alert('Error', 'Debes ingresar una nueva contraseÃ±a.');
+            Alert.alert('Error', 'Debes ingresar una nueva contraseña.');
             return;
         }
 
         if (trimmedNewPassword.length < 8) {
-            Alert.alert('Error', 'La nueva contraseÃ±a debe tener al menos 8 caracteres.');
+            Alert.alert('Error', 'La nueva contraseña debe tener al menos 8 caracteres.');
             return;
         }
 
         if (trimmedConfirmPassword !== trimmedNewPassword) {
-            Alert.alert('Error', 'La confirmaciÃ³n no coincide con la nueva contraseÃ±a.');
+            Alert.alert('Error', 'La confirmación no coincide con la nueva contraseña.');
             return;
         }
 
         const email = String(currentUserEmail || '').trim().toLowerCase();
         if (!email) {
-            Alert.alert('Error', 'No pudimos validar tu correo para cambiar la contraseÃ±a.');
+            Alert.alert('Error', 'No pudimos validar tu correo para cambiar la contraseña.');
             return;
         }
 
@@ -566,7 +567,7 @@ export default function ProfileScreen() {
                 password: trimmedCurrentPassword,
             });
             if (reauthError) {
-                Alert.alert('Error', 'La contraseÃ±a actual no es correcta.');
+                Alert.alert('Error', 'La contraseña actual no es correcta.');
                 return;
             }
 
@@ -581,9 +582,9 @@ export default function ProfileScreen() {
             setNewPassword('');
             setConfirmNewPassword('');
             setShowPrivacyModal(false);
-            Alert.alert('Ã‰xito', 'Tu contraseÃ±a se actualizÃ³ correctamente.');
+            Alert.alert('Éxito', 'Tu contraseña se actualizó correctamente.');
         } catch (error: any) {
-            Alert.alert('Error', error?.message || 'No se pudo actualizar la contraseÃ±a.');
+            Alert.alert('Error', error?.message || 'No se pudo actualizar la contraseña.');
         } finally {
             setUpdatingPassword(false);
         }
@@ -603,7 +604,7 @@ export default function ProfileScreen() {
                 })
                 .eq('id', user.id);
             if (error) throw error;
-            Alert.alert('Ã‰xito', 'Cambios guardados correctamente.');
+            Alert.alert('Éxito', 'Cambios guardados correctamente.');
             setIsEditingBackhand(false);
             setIsEditingDominantHand(false);
         } catch (error) {
@@ -667,7 +668,7 @@ export default function ProfileScreen() {
             const signedAvatar = await resolveStorageAssetUrlWithRetry(filePath, { attempts: 4, baseDelayMs: 350 });
             setProfileAvatarUrl(signedAvatar || '');
             setUser({ ...user, avatar_url: filePath });
-            Alert.alert('Ã‰xito', 'Foto de perfil actualizada.');
+            Alert.alert('Éxito', 'Foto de perfil actualizada.');
         } catch (error) {
             console.error('Error uploading avatar:', error);
             Alert.alert('Error', 'No se pudo subir la imagen.');
@@ -759,7 +760,7 @@ export default function ProfileScreen() {
                                             value={user.phone || ''}
                                             onChangeText={(val) => setUser({ ...user, phone: val })}
                                             onBlur={() => handleUpdatePhone(user.phone)}
-                                            placeholder="TelÃ©fono..."
+                                            placeholder="Teléfono..."
                                             placeholderTextColor={colors.textTertiary}
                                             keyboardType="phone-pad"
                                         />
@@ -783,7 +784,7 @@ export default function ProfileScreen() {
 
                             <View style={styles.extraFields}>
                                 <TouchableOpacity style={styles.extraField} onPress={() => setIsEditingBackhand(true)}>
-                                    <Text style={styles.extraFieldLabel}>RevÃ©s:</Text>
+                                    <Text style={styles.extraFieldLabel}>Revés:</Text>
                                     {isEditingBackhand ? (
                                         <TextInput
                                             style={styles.extraFieldInput}
@@ -838,7 +839,7 @@ export default function ProfileScreen() {
                             <View style={styles.contextInfo}>
                                 <Ionicons name="filter-outline" size={16} color={colors.primary[500]} />
                                 <Text style={styles.contextText}>
-                                    {selectedContext ? `${selectedContext.org_name} Â· ${selectedContext.level}` : 'Filtrar por OrganizaciÃ³n/Nivel'}
+                                    {selectedContext ? `${selectedContext.org_name} · ${selectedContext.level}` : 'Filtrar por Organización/Nivel'}
                                 </Text>
                             </View>
                             <Ionicons name="chevron-forward" size={16} color={colors.primary[500]} />
@@ -865,7 +866,7 @@ export default function ProfileScreen() {
                 {/* Stats Bento */}
                 <View style={styles.statsGrid}>
                     <View style={styles.mainRankCard}>
-                        <Text style={styles.statLabel} numberOfLines={1}>POSICIÃ“N RANKING</Text>
+                        <Text style={styles.statLabel} numberOfLines={1}>POSICIÓN RANKING</Text>
                         <View>
                             <Text style={styles.rankValue}>{stats.rank}</Text>
                             <View style={styles.rankStatus}>
@@ -945,7 +946,7 @@ export default function ProfileScreen() {
                             </View>
                             <View style={styles.historyInfo}>
                                 <Text style={styles.historyName}>{t.name}</Text>
-                                <Text style={styles.historyMeta}>{t.level} Â· {t.format} Â· {t.modality === 'dobles' ? 'Dobles' : 'Singles'}</Text>
+                                <Text style={styles.historyMeta}>{t.level} · {t.format} · {t.modality === 'dobles' ? 'Dobles' : 'Singles'}</Text>
                             </View>
                             <View style={styles.historyResult}>
                                 <View style={t.place.includes('1Â°') ? styles.winnerBadge : styles.resultBadge}>
@@ -958,13 +959,13 @@ export default function ProfileScreen() {
                         </TouchableOpacity>
                     )) : (
                         <View style={styles.emptyCard}>
-                            <Text style={styles.emptyText}>No has participado en torneos aÃºn.</Text>
+                            <Text style={styles.emptyText}>No has participado en torneos aún.</Text>
                         </View>
                     )}
                 </View>
                 {/* Account Settings */}
                 <View style={styles.settingsSection}>
-                    <Text style={styles.settingsTitle}>ConfiguraciÃ³n de Cuenta</Text>
+                    <Text style={styles.settingsTitle}>Configuración de Cuenta</Text>
 
                     <View style={styles.settingsGrid}>
                         <TouchableOpacity style={styles.settingItem} onPress={handleToggleNotifications}>
@@ -990,7 +991,7 @@ export default function ProfileScreen() {
                             </View>
                             <View style={styles.settingText}>
                                 <Text style={styles.settingLabel}>Privacidad</Text>
-                                <Text style={styles.settingDesc}>ContraseÃ±a y visibilidad</Text>
+                                <Text style={styles.settingDesc}>Contraseña y visibilidad</Text>
                             </View>
                             <Ionicons name="chevron-forward" size={20} color={colors.border} />
                         </TouchableOpacity>
@@ -1001,7 +1002,7 @@ export default function ProfileScreen() {
                             </View>
                             <View style={styles.settingText}>
                                 <Text style={styles.settingLabel}>Modo Oscuro</Text>
-                                <Text style={styles.settingDesc}>Cambiar el tema de la aplicaciÃ³n</Text>
+                                <Text style={styles.settingDesc}>Cambiar el tema de la aplicación</Text>
                             </View>
                             <View style={[styles.themeToggle, { backgroundColor: isDark ? colors.primary[500] : colors.surfaceSecondary }]}>
                                 <View style={[styles.themeToggleCircle, { alignSelf: isDark ? 'flex-end' : 'flex-start' }]} />
@@ -1013,7 +1014,7 @@ export default function ProfileScreen() {
                                 <Ionicons name="log-out-outline" size={20} color={colors.error} />
                             </View>
                             <View style={styles.settingText}>
-                                <Text style={[styles.settingLabel, { color: colors.error }]}>Cerrar SesiÃ³n</Text>
+                                <Text style={[styles.settingLabel, { color: colors.error }]}>Cerrar Sesión</Text>
                                 <Text style={styles.settingDesc}>Salir de tu cuenta</Text>
                             </View>
                         </TouchableOpacity>
@@ -1026,7 +1027,7 @@ export default function ProfileScreen() {
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Ver EstadÃ­sticas en:</Text>
+                            <Text style={styles.modalTitle}>Ver Estadísticas en:</Text>
                             <TouchableOpacity onPress={() => setShowContextModal(false)}>
                                 <Ionicons name="close" size={24} color="#fff" />
                             </TouchableOpacity>
@@ -1042,7 +1043,7 @@ export default function ProfileScreen() {
                                     }}
                                 >
                                     <Text style={[styles.ctxItemText, selectedContext?.org_id === ctx.org_id && selectedContext.level === ctx.level && styles.ctxItemTextActive]}>
-                                        {ctx.org_name} Â· {ctx.level}
+                                        {ctx.org_name} · {ctx.level}
                                     </Text>
                                 </TouchableOpacity>
                             ))}
@@ -1063,7 +1064,7 @@ export default function ProfileScreen() {
                         </View>
                         <TextInput
                             style={styles.modalSearchInput}
-                            placeholder="Buscar organizaciÃ³n..."
+                            placeholder="Buscar organización..."
                             placeholderTextColor={colors.textTertiary}
                             value={orgSearch}
                             onChangeText={setOrgSearch}
@@ -1075,7 +1076,7 @@ export default function ProfileScreen() {
                                     <View key={org.id} style={styles.orgGroup}>
                                         <Text style={styles.orgGroupName}>{org.name}</Text>
                                         <View style={styles.levelChips}>
-                                            {['Primera', 'Segunda', 'Tercera', 'Cuarta', 'Quinta', 'Honor', 'EscalafÃ³n'].map(lvl => (
+                                            {['Primera', 'Segunda', 'Tercera', 'Cuarta', 'Quinta', 'Honor', 'Escalafón'].map(lvl => (
                                                 <TouchableOpacity
                                                     key={lvl}
                                                     style={[styles.levelChip, selectedContext?.org_id === org.id && selectedContext.level === lvl && styles.levelChipActive]}

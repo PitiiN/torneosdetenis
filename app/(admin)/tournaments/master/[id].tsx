@@ -410,7 +410,21 @@ export default function MasterTournamentAdminScreen() {
         normalizeTournamentFormat(format) === 'round_robin' ? normalizedGroupCount : 2
       );
       const tournamentDescription = buildDescriptionWithRankingPoints(rankingPoints, descriptionWithGroup);
-      const championshipName = `${category} ${getModalityLabel(modality)}`;
+
+      // Count existing tournaments with same category + modality in this org
+      // to auto-generate "Fecha N" suffix
+      const modalityLabel = getModalityLabel(modality);
+      const baseName = `${category} ${modalityLabel}`;
+      const { count: existingCount } = await supabase
+        .from('tournaments')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', masterTournament.organization_id)
+        .eq('level', category)
+        .eq('modality', modality)
+        .eq('is_tournament_master', false);
+
+      const fechaNumber = (existingCount || 0) + 1;
+      const championshipName = `${baseName} Fecha ${fechaNumber}`;
 
       const { data: createdTournamentId, error: createError } = await supabase.rpc('create_championship_tournament', {
         p_master_tournament_id: masterTournament.id,

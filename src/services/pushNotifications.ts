@@ -114,6 +114,28 @@ const fetchTournamentPlayerPushTargets = async (tournamentId: string, userIds: s
   return ((data || []) as PushTargetRow[]).filter((row) => UUID_PATTERN.test(String(row?.user_id || '').trim()));
 };
 
+const fetchDirectPlayerPushTargets = async (userIds: string[]) => {
+  const normalizedUserIds = normalizeUuidList(userIds);
+  if (!normalizedUserIds.length) return [] as PushTargetRow[];
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, expo_push_token, notifications_enabled')
+    .in('id', normalizedUserIds);
+
+  if (error) {
+    console.warn('[pushNotifications] direct profile token fetch error:', error.message);
+    return [] as PushTargetRow[];
+  }
+
+  return ((data || []) as Array<{ id: string; expo_push_token: string | null; notifications_enabled: boolean | null }>)
+    .filter((row) => row.notifications_enabled === true)
+    .map((row) => ({
+      user_id: row.id,
+      expo_push_token: row.expo_push_token,
+    }));
+};
+
 const fetchTournamentAdminPushTargets = async (tournamentId: string) => {
   const { data, error } = await supabase.rpc('get_tournament_admin_push_targets', {
     p_tournament_id: tournamentId,
@@ -140,7 +162,8 @@ export const notifyTournamentUsers = async (input: NotifyUsersInput) => {
     matchId: input.matchId || null,
   });
 
-  const targets = await fetchTournamentPlayerPushTargets(input.tournamentId, normalizedUserIds);
+  const rpcTargets = await fetchTournamentPlayerPushTargets(input.tournamentId, normalizedUserIds);
+  const targets = rpcTargets.length ? rpcTargets : await fetchDirectPlayerPushTargets(normalizedUserIds);
   const tokens = [...new Set(targets.map((target) => String(target?.expo_push_token || '').trim()).filter(isExpoPushToken))];
   if (!tokens.length) return;
 
@@ -168,8 +191,8 @@ export const notifyTournamentAdminsOnRegistrationRequest = async (input: {
   const adminUserIds = [...new Set(targets.map((target) => String(target.user_id || '').trim()).filter((userId) => UUID_PATTERN.test(userId)))];
   if (!adminUserIds.length) return;
 
-  const title = 'Nueva solicitud de inscripción';
-  const body = `${input.playerName || 'Un jugador'} envió un comprobante para ${input.tournamentName || 'un torneo'}.`;
+  const title = 'Nueva solicitud de inscripcion';
+  const body = `${input.playerName || 'Un jugador'} envio un comprobante para ${input.tournamentName || 'un torneo'}.`;
 
   await createInAppNotifications({
     userIds: adminUserIds,

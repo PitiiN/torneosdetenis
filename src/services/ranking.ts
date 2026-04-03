@@ -28,13 +28,140 @@ export const buildDescriptionWithRankingPoints = (
   return [baseDescription, `[RANKING_POINTS:${encodedPoints}]`].filter(Boolean).join(' ').trim();
 };
 
-export const getMatchLoserIds = (match: any) => {
-  if (!match?.winner_id) return { l1: null, l2: null };
-  if (match.winner_id === match.player_a_id) {
-    return { l1: match.player_b_id || null, l2: match.player_b2_id || null };
+const getScoreText = (scoreValue: any): string => {
+  if (!scoreValue) return '';
+  if (typeof scoreValue === 'string') return scoreValue.trim();
+
+  if (typeof scoreValue === 'object') {
+    if (scoreValue.wo) return 'W.O.';
+    if (scoreValue.text) return String(scoreValue.text).trim();
+    if (scoreValue.score) return String(scoreValue.score).trim();
+    if (Array.isArray(scoreValue.sets)) {
+      return scoreValue.sets
+        .map((setScore: any) => String(setScore || '').trim())
+        .filter(Boolean)
+        .join(', ');
+    }
   }
-  if (match.winner_id === match.player_b_id) {
-    return { l1: match.player_a_id || null, l2: match.player_a2_id || null };
+
+  return String(scoreValue || '').trim();
+};
+
+const parseSetScore = (setScore: string) => {
+  const normalized = String(setScore || '')
+    .replace(/\u2013/g, '-')
+    .trim();
+  if (!normalized) return null;
+
+  const [leftRaw = '', rightRaw = ''] = normalized.split('-');
+  const leftMatch = leftRaw.match(/\d+/);
+  const rightMatch = rightRaw.match(/\d+/);
+  if (!leftMatch || !rightMatch) return null;
+
+  const leftValue = Number(leftMatch[0]);
+  const rightValue = Number(rightMatch[0]);
+  if (!Number.isFinite(leftValue) || !Number.isFinite(rightValue)) return null;
+
+  return { leftValue, rightValue };
+};
+
+const inferWinnerSideFromNextRound = (match: any, allMatches?: any[]): 'A' | 'B' | null => {
+  if (!match || !Array.isArray(allMatches) || !allMatches.length) return null;
+
+  const roundNumber = Number(match.round_number || 0);
+  if (!Number.isFinite(roundNumber) || roundNumber <= 0) return null;
+
+  const nextRoundMatches = allMatches.filter(
+    (candidate) => Number(candidate?.round_number || 0) === roundNumber + 1
+  );
+  if (!nextRoundMatches.length) return null;
+
+  const sideAIds = [match?.player_a_id, match?.player_a2_id]
+    .map((value) => String(value || '').trim())
+    .filter((value) => value && value !== 'BYE');
+  const sideBIds = [match?.player_b_id, match?.player_b2_id]
+    .map((value) => String(value || '').trim())
+    .filter((value) => value && value !== 'BYE');
+
+  const sideAppearsInNextRound = (candidateIds: string[]) =>
+    nextRoundMatches.some((nextMatch) => {
+      const nextIds = [
+        nextMatch?.player_a_id,
+        nextMatch?.player_a2_id,
+        nextMatch?.player_b_id,
+        nextMatch?.player_b2_id,
+      ]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean);
+      return candidateIds.some((candidateId) => nextIds.includes(candidateId));
+    });
+
+  const sideAAdvanced = sideAIds.length > 0 && sideAppearsInNextRound(sideAIds);
+  const sideBAdvanced = sideBIds.length > 0 && sideAppearsInNextRound(sideBIds);
+
+  if (sideAAdvanced && !sideBAdvanced) return 'A';
+  if (sideBAdvanced && !sideAAdvanced) return 'B';
+  return null;
+};
+
+const resolveMatchWinnerSide = (match: any, allMatches?: any[]): 'A' | 'B' | null => {
+  if (!match) return null;
+
+  if (match.winner_id && match.winner_id === match.player_a_id) return 'A';
+  if (match.winner_id && match.winner_id === match.player_b_id) return 'B';
+  if (match.winner_2_id && match.winner_2_id === match.player_a2_id) return 'A';
+  if (match.winner_2_id && match.winner_2_id === match.player_b2_id) return 'B';
+
+  const scoreText = getScoreText(match.score);
+  if (!scoreText || /^W\.?O\.?$/i.test(scoreText)) {
+    return inferWinnerSideFromNextRound(match, allMatches);
+  }
+
+  const sets = scoreText
+    .split(/\s*,\s*/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  let playerAWins = 0;
+  let playerBWins = 0;
+
+  sets.forEach((setScore) => {
+    const parsedSet = parseSetScore(setScore);
+    if (!parsedSet) return;
+    if (parsedSet.leftValue > parsedSet.rightValue) playerAWins += 1;
+    if (parsedSet.rightValue > parsedSet.leftValue) playerBWins += 1;
+  });
+
+  if (playerAWins === playerBWins) {
+    return inferWinnerSideFromNextRound(match, allMatches);
+  }
+  return playerAWins > playerBWins ? 'A' : 'B';
+};
+
+const resolveMatchWinnerIds = (match: any, allMatches?: any[]) => {
+  const winnerSide = resolveMatchWinnerSide(match, allMatches);
+  if (winnerSide === 'A') {
+    return {
+      w1: match?.player_a_id || null,
+      w2: match?.player_a2_id || null,
+    };
+  }
+  if (winnerSide === 'B') {
+    return {
+      w1: match?.player_b_id || null,
+      w2: match?.player_b2_id || null,
+    };
+  }
+  return { w1: null, w2: null };
+};
+
+export const getMatchLoserIds = (match: any, allMatches?: any[]) => {
+  const winnerSide = resolveMatchWinnerSide(match, allMatches);
+  if (winnerSide === 'A') {
+    return { l1: match?.player_b_id || null, l2: match?.player_b2_id || null };
+  }
+  if (winnerSide === 'B') {
+    return { l1: match?.player_a_id || null, l2: match?.player_a2_id || null };
   }
   return { l1: null, l2: null };
 };
@@ -75,7 +202,7 @@ const parseNumericRangeKey = (key: string): { start: number; end: number } | nul
     return Number.isFinite(value) ? { start: value, end: value } : null;
   }
 
-  const rangeMatch = normalized.match(/^(\d+)\s*[-–]\s*(\d+)$/);
+  const rangeMatch = normalized.match(/^(\d+)\s*[-\u2013]\s*(\d+)$/);
   if (rangeMatch) {
     const start = Number(rangeMatch[1]);
     const end = Number(rangeMatch[2]);
@@ -207,15 +334,18 @@ export const getTournamentPlacements = (tournament: any, matches: any[]) => {
   const finalCandidates = maxRoundMatches.filter((match) => isFinalRoundName(String(match.round || '')));
   const finalPool = finalCandidates.length ? finalCandidates : maxRoundMatches;
   const finalMatch =
-    finalPool.find((match) => !!match?.winner_id) ||
+    finalPool.find((match) => !!resolveMatchWinnerIds(match, directEliminationMatches).w1) ||
     finalPool[finalPool.length - 1] ||
     null;
 
-  if (finalMatch?.winner_id) {
-    pushPlacement(finalMatch.winner_id, finalMatch.winner_2_id || null, 1);
+  if (finalMatch) {
+    const { w1, w2 } = resolveMatchWinnerIds(finalMatch, directEliminationMatches);
+    if (w1) {
+      pushPlacement(w1, w2, 1);
 
-    const { l1, l2 } = getMatchLoserIds(finalMatch);
-    pushPlacement(l1, l2, 2);
+      const { l1, l2 } = getMatchLoserIds(finalMatch, directEliminationMatches);
+      pushPlacement(l1, l2, 2);
+    }
   }
 
   for (let round = maxRound - 1; round >= 1; round--) {
@@ -223,7 +353,7 @@ export const getTournamentPlacements = (tournament: any, matches: any[]) => {
     directEliminationMatches
       .filter((match) => Number(match.round_number || 0) === round)
       .forEach((match) => {
-        const { l1, l2 } = getMatchLoserIds(match);
+        const { l1, l2 } = getMatchLoserIds(match, directEliminationMatches);
         pushPlacement(l1, l2, stage);
       });
   }

@@ -16,6 +16,7 @@ type RankingRow = {
     points: number;
     rank: number;
     previousRank: number | null;
+    isNewEntry: boolean;
 };
 
 const NO_ORGANIZATION_MESSAGE = 'Por favor, selecciona una organización en la pestaña de Inicio para ver el ranking.';
@@ -121,7 +122,7 @@ export default function PlayersScreen() {
 
             const { data: tournaments, error: tournamentsError } = await supabase
                 .from('tournaments')
-                .select('id, name, description, format, status, level, end_date, start_date, modality')
+                .select('id, name, description, format, status, level, end_date, start_date, modality, created_at')
                 .eq('organization_id', orgId)
                 .eq('level', category)
                 .in('status', ['completed', 'finalized', 'finished'])
@@ -138,7 +139,10 @@ export default function PlayersScreen() {
                     const leftDate = new Date(leftTournament.end_date || leftTournament.start_date || 0).getTime();
                     const rightDate = new Date(rightTournament.end_date || rightTournament.start_date || 0).getTime();
                     if (rightDate !== leftDate) return rightDate - leftDate;
-                    return String(rightTournament.id || '').localeCompare(String(leftTournament.id || ''));
+                    // When end_dates match, use created_at so the newest tournament is first
+                    const leftCreated = new Date(leftTournament.created_at || 0).getTime();
+                    const rightCreated = new Date(rightTournament.created_at || 0).getTime();
+                    return rightCreated - leftCreated;
                 });
             if (completedTournaments.length === 0) {
                 setRankingRows([]);
@@ -155,7 +159,7 @@ export default function PlayersScreen() {
 
             const { data: registrations, error: registrationsError } = await supabase
                 .from('registrations')
-                .select('player_id')
+                .select('player_id, tournament_id')
                 .in('tournament_id', tournamentIds);
 
             if (registrationsError) throw registrationsError;
@@ -228,21 +232,43 @@ export default function PlayersScreen() {
             });
 
             currentSorted.sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
-            currentSorted.forEach((row, index) => {
-                row.rank = index + 1;
+            currentSorted.forEach((row) => {
+                row.rank = 1 + currentSorted.filter(r => r.points > row.points).length;
             });
 
-            const previousRankMap = Object.entries(previousTotals)
-                .sort((a, b) => b[1] - a[1] || (profileMap[a[0]] || '').localeCompare(profileMap[b[0]] || ''))
-                .reduce((acc, [playerId], index) => {
-                    acc[playerId] = index + 1;
-                    return acc;
-                }, {} as Record<string, number>);
+            // Build previous ranking using ALL players
+            const allPreviousPlayerIds = [...new Set([
+                ...Object.keys(previousTotals),
+                ...Object.keys(currentTotals),
+                ...((registrations || []).map((r: any) => r.player_id).filter(Boolean)),
+            ])];
 
-            let nextRows = currentSorted.map((row) => ({
+            const previousSorted = allPreviousPlayerIds
+                .map((playerId) => ({
+                    playerId,
+                    points: previousTotals[playerId] || 0,
+                    name: profileMap[playerId] || 'Jugador',
+                }))
+                .sort((leftRow, rightRow) =>
+                    rightRow.points - leftRow.points || leftRow.name.localeCompare(rightRow.name)
+                );
+
+            const previousRankMap: Record<string, number> = {};
+            previousSorted.forEach((row) => {
+                previousRankMap[row.playerId] = 1 + previousSorted.filter(r => r.points > row.points).length;
+            });
+
+            const hasHistory = completedTournaments.length > 1;
+            let nextRows = currentSorted.map((row) => {
+                const previousRank = hasHistory && Object.prototype.hasOwnProperty.call(previousRankMap, row.playerId)
+                    ? previousRankMap[row.playerId]
+                    : null;
+                return {
                     ...row,
-                    previousRank: previousRankMap[row.playerId] || null,
-                }));
+                    previousRank,
+                    isNewEntry: hasHistory && previousRank === null && row.points > 0,
+                };
+            });
 
             setRankingRows(nextRows);
             setPage(0);
@@ -276,7 +302,19 @@ export default function PlayersScreen() {
     const listRows = page === 0 ? visibleRows.slice(3) : visibleRows;
 
     const renderMovement = (row: RankingRow) => {
-        if (!row.previousRank || row.previousRank === row.rank) {
+        if (row.previousRank === null) {
+            if (row.isNewEntry) {
+                return (
+                    <View style={styles.movementRow}>
+                        <Ionicons name="arrow-up" size={12} color={colors.success} />
+                        <Text style={[styles.movementText, { color: colors.success }]}>N</Text>
+                    </View>
+                );
+            }
+            return <Text style={styles.movementNeutral}>-</Text>;
+        }
+
+        if (row.previousRank === row.rank) {
             return <Text style={styles.movementNeutral}>-</Text>;
         }
 
@@ -310,13 +348,13 @@ export default function PlayersScreen() {
 
             <View style={styles.modalitySelectorContainer}>
                 <View style={styles.modalitySelector}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={[styles.modalityBtn, modality === 'singles' && styles.modalityBtnActive]}
                         onPress={() => setModality('singles')}
                     >
                         <Text style={[styles.modalityBtnText, modality === 'singles' && styles.modalityBtnTextActive]}>Singles</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={[styles.modalityBtn, modality === 'dobles' && styles.modalityBtnActive]}
                         onPress={() => setModality('dobles')}
                     >
@@ -659,37 +697,38 @@ const getStyles = (colors: any) => StyleSheet.create({
         paddingBottom: spacing.md,
         backgroundColor: colors.background,
     },
-    modalitySelector: { 
-        flexDirection: 'row', 
-        backgroundColor: colors.surfaceSecondary, 
-        borderRadius: borderRadius.lg, 
+    modalitySelector: {
+        flexDirection: 'row',
+        backgroundColor: colors.surfaceSecondary,
+        borderRadius: borderRadius.lg,
         padding: 4,
     },
-    modalityBtn: { 
-        flex: 1, 
-        paddingVertical: 8, 
-        alignItems: 'center', 
-        borderRadius: borderRadius.md 
+    modalityBtn: {
+        flex: 1,
+        paddingVertical: 8,
+        alignItems: 'center',
+        borderRadius: borderRadius.md
     },
-    modalityBtnActive: { 
+    modalityBtnActive: {
         backgroundColor: colors.surface,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.1,
         shadowRadius: 2,
-        elevation: 2 
+        elevation: 2
     },
-    modalityBtnText: { 
-        fontSize: 13, 
-        fontWeight: '600', 
+    modalityBtnText: {
+        fontSize: 13,
+        fontWeight: '600',
         color: colors.textSecondary,
         textAlign: 'center'
     },
-    modalityBtnTextActive: { 
-        color: colors.primary[500], 
-        fontWeight: '700' 
+    modalityBtnTextActive: {
+        color: colors.primary[500],
+        fontWeight: '700'
     },
 });
+
 
 
 

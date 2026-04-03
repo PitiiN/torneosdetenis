@@ -91,6 +91,7 @@ export default function AdminTournamentDetailScreen() {
     const [seedCountLimit, setSeedCountLimit] = useState(0);
     const [isFinalsCountModalVisible, setIsFinalsCountModalVisible] = useState(false);
     const [finalsCountInput, setFinalsCountInput] = useState('4');
+    const tournamentDescriptionRef = useRef<string | null | undefined>(null);
     const playerSearchBottomPadding = insets.bottom + spacing['3xl'];
 
     // Scheduling Modal
@@ -102,6 +103,10 @@ export default function AdminTournamentDetailScreen() {
     });
     const [isCourtPickerVisible, setIsCourtPickerVisible] = useState(false);
     const [savingSchedule, setSavingSchedule] = useState(false);
+
+    useEffect(() => {
+        tournamentDescriptionRef.current = tournament?.description;
+    }, [tournament?.description]);
 
     const goBackToParentOrTournaments = useCallback(() => {
         if (tournament?.parent_tournament_id) {
@@ -434,11 +439,12 @@ export default function AdminTournamentDetailScreen() {
             matchSlots: Record<string, Record<string, { name: string }>>;
         }
     ) => {
-        const currentAssignments = parseManualAssignments(tournament?.description);
-        const currentManualParticipants = parseManualParticipants(tournament?.description);
+        const currentDescription = tournamentDescriptionRef.current;
+        const currentAssignments = parseManualAssignments(currentDescription);
+        const currentManualParticipants = parseManualParticipants(currentDescription);
         const nextAssignments = updater(currentAssignments);
         const nextDescription = buildTournamentDescriptionWithMetadata(
-            tournament?.description,
+            currentDescription,
             nextAssignments,
             currentManualParticipants
         );
@@ -450,6 +456,7 @@ export default function AdminTournamentDetailScreen() {
 
         if (error) throw error;
 
+        tournamentDescriptionRef.current = nextDescription;
         setTournament((prev: any) => prev ? { ...prev, description: nextDescription } : prev);
         return nextAssignments;
     };
@@ -463,11 +470,12 @@ export default function AdminTournamentDetailScreen() {
             doubles: ManualDoublesTeam[];
         }
     ) => {
-        const currentAssignments = parseManualAssignments(tournament?.description);
-        const currentManualParticipants = parseManualParticipants(tournament?.description);
+        const currentDescription = tournamentDescriptionRef.current;
+        const currentAssignments = parseManualAssignments(currentDescription);
+        const currentManualParticipants = parseManualParticipants(currentDescription);
         const nextManualParticipants = updater(currentManualParticipants);
         const nextDescription = buildTournamentDescriptionWithMetadata(
-            tournament?.description,
+            currentDescription,
             currentAssignments,
             nextManualParticipants
         );
@@ -479,6 +487,7 @@ export default function AdminTournamentDetailScreen() {
 
         if (error) throw error;
 
+        tournamentDescriptionRef.current = nextDescription;
         setTournament((prev: any) => prev ? { ...prev, description: nextDescription } : prev);
         return nextManualParticipants;
     };
@@ -2590,6 +2599,44 @@ export default function AdminTournamentDetailScreen() {
         if (error) {
             if (error.code !== '23505') throw error;
         }
+
+        // Update local players state so the player name shows immediately
+        const profileName =
+            searchResults.find((user: any) => user.id === profileId)?.name || null;
+
+        let resolvedName = profileName;
+        let resolvedAvatar: string | null = null;
+        if (!resolvedName) {
+            const { data: profileData } = await supabase
+                .from('public_profiles')
+                .select('id, name, avatar_url')
+                .eq('id', profileId)
+                .maybeSingle();
+            resolvedName = profileData?.name || 'Jugador';
+            resolvedAvatar = profileData?.avatar_url || null;
+        }
+
+        setPlayers((currentPlayers) => {
+            if (currentPlayers.some((player: any) => player.player_id === profileId)) {
+                return currentPlayers;
+            }
+            return [
+                ...currentPlayers,
+                {
+                    id: createUuid(),
+                    tournament_id: id,
+                    player_id: profileId,
+                    status: 'confirmed',
+                    fee_amount: tournament?.registration_fee || 0,
+                    is_paid: false,
+                    profiles: {
+                        id: profileId,
+                        name: resolvedName,
+                        avatar_url: resolvedAvatar,
+                    },
+                },
+            ];
+        });
     };
 
     const assignPlayerToSelectedSlot = async (profileId: string) => {
@@ -2912,6 +2959,22 @@ export default function AdminTournamentDetailScreen() {
                 }));
             } else {
                 return;
+            }
+
+            if (!IS_DOUBLES && !isByeName(trimmedName)) {
+                await updateTournamentManualParticipants((current) => {
+                    const normalizedNameKey = normalizeManualNameKey(trimmedName);
+                    if (!normalizedNameKey) return current;
+
+                    const alreadyExists = (current.singles || []).some(
+                        (candidate) => normalizeManualNameKey(candidate) === normalizedNameKey
+                    );
+
+                    return {
+                        singles: alreadyExists ? [...(current.singles || [])] : [...(current.singles || []), trimmedName],
+                        doubles: [...(current.doubles || [])],
+                    };
+                });
             }
 
             setManualPlayerName('');
@@ -4238,7 +4301,10 @@ export default function AdminTournamentDetailScreen() {
                                     </View>
                                 </View>
                                 {m.court || m.scheduled_at ? (
-                                    <View style={{ marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <TouchableOpacity 
+                                        onPress={() => handleSchedulePress(m)}
+                                        activeOpacity={0.7}
+                                        style={{ marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <View style={{ flexDirection: 'row', gap: spacing.md }}>
                                             {m.scheduled_at && (
                                                 <>
@@ -4259,10 +4325,8 @@ export default function AdminTournamentDetailScreen() {
                                                 </View>
                                             )}
                                         </View>
-                                        <TouchableOpacity onPress={() => handleSchedulePress(m)}>
-                                            <Ionicons name="calendar-outline" size={18} color={colors.primary[500]} />
-                                        </TouchableOpacity>
-                                    </View>
+                                        <Ionicons name="calendar-outline" size={18} color={colors.primary[500]} />
+                                    </TouchableOpacity>
                                 ) : (
                                     <TouchableOpacity 
                                         style={{ marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 }}
@@ -4371,7 +4435,10 @@ export default function AdminTournamentDetailScreen() {
                                                 </View>
                                             </View>
                                             {m.court || m.scheduled_at ? (
-                                                <View style={{ marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <TouchableOpacity 
+                                                    onPress={() => handleSchedulePress(m)}
+                                                    activeOpacity={0.7}
+                                                    style={{ marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                                                     <View style={{ flexDirection: 'row', gap: spacing.md }}>
                                                         {m.scheduled_at && (
                                                             <>
@@ -4392,10 +4459,8 @@ export default function AdminTournamentDetailScreen() {
                                                             </View>
                                                         )}
                                                     </View>
-                                                    <TouchableOpacity onPress={() => handleSchedulePress(m)}>
-                                                        <Ionicons name="calendar-outline" size={18} color={colors.primary[500]} />
-                                                    </TouchableOpacity>
-                                                </View>
+                                                    <Ionicons name="calendar-outline" size={18} color={colors.primary[500]} />
+                                                </TouchableOpacity>
                                             ) : (
                                                 <TouchableOpacity 
                                                     style={{ marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 }}
@@ -4537,7 +4602,10 @@ export default function AdminTournamentDetailScreen() {
                                                                     </TouchableOpacity>
                                                                 </View>
                                                             </View>
-                                                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 4, backgroundColor: colors.background + '50' }}>
+                                                            <TouchableOpacity 
+                                                                onPress={() => handleSchedulePress(m)}
+                                                                activeOpacity={0.7}
+                                                                style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 6, backgroundColor: colors.background + '50' }}>
                                                                 <View style={{ flexDirection: 'row', gap: spacing.sm }}>
                                                                     {m.scheduled_at && (
                                                                         <>
@@ -4555,10 +4623,8 @@ export default function AdminTournamentDetailScreen() {
                                                                         </Text>
                                                                     )}
                                                                 </View>
-                                                                <TouchableOpacity onPress={() => handleSchedulePress(m)}>
-                                                                    <Ionicons name="calendar-outline" size={12} color={colors.textTertiary} />
-                                                                </TouchableOpacity>
-                                                            </View>
+                                                                <Ionicons name="calendar-outline" size={12} color={colors.textTertiary} />
+                                                            </TouchableOpacity>
                                                             {isTBD && (
                                                                 <View style={{ backgroundColor: colors.primary[500] + '15', padding: 4, alignItems: 'center' }}>
                                                                     <Text style={{ color: colors.primary[500], fontSize: 9, fontWeight: '700', textTransform: 'uppercase' }}>Próximamente</Text>
@@ -5051,13 +5117,10 @@ export default function AdminTournamentDetailScreen() {
                     <View style={styles.modalContent}>
                         <Text style={styles.modalTitle}>Sembrar cuadro</Text>
                         <Text style={[styles.modalHelperText, { marginBottom: spacing.sm }]}>
-                            ¿Cuántos sembrados quieres usar? Solo esos mejores rankings se distribuirán como cabezas de serie.
-                        </Text>
-                        <Text style={[styles.modalHelperText, { marginBottom: spacing.sm }]}>
-                            Máximo disponible: {seedCountLimit}
+                            Ingresa la cantidad de cabezas de serie para el torneo. Estos lugares se asignarán a los jugadores con mejor ranking.
                         </Text>
                         <Text style={[styles.modalHelperText, { marginBottom: spacing.md }]}>
-                            Ingresa el número de cabezas de serie que tenga el torneo. Estos se seleccionarán en base al ránking de los jugadores inscritos.
+                            Máximo disponible: {seedCountLimit}
                         </Text>
                         <TextInput
                             style={[styles.scoreInput, { color: colors.text, textAlign: 'left' }]}

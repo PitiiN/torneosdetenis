@@ -18,7 +18,7 @@ const { width } = Dimensions.get('window');
 
 const YEARS = [2026, 2027, 2028, 2029, 2030];
 const MONTHS = [
-    'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 
+    'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
     'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'
 ];
 
@@ -144,7 +144,7 @@ export default function TorneosScreen() {
         routeOrgId && routeOrgId !== 'undefined' && routeOrgId !== 'null'
             ? routeOrgId
             : null;
-    
+
     const [activeFilter, setActiveFilter] = useState('Pr\u00F3ximos');
     const [role, setRole] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
@@ -388,7 +388,7 @@ export default function TorneosScreen() {
             if (!canManageOrg) {
                 query = query.in('status', ['open', 'ongoing', 'in_progress', 'completed', 'finalized', 'finished']);
             }
-            
+
             const { data, error } = await query;
             if (error) throw error;
 
@@ -555,7 +555,7 @@ export default function TorneosScreen() {
         // Determine if tournament should be visible based on role and filter
         const normalizedStatus = getEffectiveStatus(t);
         const isVisibleToPlayer = ['open', 'in_progress', 'finished'].includes(normalizedStatus);
-        
+
         // If not admin and not a visible status, hide
         if (!canManage && !isVisibleToPlayer) return false;
 
@@ -600,12 +600,12 @@ export default function TorneosScreen() {
                             <Ionicons name="business-outline" size={14} color={colors.textSecondary} />
                             <Text style={styles.organizationInfoText}>{organizationInfo.name || orgName || 'Organización'}</Text>
                         </View>
-                        
+
                         {(organizationInfo.contact_whatsapp || organizationInfo.social_links || organizationInfo.photos_drive_url) && (
                             <View style={styles.orgButtonsContainer}>
                                 {organizationInfo.contact_whatsapp && (
-                                    <TouchableOpacity 
-                                        style={[styles.orgButton, { backgroundColor: '#25D366' }]} 
+                                    <TouchableOpacity
+                                        style={[styles.orgButton, { backgroundColor: '#25D366' }]}
                                         onPress={() => {
                                             const cleanNumber = organizationInfo.contact_whatsapp?.replace(/\D/g, '');
                                             Linking.openURL(`https://wa.me/${cleanNumber}`);
@@ -616,8 +616,8 @@ export default function TorneosScreen() {
                                     </TouchableOpacity>
                                 )}
                                 {organizationInfo.social_links && (
-                                    <TouchableOpacity 
-                                        style={[styles.orgButton, { backgroundColor: '#E4405F' }]} 
+                                    <TouchableOpacity
+                                        style={[styles.orgButton, { backgroundColor: '#E4405F' }]}
                                         onPress={() => {
                                             let url = organizationInfo.social_links?.trim() || '';
                                             if (url.startsWith('@')) {
@@ -633,8 +633,8 @@ export default function TorneosScreen() {
                                     </TouchableOpacity>
                                 )}
                                 {organizationInfo.photos_drive_url && (
-                                    <TouchableOpacity 
-                                        style={[styles.orgButton, { backgroundColor: '#4285F4' }]} 
+                                    <TouchableOpacity
+                                        style={[styles.orgButton, { backgroundColor: '#4285F4' }]}
                                         onPress={() => Linking.openURL(organizationInfo.photos_drive_url!)}
                                     >
                                         <Ionicons name="images-outline" size={18} color="#fff" />
@@ -654,7 +654,7 @@ export default function TorneosScreen() {
 
                 {canManage && (
                     <View style={styles.actionsGrid}>
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             style={[styles.actionCard, { backgroundColor: colors.primary[500] }]}
                             onPress={() => router.push({
                                 pathname: '/(admin)/tournaments/create',
@@ -673,10 +673,10 @@ export default function TorneosScreen() {
                 <View style={styles.filterSection}>
                     <View style={styles.filterContainer}>
                         {filters.map((filter) => (
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 key={filter}
                                 style={[
-                                    styles.filterButton, 
+                                    styles.filterButton,
                                     activeFilter === filter && styles.filterButtonActive
                                 ]}
                                 onPress={() => setActiveFilter(filter)}
@@ -694,14 +694,14 @@ export default function TorneosScreen() {
 
                 {activeFilter === 'Finalizados' && (
                     <View style={styles.carouselContainer}>
-                        <ScrollView 
-                            horizontal 
+                        <ScrollView
+                            horizontal
                             showsHorizontalScrollIndicator={false}
                             contentContainerStyle={styles.carouselScroll}
                         >
                             {YEARS.map(year => (
-                                <TouchableOpacity 
-                                    key={year} 
+                                <TouchableOpacity
+                                    key={year}
                                     style={[styles.carouselItem, selectedYear === year && styles.carouselItemActive]}
                                     onPress={() => setSelectedYear(year)}
                                 >
@@ -709,16 +709,16 @@ export default function TorneosScreen() {
                                 </TouchableOpacity>
                             ))}
                         </ScrollView>
-                        
-                        <ScrollView 
-                            horizontal 
+
+                        <ScrollView
+                            horizontal
                             showsHorizontalScrollIndicator={false}
                             contentContainerStyle={styles.carouselScroll}
                             style={{ marginTop: spacing.xs }}
                         >
                             {MONTHS.map((month, idx) => (
-                                <TouchableOpacity 
-                                    key={month} 
+                                <TouchableOpacity
+                                    key={month}
                                     style={[styles.carouselItem, selectedMonth === idx && styles.carouselItemActive]}
                                     onPress={() => setSelectedMonth(idx)}
                                 >
@@ -744,7 +744,7 @@ export default function TorneosScreen() {
                     <View style={styles.emptyState}>
                         <Ionicons name="business-outline" size={64} color={colors.textTertiary} />
                         <Text style={styles.emptyText}>Por favor, selecciona una organización en la pestaña de Inicio para ver sus torneos.</Text>
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             style={styles.backToHomeButton}
                             onPress={() => router.replace('/(tabs)' as any)}
                         >
@@ -765,166 +765,166 @@ export default function TorneosScreen() {
                             const isMasterTournament = Boolean(tournament.is_tournament_master);
                             const isRegistered = !isMasterTournament && registeredTournamentIds.has(tournament.id);
                             return (
-                            <TouchableOpacity 
-                                key={tournament.id} 
-                                style={styles.tournamentCard}
-                                onPress={() => {
-                                    if (canManage) {
-                                        if (isMasterTournament) {
-                                            router.push(`/(admin)/tournaments/master/${tournament.id}`);
+                                <TouchableOpacity
+                                    key={tournament.id}
+                                    style={styles.tournamentCard}
+                                    onPress={() => {
+                                        if (canManage) {
+                                            if (isMasterTournament) {
+                                                router.push(`/(admin)/tournaments/master/${tournament.id}`);
+                                            } else {
+                                                router.push({
+                                                    pathname: '/(admin)/tournaments/[id]',
+                                                    params: { id: tournament.id }
+                                                });
+                                            }
                                         } else {
-                                            router.push({
-                                                pathname: '/(admin)/tournaments/[id]',
-                                                params: { id: tournament.id }
-                                            });
+                                            if (isMasterTournament) {
+                                                router.push(`/(tabs)/tournaments/master/${tournament.id}`);
+                                            } else {
+                                                router.push(`/(tabs)/tournaments/${tournament.id}`);
+                                            }
                                         }
-                                    } else {
-                                        if (isMasterTournament) {
-                                            router.push(`/(tabs)/tournaments/master/${tournament.id}`);
-                                        } else {
-                                            router.push(`/(tabs)/tournaments/${tournament.id}`);
-                                        }
-                                    }
-                                }}
-                            >
-                                <View style={styles.cardHeader}>
-                                    <View style={styles.typeBadge}>
-                                        <Text style={styles.typeText}>{SURFACE_MAP[tournament.surface]?.toUpperCase() || tournament.surface.toUpperCase()}</Text>
-                                    </View>
-                                    <View style={[styles.statusBadge, {
-                                        backgroundColor: getEffectiveStatus(tournament) === 'open'
-                                            ? colors.success + '1A'
-                                            : colors.surfaceSecondary
-                                    }]}>
-                                        <Text style={[styles.statusText, {
-                                            color: getEffectiveStatus(tournament) === 'open'
-                                                ? colors.success
-                                                : colors.textSecondary
-                                        }]}>
-                                            {STATUS_DISPLAY[getEffectiveStatus(tournament)] || tournament.status.toUpperCase()}
-                                        </Text>
-                                    </View>
-                                </View>
-                                <View style={styles.cardBody}>
-                                    <View style={styles.iconContainer}>
-                                        <Ionicons name="trophy-outline" size={24} color={colors.primary[500]} />
-                                    </View>
-                                    <View style={styles.tournamentInfo}>
-                                        <Text 
-                                            style={styles.tournamentName} 
-                                            numberOfLines={2} 
-                                            adjustsFontSizeToFit 
-                                            minimumFontScale={0.8}
-                                        >
-                                            {tournament.name}
-                                        </Text>
-                                        <View style={styles.metaRow}>
-                                            <View style={styles.metaItem}>
-                                                <Ionicons name="calendar-outline" size={12} color={colors.textTertiary} />
-                                                <Text style={styles.metaText} numberOfLines={1}>
-                                                    {`Fecha de inicio: ${formatDateDDMMYYYY(tournament.start_date)}`}
-                                                </Text>
-                                            </View>
-                                            {!isMasterTournament && (
-                                                <View style={styles.metaItem}>
-                                                    <Ionicons name="ribbon-outline" size={12} color={colors.textTertiary} />
-                                                    <Text style={styles.metaText}>{tournament.format}</Text>
-                                                </View>
-                                            )}
-                                            {isMasterTournament && formatRegistrationDeadline(tournament.registration_close_at, tournament.registration_close_time) && (
-                                                <View style={styles.metaItem}>
-                                                    <Ionicons name="hourglass-outline" size={12} color={colors.textTertiary} />
-                                                    <Text style={styles.metaText}>
-                                                        {`Cierre inscripciones: ${formatRegistrationDeadline(tournament.registration_close_at, tournament.registration_close_time)}`}
-                                                    </Text>
-                                                </View>
-                                            )}
-                                            {!isMasterTournament && (
-                                                <View style={styles.metaItem}>
-                                                    <Ionicons name="tennisball-outline" size={12} color={colors.textTertiary} />
-                                                    <Text style={styles.metaText}>
-                                                        {`Modalidad: ${String(tournament.modality || '').toLowerCase() === 'dobles' ? 'Dobles' : 'Singles'}`}
-                                                    </Text>
-                                                </View>
-                                            )}
-                                            {!isMasterTournament && (
-                                                <View style={styles.metaItem}>
-                                                    <Ionicons name="cash-outline" size={12} color={colors.primary[500]} />
-                                                    <Text style={[styles.metaText, { color: colors.primary[500], fontWeight: '700' }]}>
-                                                        ${tournament.registration_fee || 0}
-                                                    </Text>
-                                                </View>
-                                            )}
-                                            {(tournament.address || tournament.comuna) && (
-                                                <View style={styles.metaItem}>
-                                                    <Ionicons name="location-outline" size={12} color={colors.textTertiary} />
-                                                    <Text style={styles.metaText} numberOfLines={1}>
-                                                        {tournament.address}{tournament.address && tournament.comuna ? ', ' : ''}{tournament.comuna}
-                                                    </Text>
-                                                </View>
-                                            )}
-                                    </View>
-                                    {(() => {
-                                        if (isMasterTournament) return null;
-
-                                        const championName = extractChampionFromDescription(tournament.description);
-                                        const isFinished = tournament.status === 'finished' || getEffectiveStatus(tournament) === 'finished';
-                                        if (!championName && !isFinished) return null;
-                                        
-                                        return (
-                                            <View style={{ 
-                                                marginTop: spacing.sm, 
-                                                flexDirection: 'row', 
-                                                alignItems: 'center', 
-                                                backgroundColor: '#FFD70015', 
-                                                padding: 8, 
-                                                borderRadius: borderRadius.sm, 
-                                                borderWidth: 1, 
-                                                borderColor: '#FFD70040' 
-                                            }}>
-                                                <Ionicons name="trophy" size={18} color="#FFD700" style={{ marginRight: 8 }} />
-                                                <View style={{ flex: 1 }}>
-                                                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textTertiary, marginBottom: 1 }}>
-                                                        Campeón
-                                                    </Text>
-                                                    <ChampionName tournament={tournament} />
-                                                </View>
-                                            </View>
-                                        );
-                                    })()}
-                                </View>
-                            </View>
-                                <View style={styles.cardFooter}>
-                                    <View style={styles.footerActions}>
-                                        <View style={styles.detailsButton}>
-                                            <Text style={styles.detailsButtonText}>
-                                                {isMasterTournament
-                                                    ? 'Ver campeonatos e inscribirse'
-                                                    : (isRegistered ? 'Estas inscrito! Ver detalles' : 'Ver detalles e inscribirse')}
-                                            </Text>
-                                            <Ionicons name="chevron-forward" size={16} color={colors.primary[500]} />
+                                    }}
+                                >
+                                    <View style={styles.cardHeader}>
+                                        <View style={styles.typeBadge}>
+                                            <Text style={styles.typeText}>{SURFACE_MAP[tournament.surface]?.toUpperCase() || tournament.surface.toUpperCase()}</Text>
                                         </View>
-                                        {canManage && isMasterTournament && (
-                                            <View style={styles.adminActions}>
-                                                <TouchableOpacity
-                                                    style={styles.adminActionButton}
-                                                    onPress={() => router.push(`/(admin)/tournaments/edit/${tournament.id}`)}
-                                                >
-                                                    <Ionicons name="create-outline" size={15} color={colors.textSecondary} />
-                                                    <Text style={styles.adminActionText}>Editar</Text>
-                                                </TouchableOpacity>
-                                                <TouchableOpacity
-                                                    style={[styles.adminActionButton, styles.adminActionDanger]}
-                                                    onPress={() => handleDeleteMasterTournament(tournament.id, tournament.name)}
-                                                >
-                                                    <Ionicons name="trash-outline" size={15} color={colors.error} />
-                                                    <Text style={[styles.adminActionText, { color: colors.error }]}>Eliminar</Text>
-                                                </TouchableOpacity>
-                                            </View>
-                                        )}
+                                        <View style={[styles.statusBadge, {
+                                            backgroundColor: getEffectiveStatus(tournament) === 'open'
+                                                ? colors.success + '1A'
+                                                : colors.surfaceSecondary
+                                        }]}>
+                                            <Text style={[styles.statusText, {
+                                                color: getEffectiveStatus(tournament) === 'open'
+                                                    ? colors.success
+                                                    : colors.textSecondary
+                                            }]}>
+                                                {STATUS_DISPLAY[getEffectiveStatus(tournament)] || tournament.status.toUpperCase()}
+                                            </Text>
+                                        </View>
                                     </View>
-                                </View>
-                            </TouchableOpacity>
+                                    <View style={styles.cardBody}>
+                                        <View style={styles.iconContainer}>
+                                            <Ionicons name="trophy-outline" size={24} color={colors.primary[500]} />
+                                        </View>
+                                        <View style={styles.tournamentInfo}>
+                                            <Text
+                                                style={styles.tournamentName}
+                                                numberOfLines={2}
+                                                adjustsFontSizeToFit
+                                                minimumFontScale={0.8}
+                                            >
+                                                {tournament.name}
+                                            </Text>
+                                            <View style={styles.metaRow}>
+                                                <View style={styles.metaItem}>
+                                                    <Ionicons name="calendar-outline" size={12} color={colors.textTertiary} />
+                                                    <Text style={styles.metaText} numberOfLines={1}>
+                                                        {`Fecha de inicio: ${formatDateDDMMYYYY(tournament.start_date)}`}
+                                                    </Text>
+                                                </View>
+                                                {!isMasterTournament && (
+                                                    <View style={styles.metaItem}>
+                                                        <Ionicons name="ribbon-outline" size={12} color={colors.textTertiary} />
+                                                        <Text style={styles.metaText}>{tournament.format}</Text>
+                                                    </View>
+                                                )}
+                                                {isMasterTournament && formatRegistrationDeadline(tournament.registration_close_at, tournament.registration_close_time) && (
+                                                    <View style={styles.metaItem}>
+                                                        <Ionicons name="hourglass-outline" size={12} color={colors.textTertiary} />
+                                                        <Text style={styles.metaText}>
+                                                            {`Cierre inscripciones: ${formatRegistrationDeadline(tournament.registration_close_at, tournament.registration_close_time)}`}
+                                                        </Text>
+                                                    </View>
+                                                )}
+                                                {!isMasterTournament && (
+                                                    <View style={styles.metaItem}>
+                                                        <Ionicons name="tennisball-outline" size={12} color={colors.textTertiary} />
+                                                        <Text style={styles.metaText}>
+                                                            {`Modalidad: ${String(tournament.modality || '').toLowerCase() === 'dobles' ? 'Dobles' : 'Singles'}`}
+                                                        </Text>
+                                                    </View>
+                                                )}
+                                                {!isMasterTournament && (
+                                                    <View style={styles.metaItem}>
+                                                        <Ionicons name="cash-outline" size={12} color={colors.primary[500]} />
+                                                        <Text style={[styles.metaText, { color: colors.primary[500], fontWeight: '700' }]}>
+                                                            ${tournament.registration_fee || 0}
+                                                        </Text>
+                                                    </View>
+                                                )}
+                                                {(tournament.address || tournament.comuna) && (
+                                                    <View style={styles.metaItem}>
+                                                        <Ionicons name="location-outline" size={12} color={colors.textTertiary} />
+                                                        <Text style={styles.metaText} numberOfLines={1}>
+                                                            {tournament.address}{tournament.address && tournament.comuna ? ', ' : ''}{tournament.comuna}
+                                                        </Text>
+                                                    </View>
+                                                )}
+                                            </View>
+                                            {(() => {
+                                                if (isMasterTournament) return null;
+
+                                                const championName = extractChampionFromDescription(tournament.description);
+                                                const isFinished = tournament.status === 'finished' || getEffectiveStatus(tournament) === 'finished';
+                                                if (!championName && !isFinished) return null;
+
+                                                return (
+                                                    <View style={{
+                                                        marginTop: spacing.sm,
+                                                        flexDirection: 'row',
+                                                        alignItems: 'center',
+                                                        backgroundColor: '#FFD70015',
+                                                        padding: 8,
+                                                        borderRadius: borderRadius.sm,
+                                                        borderWidth: 1,
+                                                        borderColor: '#FFD70040'
+                                                    }}>
+                                                        <Ionicons name="trophy" size={18} color="#FFD700" style={{ marginRight: 8 }} />
+                                                        <View style={{ flex: 1 }}>
+                                                            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textTertiary, marginBottom: 1 }}>
+                                                                Campeón
+                                                            </Text>
+                                                            <ChampionName tournament={tournament} />
+                                                        </View>
+                                                    </View>
+                                                );
+                                            })()}
+                                        </View>
+                                    </View>
+                                    <View style={styles.cardFooter}>
+                                        <View style={styles.footerActions}>
+                                            <View style={styles.detailsButton}>
+                                                <Text style={styles.detailsButtonText}>
+                                                    {isMasterTournament
+                                                        ? 'Ver campeonatos e inscribirse'
+                                                        : (isRegistered ? 'Estas inscrito! Ver detalles' : 'Ver detalles e inscribirse')}
+                                                </Text>
+                                                <Ionicons name="chevron-forward" size={16} color={colors.primary[500]} />
+                                            </View>
+                                            {canManage && isMasterTournament && (
+                                                <View style={styles.adminActions}>
+                                                    <TouchableOpacity
+                                                        style={styles.adminActionButton}
+                                                        onPress={() => router.push(`/(admin)/tournaments/edit/${tournament.id}`)}
+                                                    >
+                                                        <Ionicons name="create-outline" size={15} color={colors.textSecondary} />
+                                                        <Text style={styles.adminActionText}>Editar</Text>
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity
+                                                        style={[styles.adminActionButton, styles.adminActionDanger]}
+                                                        onPress={() => handleDeleteMasterTournament(tournament.id, tournament.name)}
+                                                    >
+                                                        <Ionicons name="trash-outline" size={15} color={colors.error} />
+                                                        <Text style={[styles.adminActionText, { color: colors.error }]}>Eliminar</Text>
+                                                    </TouchableOpacity>
+                                                </View>
+                                            )}
+                                        </View>
+                                    </View>
+                                </TouchableOpacity>
                             );
                         })}
 
@@ -932,7 +932,7 @@ export default function TorneosScreen() {
                             <View style={styles.emptyState}>
                                 <Ionicons name="tennisball-outline" size={64} color={colors.textTertiary} />
                                 <Text style={styles.emptyText}>
-                                    {tournaments.length === 0 
+                                    {tournaments.length === 0
                                         ? "No hay torneos disponibles para este club en este momento."
                                         : `No hay torneos "${activeFilter.toLowerCase()}" en este momento.`
                                     }
