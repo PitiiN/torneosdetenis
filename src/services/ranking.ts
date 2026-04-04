@@ -304,14 +304,22 @@ export const getTournamentPlacements = (tournament: any, matches: any[]) => {
   const seenPlacementIds = new Set<string>();
 
   const pushPlacement = (playerId: string | null, playerId2: string | null | undefined, stage: number) => {
-    if (!playerId || playerId === 'BYE') return;
-    const safePlayerId2 = playerId2 && playerId2 !== 'BYE' ? playerId2 : null;
-    const uniqueKey = `${playerId}:${safePlayerId2 || ''}:${stage}`;
+    let primaryId = playerId && playerId !== 'BYE' ? playerId : null;
+    let secondaryId = playerId2 && playerId2 !== 'BYE' ? playerId2 : null;
+
+    // Support mixed/manual doubles teams where only one teammate has a real profile ID.
+    if (!primaryId && secondaryId) {
+      primaryId = secondaryId;
+      secondaryId = null;
+    }
+    if (!primaryId) return;
+
+    const uniqueKey = `${primaryId}:${secondaryId || ''}:${stage}`;
     if (seenPlacementIds.has(uniqueKey)) return;
     seenPlacementIds.add(uniqueKey);
     placements.push({
-      playerId,
-      playerId2: safePlayerId2 || undefined,
+      playerId: primaryId,
+      playerId2: secondaryId || undefined,
       place: String(stage),
       points: getPlacementPoints(pointsMap, stage),
     });
@@ -340,12 +348,13 @@ export const getTournamentPlacements = (tournament: any, matches: any[]) => {
 
   if (finalMatch) {
     const { w1, w2 } = resolveMatchWinnerIds(finalMatch, directEliminationMatches);
-    if (w1) {
+    if (w1 || w2) {
       pushPlacement(w1, w2, 1);
-
-      const { l1, l2 } = getMatchLoserIds(finalMatch, directEliminationMatches);
-      pushPlacement(l1, l2, 2);
     }
+
+    // Finalist points should still be awarded even when the champion is manual (no profile id).
+    const { l1, l2 } = getMatchLoserIds(finalMatch, directEliminationMatches);
+    pushPlacement(l1, l2, 2);
   }
 
   for (let round = maxRound - 1; round >= 1; round--) {

@@ -437,7 +437,10 @@ export default function ProfileScreen() {
             });
             const userScore = allPlayersPoints[user.id] || 0;
             const playersAhead = Object.values(allPlayersPoints).filter(score => score > userScore).length;
-            const rank = Object.prototype.hasOwnProperty.call(allPlayersPoints, user.id) ? `#${playersAhead + 1}` : '-';
+            const hasCompetitiveData = totalMatches > 0 || userScore > 0;
+            const rank = Object.prototype.hasOwnProperty.call(allPlayersPoints, user.id) && hasCompetitiveData
+                ? `#${playersAhead + 1}`
+                : '-';
 
             setStats({
                 rank,
@@ -1029,7 +1032,7 @@ export default function ProfileScreen() {
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>Ver Estadísticas en:</Text>
                             <TouchableOpacity onPress={() => setShowContextModal(false)}>
-                                <Ionicons name="close" size={24} color="#fff" />
+                                <Ionicons name="close" size={24} color={colors.text} />
                             </TouchableOpacity>
                         </View>
                         <ScrollView style={{ maxHeight: 300, marginVertical: spacing.md }}>
@@ -1059,7 +1062,7 @@ export default function ProfileScreen() {
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>Contexto Global</Text>
                             <TouchableOpacity onPress={() => setShowOrgSearchModal(false)}>
-                                <Ionicons name="close" size={24} color="#fff" />
+                                <Ionicons name="close" size={24} color={colors.text} />
                             </TouchableOpacity>
                         </View>
                         <TextInput
@@ -1111,7 +1114,7 @@ export default function ProfileScreen() {
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>Privacidad y Seguridad</Text>
                             <TouchableOpacity onPress={() => setShowPrivacyModal(false)}>
-                                <Ionicons name="close" size={24} color="#fff" />
+                                <Ionicons name="close" size={24} color={colors.text} />
                             </TouchableOpacity>
                         </View>
 

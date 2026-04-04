@@ -30,7 +30,8 @@ import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB for posters
 const BASE64_CHAR_MAP = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-const ADMIN_MASTER_POSTER_URL_CACHE = new Map<string, string | null>();
+const ADMIN_MASTER_POSTER_URL_CACHE = new Map<string, { url: string | null; expiresAt: number }>();
+const POSTER_URL_CACHE_TTL_MS = 50 * 60 * 1000;
 
 const sanitizeBase64Payload = (value: string) => value.replace(/\s/g, '');
 
@@ -113,6 +114,13 @@ const normalizeText = (value?: string | null) =>
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim();
+
+const extractFechaNumber = (value?: string | null) => {
+  const match = String(value || '').match(/\bfecha\s*(\d+)\b/i);
+  if (!match?.[1]) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
 const isDoublesChampionshipLegacyAware = (championship: { modality?: string | null; name?: string | null }) => {
   const modalityText = normalizeText(championship.modality);
@@ -259,13 +267,17 @@ export default function MasterTournamentAdminScreen() {
 
       if (masterRow.poster_url) {
         const posterKey = String(masterRow.poster_url);
-        const cachedPosterUrl = ADMIN_MASTER_POSTER_URL_CACHE.get(posterKey);
-        if (cachedPosterUrl) {
-          setPosterUrl(cachedPosterUrl);
+        const cachedPoster = ADMIN_MASTER_POSTER_URL_CACHE.get(posterKey);
+        const now = Date.now();
+        if (cachedPoster && cachedPoster.expiresAt > now) {
+          setPosterUrl(cachedPoster.url);
         } else {
           const resolvedPosterUrl = await resolveStorageAssetUrlWithRetry(masterRow.poster_url);
           if (resolvedPosterUrl) {
-            ADMIN_MASTER_POSTER_URL_CACHE.set(posterKey, resolvedPosterUrl);
+            ADMIN_MASTER_POSTER_URL_CACHE.set(posterKey, {
+              url: resolvedPosterUrl,
+              expiresAt: now + POSTER_URL_CACHE_TTL_MS,
+            });
             setPosterUrl(resolvedPosterUrl);
           } else {
             setPosterUrl(null);
@@ -411,19 +423,39 @@ export default function MasterTournamentAdminScreen() {
       );
       const tournamentDescription = buildDescriptionWithRankingPoints(rankingPoints, descriptionWithGroup);
 
-      // Count existing tournaments with same category + modality in this org
-      // to auto-generate "Fecha N" suffix
+      // Build a robust "Fecha N" sequence across all championships in the organization,
+      // even when historical rows have inconsistent modality casing or missing suffixes.
       const modalityLabel = getModalityLabel(modality);
       const baseName = `${category} ${modalityLabel}`;
-      const { count: existingCount } = await supabase
+      const normalizedCategory = normalizeText(category);
+      const normalizedModality = normalizeText(modality);
+
+      const { data: orgChampionships, error: orgChampionshipsError } = await supabase
         .from('tournaments')
-        .select('id', { count: 'exact', head: true })
+        .select('id, name, level, modality, is_tournament_master')
         .eq('organization_id', masterTournament.organization_id)
-        .eq('level', category)
-        .eq('modality', modality)
         .eq('is_tournament_master', false);
 
-      const fechaNumber = (existingCount || 0) + 1;
+      if (orgChampionshipsError) throw orgChampionshipsError;
+
+      const championshipsForSeries = (orgChampionships || []).filter((championship: any) => {
+        const sameCategory = normalizeText(championship?.level) === normalizedCategory;
+        const normalizedChampModality = normalizeText(championship?.modality);
+        const sameModality =
+          normalizedChampModality === normalizedModality ||
+          (normalizedModality === 'dobles' && normalizedChampModality.includes('doble')) ||
+          (normalizedModality === 'singles' && normalizedChampModality.includes('single'));
+        return sameCategory && sameModality;
+      });
+
+      const maxExistingFecha = championshipsForSeries.reduce((maxValue: number, championship: any) => {
+        const parsedFecha = extractFechaNumber(championship?.name);
+        if (!parsedFecha) return maxValue;
+        return Math.max(maxValue, parsedFecha);
+      }, 0);
+
+      const fallbackCount = championshipsForSeries.length;
+      const fechaNumber = Math.max(maxExistingFecha, fallbackCount) + 1;
       const championshipName = `${baseName} Fecha ${fechaNumber}`;
 
       const { data: createdTournamentId, error: createError } = await supabase.rpc('create_championship_tournament', {
@@ -540,6 +572,10 @@ export default function MasterTournamentAdminScreen() {
       if (updateError) throw updateError;
 
       const signedUrl = await resolveStorageAssetUrlWithRetry(filePath);
+      ADMIN_MASTER_POSTER_URL_CACHE.set(filePath, {
+        url: signedUrl || uri,
+        expiresAt: Date.now() + POSTER_URL_CACHE_TTL_MS,
+      });
       setPosterUrl(signedUrl || uri);
       setMasterTournament(prev => prev ? { ...prev, poster_url: filePath } : null);
       Alert.alert('Exito', 'Afiche subido correctamente.');
@@ -594,7 +630,7 @@ export default function MasterTournamentAdminScreen() {
               >
                 <Image source={{ uri: posterUrl }} style={styles.posterImage} resizeMode="cover" />
                 <View style={styles.posterHint}>
-                  <Text style={styles.posterHintText}>Tocar para ampliar</Text>
+                  <Text style={styles.posterHintText}>Toca para ampliar</Text>
                 </View>
               </TouchableOpacity>
               <TouchableOpacity style={styles.uploadPosterBtn} onPress={handlePickPoster}>

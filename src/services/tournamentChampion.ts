@@ -216,7 +216,18 @@ export const resolveChampionFromMatches = (
     const manualAssignments = parseManualAssignments(description);
     const { w1, w2, side } = resolveWinnerIds(finalMatch, finalMatch.score);
     
-    if (w1 || side) {
+    const getParticipantNameById = (playerId?: string | null) => {
+        if (!playerId) return null;
+        const participant = participants.find(
+            (candidate: any) => candidate?.player_id === playerId || candidate?.id === playerId
+        );
+        const candidateName = participant?.profiles?.name || participant?.name || null;
+        const normalized = String(candidateName || '').trim();
+        if (!normalized || normalized === 'Por definir' || normalized === 'BYE') return null;
+        return normalized;
+    };
+
+    if (w1 || side || w2) {
         const winnerStartSlot = side === 'A' ? 1 : 3;
         const winnerPrimaryName = getDisplayName(finalMatch, winnerStartSlot, manualAssignments, participants);
         if (winnerPrimaryName === 'Por definir') return null;
@@ -234,6 +245,13 @@ export const resolveChampionFromMatches = (
         const winnerSecondarySlot = (winnerStartSlot + 1) as MatchSlot;
         const winnerSecondaryName = getDisplayName(finalMatch, winnerSecondarySlot, manualAssignments, participants);
         if (!winnerSecondaryName || winnerSecondaryName === 'Por definir' || winnerSecondaryName === 'BYE') {
+            // Fallback: when the second slot is missing in the final match row, resolve by winner_2_id.
+            const fallbackSecondary = getParticipantNameById(w2);
+            if (fallbackSecondary) {
+                return winnerPrimaryName.includes('/')
+                    ? winnerPrimaryName
+                    : `${winnerPrimaryName} / ${fallbackSecondary}`;
+            }
             return winnerPrimaryName;
         }
 

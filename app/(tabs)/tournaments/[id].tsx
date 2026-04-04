@@ -55,6 +55,12 @@ const formatRegistrationDeadline = (dateValue?: string | null, timeValue?: strin
     return `${dateLabel} ${timeLabel}`;
 };
 
+const formatRoundLabel = (roundValue?: string | null) =>
+    String(roundValue || '')
+        .replace(/^Consolaci[oó]n\s*-\s*/i, 'Repechaje - ')
+        .replace(/^Consolaci[oó]n\b/i, 'Repechaje')
+        .trim();
+
 export default function TournamentDetailScreen() {
     const { id } = useLocalSearchParams();
     const tournamentId = Array.isArray(id) ? id[0] : id;
@@ -117,7 +123,8 @@ export default function TournamentDetailScreen() {
             let effectiveRegistrationCloseAt = tourData?.registration_close_at || null;
             let effectiveRegistrationCloseTime = tourData?.registration_close_time || null;
 
-            let effectiveStatus = normalizeTournamentStatus(tourData?.status || 'draft');
+            const ownStatus = normalizeTournamentStatus(tourData?.status || 'draft');
+            let effectiveStatus = ownStatus;
             if (tourData?.parent_tournament_id) {
                 const { data: parentDeadlineData } = await supabase
                     .from('tournaments')
@@ -130,13 +137,15 @@ export default function TournamentDetailScreen() {
                     effectiveRegistrationCloseTime = parentDeadlineData.registration_close_time || null;
                 }
                 if (parentDeadlineData?.status) {
-                    effectiveStatus = normalizeTournamentStatus(parentDeadlineData.status);
+                    const parentStatus = normalizeTournamentStatus(parentDeadlineData.status);
+                    const isOwnStatusTerminal = ownStatus === 'finished' || ownStatus === 'cancelled';
+                    effectiveStatus = isOwnStatusTerminal ? ownStatus : parentStatus;
                 }
             }
 
             setTournament({
                 ...tourData,
-                status: normalizeTournamentStatus(tourData?.status),
+                status: ownStatus,
                 effective_registration_close_at: effectiveRegistrationCloseAt,
                 effective_registration_close_time: effectiveRegistrationCloseTime,
                 effective_status: effectiveStatus,
@@ -272,7 +281,7 @@ export default function TournamentDetailScreen() {
 
     const transformToRounds = (matchesList: any[]) => {
         const filteredMatches = matchesList.filter(m => {
-            const isConsolationMatch = /^Consolaci/i.test(String(m.round || ''));
+            const isConsolationMatch = /^(Consolaci|Repechaje)/i.test(String(m.round || ''));
             if (activeTab === 'consolacion') return isConsolationMatch;
             return !isConsolationMatch;
         });
@@ -282,7 +291,7 @@ export default function TournamentDetailScreen() {
             const roundNum = m.round_number || 1;
             if (!roundsMap[roundNum]) {
                 roundsMap[roundNum] = {
-                    title: m.round || `Ronda ${roundNum}`,
+                    title: formatRoundLabel(m.round) || `Ronda ${roundNum}`,
                     matches: []
                 };
             }
@@ -439,30 +448,181 @@ export default function TournamentDetailScreen() {
             : (registrationClosed ? 'Inscripcion cerrada' : 'Inscribirse al Torneo'));
 
     const createStandings = (groupName: string, groupMatches: any[]) => {
+        const isDoubles = String(tournament?.modality || '').toLowerCase() === 'dobles';
         const fallbackSlots = getRoundRobinSlots(tournamentMaxPlayers, groupName, tournamentFormat, tournament?.description);
-        return fallbackSlots.map((slot, index) => {
-            const playerIds = [...new Set(groupMatches.flatMap(match => [match.player_a_id, match.player_b_id]).filter(Boolean))];
-            const playerId = playerIds[index];
-            const matchA = groupMatches.find(match => match.player_a_id === playerId);
-            const matchB = groupMatches.find(match => match.player_b_id === playerId);
-            const profile = matchA?.player_a || matchB?.player_b;
-            const profile2 = matchA?.player_a2 || matchB?.player_b2;
-            
-            let displayName = profile?.name || slot.name;
-            if (tournament?.modality === 'dobles' && profile2?.name) {
-                displayName += ` / ${profile2.name}`;
+        const normalizeNameKey = (value?: string | null) =>
+            String(value || '')
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .trim()
+                .toUpperCase();
+        const isUuid = (value?: string | null) =>
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
+
+        const getScoreText = (scoreValue: any): string => {
+            if (!scoreValue) return '';
+            if (typeof scoreValue === 'string') return scoreValue.trim();
+            if (typeof scoreValue === 'object') {
+                if (scoreValue.wo) return 'W.O.';
+                if (scoreValue.text) return String(scoreValue.text).trim();
+                if (scoreValue.score) return String(scoreValue.score).trim();
+                if (Array.isArray(scoreValue.sets)) {
+                    return scoreValue.sets
+                        .map((setScore: any) => String(setScore || '').trim())
+                        .filter(Boolean)
+                        .join(', ');
+                }
+            }
+            return String(scoreValue || '').trim();
+        };
+
+        const buildEntry = (match: any, side: 'A' | 'B') => {
+            const p1Id = String(side === 'A' ? match.player_a_id || '' : match.player_b_id || '').trim();
+            const p2Id = String(side === 'A' ? match.player_a2_id || '' : match.player_b2_id || '').trim();
+            const p1Name = String(side === 'A' ? match.player_a?.name || '' : match.player_b?.name || '').trim();
+            const p2Name = String(side === 'A' ? match.player_a2?.name || '' : match.player_b2?.name || '').trim();
+            const hasP1Id = isUuid(p1Id) && p1Id !== 'BYE';
+            const hasP2Id = isUuid(p2Id) && p2Id !== 'BYE';
+            const normalizedP1Name = normalizeNameKey(p1Name);
+            const normalizedP2Name = normalizeNameKey(p2Name);
+
+            if (isDoubles) {
+                const nameParts = [p1Name || 'Por definir', p2Name || 'Por definir'];
+                const displayName = `${nameParts[0]} / ${nameParts[1]}`;
+                const keyByIds =
+                    hasP1Id && hasP2Id
+                        ? [p1Id.toUpperCase(), p2Id.toUpperCase()].sort().join('::')
+                        : null;
+                const keyByNames =
+                    normalizedP1Name && normalizedP2Name
+                        ? [normalizedP1Name, normalizedP2Name].sort().join('::')
+                        : '';
+
+                return {
+                    key: keyByIds || keyByNames || '',
+                    name: displayName,
+                };
             }
 
             return {
-                name: displayName,
-                pj: 0,
-                pg: 0,
-                pp: 0,
-                diff: 0,
-                pts: 0,
-                isActive: index === 0 && !!profile?.name,
+                key: hasP1Id ? p1Id.toUpperCase() : normalizedP1Name,
+                name: p1Name || 'Por definir',
             };
+        };
+
+        const rowsMap: Record<string, any> = {};
+        const ensureRow = (key: string, name: string) => {
+            const normalizedKey = String(key || '').trim();
+            if (!normalizedKey) return;
+            if (!rowsMap[normalizedKey]) {
+                rowsMap[normalizedKey] = {
+                    name: name || 'Por definir',
+                    pj: 0,
+                    pg: 0,
+                    pp: 0,
+                    diff: 0,
+                    pts: 0,
+                    gamesWon: 0,
+                    gamesLost: 0,
+                    isActive: false,
+                };
+            } else if (name && (rowsMap[normalizedKey].name === 'Por definir' || rowsMap[normalizedKey].name.startsWith('Cupo '))) {
+                rowsMap[normalizedKey].name = name;
+            }
+        };
+
+        groupMatches.forEach((match) => {
+            const sideA = buildEntry(match, 'A');
+            const sideB = buildEntry(match, 'B');
+            if (sideA.key) ensureRow(sideA.key, sideA.name);
+            if (sideB.key) ensureRow(sideB.key, sideB.name);
         });
+
+        if (Object.keys(rowsMap).length === 0) {
+            fallbackSlots.forEach((slot, index) => {
+                ensureRow(`slot:${groupName}:${index}`, slot.name || `Cupo ${groupName}${index + 1}`);
+            });
+        }
+
+        groupMatches.forEach((match) => {
+            const sideA = buildEntry(match, 'A');
+            const sideB = buildEntry(match, 'B');
+            if (!sideA.key || !sideB.key) return;
+
+            ensureRow(sideA.key, sideA.name);
+            ensureRow(sideB.key, sideB.name);
+
+            const rowA = rowsMap[sideA.key];
+            const rowB = rowsMap[sideB.key];
+            if (!rowA || !rowB) return;
+
+            const scoreText = getScoreText(match.score);
+            let playerAGames = 0;
+            let playerBGames = 0;
+            let winnerSide: 'A' | 'B' | null = null;
+
+            if (scoreText && !/^W\.?O\.?$/i.test(scoreText)) {
+                scoreText
+                    .split(/\s*,\s*/)
+                    .filter(Boolean)
+                    .forEach((setScore: string) => {
+                        const [aRaw, bRaw] = String(setScore || '').split('-');
+                        const a = Number((aRaw || '').match(/\d+/)?.[0]);
+                        const b = Number((bRaw || '').match(/\d+/)?.[0]);
+                        if (!Number.isFinite(a) || !Number.isFinite(b)) return;
+                        playerAGames += a;
+                        playerBGames += b;
+                    });
+
+                if (playerAGames > playerBGames) winnerSide = 'A';
+                if (playerBGames > playerAGames) winnerSide = 'B';
+            } else {
+                const winnerId = String(match.winner_id || '').trim();
+                const winner2Id = String(match.winner_2_id || '').trim();
+                if (winnerId && winnerId === String(match.player_a_id || '').trim()) winnerSide = 'A';
+                if (winnerId && winnerId === String(match.player_b_id || '').trim()) winnerSide = 'B';
+                if (!winnerSide && winner2Id && winner2Id === String(match.player_a2_id || '').trim()) winnerSide = 'A';
+                if (!winnerSide && winner2Id && winner2Id === String(match.player_b2_id || '').trim()) winnerSide = 'B';
+            }
+
+            if (!winnerSide && playerAGames === 0 && playerBGames === 0) return;
+
+            rowA.pj += 1;
+            rowB.pj += 1;
+            rowA.gamesWon += playerAGames;
+            rowA.gamesLost += playerBGames;
+            rowB.gamesWon += playerBGames;
+            rowB.gamesLost += playerAGames;
+            rowA.diff = rowA.gamesWon - rowA.gamesLost;
+            rowB.diff = rowB.gamesWon - rowB.gamesLost;
+
+            if (winnerSide === 'A') {
+                rowA.pg += 1;
+                rowB.pp += 1;
+                rowA.pts += 1;
+            } else if (winnerSide === 'B') {
+                rowB.pg += 1;
+                rowA.pp += 1;
+                rowB.pts += 1;
+            }
+        });
+
+        return Object.values(rowsMap)
+            .sort((a: any, b: any) => {
+                if (b.pts !== a.pts) return b.pts - a.pts;
+                if (b.diff !== a.diff) return b.diff - a.diff;
+                if (b.gamesWon !== a.gamesWon) return b.gamesWon - a.gamesWon;
+                return String(a.name || '').localeCompare(String(b.name || ''));
+            })
+            .map((row: any, index: number) => ({
+                name: row.name,
+                pj: row.pj,
+                pg: row.pg,
+                pp: row.pp,
+                diff: row.diff,
+                pts: row.pts,
+                isActive: row.pj > 0 || index === 0,
+            }));
     };
 
     const getInitials = (name: string) => {
@@ -558,7 +718,7 @@ export default function TournamentDetailScreen() {
                                     style={[styles.tab, activeTab === 'consolacion' && styles.activeTab]}
                                     onPress={() => setActiveTab('consolacion')}
                                 >
-                                    <Text style={[styles.tabText, activeTab === 'consolacion' && styles.activeTabText]}>Consolacion</Text>
+                                    <Text style={[styles.tabText, activeTab === 'consolacion' && styles.activeTabText]}>Repechaje</Text>
                                 </TouchableOpacity>
                             )}
                         </>

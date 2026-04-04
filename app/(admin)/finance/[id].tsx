@@ -34,6 +34,13 @@ type RegistrationRequest = {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+const normalizeMoneyAmount = (value: unknown, fallback = 0) => {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  const parsedFallback = Number(fallback);
+  return Number.isFinite(parsedFallback) && parsedFallback > 0 ? parsedFallback : 0;
+};
+
 const requestStatusLabel = (status: RegistrationRequest['status']) => {
   if (status === 'approved') return 'APROBADA';
   if (status === 'rejected') return 'RECHAZADA';
@@ -97,6 +104,7 @@ export default function TournamentFinanceDetail() {
         return;
       }
       setTournament(tournamentData);
+      const tournamentEntryFee = normalizeMoneyAmount(tournamentData?.registration_fee, 0);
 
       const { data: registrationRows, error: registrationError } = await supabase
         .from('registrations')
@@ -149,6 +157,7 @@ export default function TournamentFinanceDetail() {
       setRegistrations(
         (registrationRows || []).map((registration: any) => ({
           ...registration,
+          fee_amount: normalizeMoneyAmount(registration?.fee_amount, tournamentEntryFee),
           player_name: playerNamesById[registration.player_id] || null,
         }))
       );
@@ -169,7 +178,7 @@ export default function TournamentFinanceDetail() {
 
   const totals = useMemo(() => {
     return registrations.reduce((acc, registration) => {
-      const amount = registration.fee_amount || 0;
+      const amount = normalizeMoneyAmount(registration.fee_amount, tournament?.registration_fee || 0);
       if (registration.is_paid) {
         acc.income += amount;
       } else {
@@ -177,7 +186,7 @@ export default function TournamentFinanceDetail() {
       }
       return acc;
     }, { income: 0, debt: 0 });
-  }, [registrations]);
+  }, [registrations, tournament?.registration_fee]);
 
   const handleUpdateRegistration = async (registrationId: string, updates: Partial<Registration>) => {
     setSavingRegistration(registrationId);

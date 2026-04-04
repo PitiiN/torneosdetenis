@@ -53,7 +53,8 @@ type LatestRequest = {
 };
 
 const OPEN_STATUSES = new Set(['open', 'in_progress']);
-const MASTER_POSTER_URL_CACHE = new Map<string, string | null>();
+const MASTER_POSTER_URL_CACHE = new Map<string, { url: string | null; expiresAt: number }>();
+const POSTER_URL_CACHE_TTL_MS = 50 * 60 * 1000;
 
 const formatStatus = (status?: string | null) => {
   const normalizedStatus = normalizeTournamentStatus(status);
@@ -183,13 +184,17 @@ export default function TournamentMasterDetailScreen() {
 
       if (masterRow.poster_url) {
         const posterKey = String(masterRow.poster_url);
-        const cachedPosterUrl = MASTER_POSTER_URL_CACHE.get(posterKey);
-        if (cachedPosterUrl) {
-          setPosterUrl(cachedPosterUrl);
+        const cachedPoster = MASTER_POSTER_URL_CACHE.get(posterKey);
+        const now = Date.now();
+        if (cachedPoster && cachedPoster.expiresAt > now) {
+          setPosterUrl(cachedPoster.url);
         } else {
           const resolvedPosterUrl = await resolveStorageAssetUrlWithRetry(masterRow.poster_url);
           if (resolvedPosterUrl) {
-            MASTER_POSTER_URL_CACHE.set(posterKey, resolvedPosterUrl);
+            MASTER_POSTER_URL_CACHE.set(posterKey, {
+              url: resolvedPosterUrl,
+              expiresAt: now + POSTER_URL_CACHE_TTL_MS,
+            });
             setPosterUrl(resolvedPosterUrl);
           } else {
             setPosterUrl(null);
@@ -274,6 +279,12 @@ export default function TournamentMasterDetailScreen() {
   }, [loadMasterData]);
 
   const openProofModal = (championship: Championship) => {
+    const championshipStatus = normalizeTournamentStatus(championship?.status);
+    if (!OPEN_STATUSES.has(championshipStatus)) {
+      Alert.alert('No disponible', 'Este campeonato ya no acepta solicitudes.');
+      return;
+    }
+
     setSelectedChampionship(championship);
     setSelectedProofUri(null);
     setSelectedProofMimeType(null);
@@ -361,15 +372,20 @@ export default function TournamentMasterDetailScreen() {
     return championships.map((championship) => {
       const latestRequest = latestRequestsByTournamentId[championship.id];
       const isRegistered = registeredTournamentIds.has(championship.id);
-      const isOpen = isMasterOpen;
+      const championshipStatus = normalizeTournamentStatus(championship.status);
+      const isChampionshipOpen = OPEN_STATUSES.has(championshipStatus);
+      const isOpen = isMasterOpen && isChampionshipOpen;
 
       let canRequest = true;
       let requestButtonText = 'Inscribirse';
       let helperText: string | null = null;
 
-      if (!isOpen) {
+      if (!isMasterOpen) {
         canRequest = false;
         requestButtonText = 'No disponible';
+      } else if (!isChampionshipOpen) {
+        canRequest = false;
+        requestButtonText = championshipStatus === 'finished' ? 'Finalizado' : 'No disponible';
       } else if (isDeadlineReached) {
         canRequest = false;
         requestButtonText = 'Inscripcion cerrada';
@@ -449,7 +465,7 @@ export default function TournamentMasterDetailScreen() {
           >
             <Image source={{ uri: posterUrl }} style={styles.posterImage} resizeMode="cover" />
             <View style={styles.posterHint}>
-              <Text style={styles.posterHintText}>Tocar para ampliar</Text>
+              <Text style={styles.posterHintText}>Toca para ampliar</Text>
             </View>
           </TouchableOpacity>
         )}

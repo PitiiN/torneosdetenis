@@ -82,7 +82,8 @@ export default function RootLayout() {
           .maybeSingle();
 
         if (!isMounted) return;
-        if (profile?.notifications_enabled) {
+        const notificationsEnabled = profile?.notifications_enabled !== false;
+        if (notificationsEnabled) {
           await notificationService.registerForPushNotifications(userId);
         }
       } catch {

@@ -129,7 +129,7 @@ const fetchDirectPlayerPushTargets = async (userIds: string[]) => {
   }
 
   return ((data || []) as Array<{ id: string; expo_push_token: string | null; notifications_enabled: boolean | null }>)
-    .filter((row) => row.notifications_enabled === true)
+    .filter((row) => row.notifications_enabled !== false)
     .map((row) => ({
       user_id: row.id,
       expo_push_token: row.expo_push_token,

@@ -2,7 +2,7 @@
   "expo": {
     "name": "SweetSpot",
     "slug": "torneosdetenis",
-    "version": "3.0.8",
+    "version": "3.0.9",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -15,6 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.pitin.torneosdetenis",
+      "buildNumber": "9",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "Necesitamos acceso a la galeria para elegir imagenes de perfil y organizacion.",
@@ -32,7 +33,7 @@
         "icon": "./assets/notification-icon.png",
         "color": "#0f172a"
       },
-      "versionCode": 8,
+      "versionCode": 9,
       "blockedPermissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"

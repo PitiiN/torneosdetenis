@@ -59,7 +59,8 @@ export const notificationService = {
         finalStatus = status;
       }
 
-      if (finalStatus !== 'granted') {
+      const hasPushPermission = String(finalStatus) === 'granted' || String(finalStatus) === 'provisional';
+      if (!hasPushPermission) {
         return null;
       }
 

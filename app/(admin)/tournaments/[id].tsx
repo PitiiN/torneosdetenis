@@ -694,6 +694,7 @@ export default function AdminTournamentDetailScreen() {
             time: initialTime,
             court: normalizedCourt
         });
+        setIsCourtPickerVisible(false);
         setIsScheduleModalVisible(true);
     };
 
@@ -754,6 +755,7 @@ export default function AdminTournamentDetailScreen() {
                     normalizedCourt
                 );
             }
+            setIsCourtPickerVisible(false);
             setIsScheduleModalVisible(false);
             Alert.alert('Éxito', 'Horario y cancha guardados.');
         } catch (error) {
@@ -1522,6 +1524,7 @@ export default function AdminTournamentDetailScreen() {
         setAssignmentTargets(targets);
         setActiveAssignmentIndex(boundedIndex);
         setSelectionFromTarget(targets[boundedIndex]);
+        setIsManualPlayerModalVisible(false);
         resetPlayerSelectionSearch();
         setIsPlayerModalVisible(true);
     };
@@ -1563,6 +1566,7 @@ export default function AdminTournamentDetailScreen() {
     const closePlayerSelectionModal = () => {
         resetAssignmentSelection();
         resetPlayerSelectionSearch();
+        setIsManualPlayerModalVisible(false);
         setIsPlayerModalVisible(false);
     };
 
@@ -3614,6 +3618,7 @@ export default function AdminTournamentDetailScreen() {
                         return true;
                     })
             }));
+            const activeGroupedStandings = groupedStandings.filter((group) => group.rows.length > 0);
             const sortedGlobalStandings = groupedStandings
                 .flatMap((group) => group.rows)
                 .sort(sortStandingRows);
@@ -3624,9 +3629,9 @@ export default function AdminTournamentDetailScreen() {
             }
 
             const parsedPerGroup = Math.max(1, Math.floor(qualifiersPerGroup || 1));
-            const totalQualifiersRequested = roundRobinGroupNames.length <= 1
+            const totalQualifiersRequested = activeGroupedStandings.length <= 1
                 ? parsedPerGroup
-                : roundRobinGroupNames.length * parsedPerGroup;
+                : activeGroupedStandings.length * parsedPerGroup;
             const requestedQualifiersCount = Math.max(
                 2,
                 Math.min(Math.floor(totalQualifiersRequested), sortedGlobalStandings.length)
@@ -3654,22 +3659,16 @@ export default function AdminTournamentDetailScreen() {
             }
 
             let bracketSlots: any[] = Array.from({ length: bracketSize }, () => null);
-            if (roundRobinGroupNames.length === 2) {
-                const groupAQualifiers = groupedStandings[0]?.rows.slice(0, parsedPerGroup) || [];
-                const groupBQualifiers = groupedStandings[1]?.rows.slice(0, parsedPerGroup) || [];
+            if (activeGroupedStandings.length === 2) {
+                const groupAQualifiers = activeGroupedStandings[0]?.rows.slice(0, parsedPerGroup) || [];
+                const groupBQualifiers = activeGroupedStandings[1]?.rows.slice(0, parsedPerGroup) || [];
                 const effectivePerGroup = Math.min(parsedPerGroup, groupAQualifiers.length, groupBQualifiers.length);
 
                 if (effectivePerGroup > 0) {
+                    // Cross-group pairing: A1 vs Bn, A2 vs B(n-1), ... (never A1 vs B1).
                     const mirroredEntries: any[] = [];
-                    const topBlockCount = Math.ceil(effectivePerGroup / 2);
-
-                    // Group A top half vs Group B mirrored bottom half.
-                    for (let index = 0; index < topBlockCount; index++) {
+                    for (let index = 0; index < effectivePerGroup; index++) {
                         mirroredEntries.push(groupAQualifiers[index], groupBQualifiers[effectivePerGroup - 1 - index]);
-                    }
-                    // Group B top half vs Group A mirrored bottom half.
-                    for (let index = 0; index < effectivePerGroup - topBlockCount; index++) {
-                        mirroredEntries.push(groupBQualifiers[index], groupAQualifiers[effectivePerGroup - 1 - index]);
                     }
 
                     mirroredEntries.forEach((entry, index) => {
@@ -3678,7 +3677,7 @@ export default function AdminTournamentDetailScreen() {
                         }
                     });
                 }
-            } else if (roundRobinGroupNames.length === 1 && parsedPerGroup === 4 && sortedGlobalStandings.length >= 4 && bracketSize === 4) {
+            } else if (activeGroupedStandings.length === 1 && parsedPerGroup === 4 && sortedGlobalStandings.length >= 4 && bracketSize === 4) {
                 bracketSlots = [
                     sortedGlobalStandings[0],
                     sortedGlobalStandings[3],
@@ -3753,9 +3752,12 @@ export default function AdminTournamentDetailScreen() {
 
     const handleGenerateRoundRobinFinals = () => {
         const context = getRoundRobinFinalStageContext();
-        const suggestedPerGroup = roundRobinGroupNames.length <= 1
+        const activeGroupsCount = roundRobinGroupNames.filter(
+            (groupName) => getStandingsForGroup(groupName).length > 0
+        ).length;
+        const suggestedPerGroup = activeGroupsCount <= 1
             ? Math.min(4, context.maxSlots, context.totalAvailableEntries)
-            : Math.max(1, Math.min(2, Math.floor((context.maxSlots || 2) / roundRobinGroupNames.length)));
+            : Math.max(1, Math.min(2, Math.floor((context.maxSlots || 2) / activeGroupsCount)));
         setFinalsCountInput(String(Math.max(1, suggestedPerGroup)));
         setIsFinalsCountModalVisible(true);
     };
@@ -4722,11 +4724,12 @@ export default function AdminTournamentDetailScreen() {
             <Modal
                 visible={isPlayerModalVisible}
                 animationType="slide"
-                presentationStyle="pageSheet"
+                presentationStyle="fullScreen"
             >
                 <KeyboardAvoidingView
                     style={styles.modalContainer}
-                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                    keyboardVerticalOffset={Platform.OS === 'ios' ? Math.max(0, insets.top + 28) : 0}
                 >
                     <View style={[styles.modalHeader, { paddingTop: Math.max(spacing.xl, insets.top + spacing.sm) }]}>
                         <Text style={styles.modalTitle}>
@@ -4737,6 +4740,56 @@ export default function AdminTournamentDetailScreen() {
                         </TouchableOpacity>
                     </View>
 
+                    {isManualPlayerModalVisible ? (
+                        <View style={{ paddingHorizontal: spacing.xl, paddingTop: spacing.md, gap: spacing.md }}>
+                            <Text style={styles.modalTitle}>
+                                {manualCreationMode === 'participants'
+                                    ? (IS_DOUBLES ? 'Dupla Manual' : 'Participante Manual')
+                                    : 'Jugador Manual'}
+                            </Text>
+                            {manualCreationMode === 'participants' && IS_DOUBLES && (
+                                <TextInput
+                                    style={[styles.scoreInput, { color: colors.text, textAlign: 'left' }]}
+                                    placeholder="Jugador 1"
+                                    placeholderTextColor={colors.textTertiary}
+                                    value={manualPlayerName}
+                                    onChangeText={setManualPlayerName}
+                                    autoFocus
+                                />
+                            )}
+                            <TextInput
+                                style={[styles.scoreInput, { color: colors.text, textAlign: 'left' }]}
+                                placeholder={manualCreationMode === 'participants' && IS_DOUBLES ? 'Jugador 2' : 'Nombre del jugador'}
+                                placeholderTextColor={colors.textTertiary}
+                                value={manualCreationMode === 'participants' && IS_DOUBLES ? manualPlayerName2 : manualPlayerName}
+                                onChangeText={manualCreationMode === 'participants' && IS_DOUBLES ? setManualPlayerName2 : setManualPlayerName}
+                                autoFocus={!(manualCreationMode === 'participants' && IS_DOUBLES)}
+                            />
+                            <View style={styles.modalButtons}>
+                                <TouchableOpacity
+                                    style={[styles.modalBtn, styles.modalBtnCancel]}
+                                    onPress={() => setIsManualPlayerModalVisible(false)}
+                                >
+                                    <Text style={styles.modalBtnCancelText}>Cancelar</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.modalBtn, styles.modalBtnSave]}
+                                    onPress={async () => {
+                                        if (manualCreationMode === 'participants' && assignmentTargets.length === 0) {
+                                            await addManualParticipantToPool(manualPlayerName, manualPlayerName2);
+                                            setIsManualPlayerModalVisible(false);
+                                            return;
+                                        }
+                                        await createManualProfileAndAssign(manualPlayerName);
+                                        setIsManualPlayerModalVisible(false);
+                                    }}
+                                >
+                                    <Text style={styles.modalBtnSaveText}>Guardar</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    ) : (
+                        <>
                     {assignmentTargets.length > 0 && (
                         <View style={styles.assignmentSectionsContainer}>
                             {assignmentTargets.map((target, index) => {
@@ -4854,7 +4907,11 @@ export default function AdminTournamentDetailScreen() {
                     <Text style={styles.modalSectionTitle}>
                         {assignmentTargets.length > 0 ? 'Participantes Registrados (toque para asignar al bloque activo)' : 'Participantes Registrados'}
                     </Text>
-                    <ScrollView style={{ maxHeight: 600 }}>
+                    <ScrollView
+                        style={{ maxHeight: 600 }}
+                        keyboardShouldPersistTaps="handled"
+                        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+                    >
                         {IS_DOUBLES && assignmentTargets.length > 0 && selectableDoublesTeamRows.map((team) => (
                             <TouchableOpacity
                                 key={team.id}
@@ -4955,6 +5012,7 @@ export default function AdminTournamentDetailScreen() {
                                 style={{ maxHeight: 200 }}
                                 contentContainerStyle={{ paddingBottom: playerSearchBottomPadding }}
                                 keyboardShouldPersistTaps="handled"
+                                keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
                             >
                                 {searchResults.map((user) => (
                                     <TouchableOpacity
@@ -4979,55 +5037,9 @@ export default function AdminTournamentDetailScreen() {
                             </ScrollView>
                         )}
                     </View>
+                        </>
+                    )}
                 </KeyboardAvoidingView>
-            </Modal>
-
-            <Modal visible={isManualPlayerModalVisible} transparent animationType="fade">
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>
-                            {manualCreationMode === 'participants'
-                                ? (IS_DOUBLES ? 'Dupla Manual' : 'Participante Manual')
-                                : 'Jugador Manual'}
-                        </Text>
-                        {manualCreationMode === 'participants' && IS_DOUBLES && (
-                            <TextInput
-                                style={[styles.scoreInput, { color: colors.text, textAlign: 'left', marginBottom: spacing.sm }]}
-                                placeholder="Jugador 1"
-                                placeholderTextColor={colors.textTertiary}
-                                value={manualPlayerName}
-                                onChangeText={setManualPlayerName}
-                                autoFocus
-                            />
-                        )}
-                        <TextInput
-                            style={[styles.scoreInput, { color: colors.text, textAlign: 'left' }]}
-                            placeholder={manualCreationMode === 'participants' && IS_DOUBLES ? 'Jugador 2' : 'Nombre del jugador'}
-                            placeholderTextColor={colors.textTertiary}
-                            value={manualCreationMode === 'participants' && IS_DOUBLES ? manualPlayerName2 : manualPlayerName}
-                            onChangeText={manualCreationMode === 'participants' && IS_DOUBLES ? setManualPlayerName2 : setManualPlayerName}
-                            autoFocus={!(manualCreationMode === 'participants' && IS_DOUBLES)}
-                        />
-                        <View style={styles.modalButtons}>
-                            <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsManualPlayerModalVisible(false)}>
-                                <Text style={styles.modalBtnCancelText}>Cancelar</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.modalBtn, styles.modalBtnSave]}
-                                onPress={async () => {
-                                    if (manualCreationMode === 'participants' && assignmentTargets.length === 0) {
-                                        await addManualParticipantToPool(manualPlayerName, manualPlayerName2);
-                                        return;
-                                    }
-                                    await createManualProfileAndAssign(manualPlayerName);
-                                    setIsManualPlayerModalVisible(false);
-                                }}
-                            >
-                                <Text style={styles.modalBtnSaveText}>Guardar</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
             </Modal>
 
             {/* Schedule Match Modal */}
@@ -5058,51 +5070,51 @@ export default function AdminTournamentDetailScreen() {
                                 <Text style={[styles.modalDividerText, { textAlign: 'left', marginBottom: 4 }]}>Cancha</Text>
                                 <TouchableOpacity
                                     style={[styles.scoreInput, { justifyContent: 'center' }]}
-                                    onPress={() => setIsCourtPickerVisible(true)}
+                                    onPress={() => setIsCourtPickerVisible((current) => !current)}
                                 >
                                     <Text style={{ color: scheduleData.court ? colors.text : colors.textTertiary, fontSize: 15, fontWeight: '600' }}>
                                         {scheduleData.court || 'Seleccionar cancha'}
                                     </Text>
                                 </TouchableOpacity>
+                                {isCourtPickerVisible && (
+                                    <ScrollView
+                                        style={{ maxHeight: 220, marginTop: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.md, backgroundColor: colors.surface }}
+                                        keyboardShouldPersistTaps="handled"
+                                    >
+                                        {COURT_OPTIONS.map((courtName) => (
+                                            <TouchableOpacity
+                                                key={courtName}
+                                                style={styles.playerSearchItem}
+                                                onPress={() => {
+                                                    setScheduleData((current) => ({ ...current, court: courtName }));
+                                                    setIsCourtPickerVisible(false);
+                                                }}
+                                            >
+                                                <Text style={styles.playerSearchName}>{courtName}</Text>
+                                                {scheduleData.court === courtName && (
+                                                    <Ionicons name="checkmark-circle" size={18} color={colors.primary[500]} />
+                                                )}
+                                            </TouchableOpacity>
+                                        ))}
+                                    </ScrollView>
+                                )}
                             </View>
                         </View>
 
                         <View style={styles.modalButtons}>
-                            <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsScheduleModalVisible(false)}>
+                            <TouchableOpacity
+                                style={[styles.modalBtn, styles.modalBtnCancel]}
+                                onPress={() => {
+                                    setIsCourtPickerVisible(false);
+                                    setIsScheduleModalVisible(false);
+                                }}
+                            >
                                 <Text style={styles.modalBtnCancelText}>Cancelar</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={saveMatchSchedule} disabled={savingSchedule}>
                                 {savingSchedule ? <TennisSpinner size={18} color="#fff" /> : <Text style={styles.modalBtnSaveText}>Guardar</Text>}
                             </TouchableOpacity>
                         </View>
-                    </View>
-                </View>
-            </Modal>
-
-            <Modal visible={isCourtPickerVisible} transparent animationType="fade" onRequestClose={() => setIsCourtPickerVisible(false)}>
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>Seleccionar Cancha</Text>
-                        <ScrollView style={{ maxHeight: 340 }}>
-                            {COURT_OPTIONS.map((courtName) => (
-                                <TouchableOpacity
-                                    key={courtName}
-                                    style={styles.playerSearchItem}
-                                    onPress={() => {
-                                        setScheduleData((current) => ({ ...current, court: courtName }));
-                                        setIsCourtPickerVisible(false);
-                                    }}
-                                >
-                                    <Text style={styles.playerSearchName}>{courtName}</Text>
-                                    {scheduleData.court === courtName && (
-                                        <Ionicons name="checkmark-circle" size={18} color={colors.primary[500]} />
-                                    )}
-                                </TouchableOpacity>
-                            ))}
-                        </ScrollView>
-                        <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsCourtPickerVisible(false)}>
-                            <Text style={styles.modalBtnCancelText}>Cerrar</Text>
-                        </TouchableOpacity>
                     </View>
                 </View>
             </Modal>
@@ -5159,7 +5171,9 @@ export default function AdminTournamentDetailScreen() {
                     <View style={styles.modalContent}>
                         <Text style={styles.modalTitle}>Generar llaves finales</Text>
                         <Text style={[styles.modalHelperText, { marginBottom: spacing.sm }]}>
-                            ¿Cuántas duplas clasifican por grupo a la siguiente ronda?
+                            {IS_DOUBLES
+                                ? '¿Cuántas duplas clasifican por grupo a la siguiente ronda?'
+                                : '¿Cuántos jugadores clasifican por grupo a la siguiente ronda?'}
                         </Text>
                         <TextInput
                             style={[styles.scoreInput, { color: colors.text, textAlign: 'left' }]}

@@ -52,6 +52,7 @@ export default function InicioScreen() {
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [showComunaModal, setShowComunaModal] = useState(false);
     const lastSeenOrganizationsUpdatedAtRef = useRef<string | null>(null);
+    const logoRetryInFlightRef = useRef<Set<string>>(new Set());
 
     useEffect(() => {
         loadOrganizationsSource();
@@ -113,6 +114,50 @@ export default function InicioScreen() {
         setOrganizations(filtered);
     };
 
+    const retryOrganizationLogo = useCallback(async (organization: Organization) => {
+        const organizationId = String(organization?.id || '').trim();
+        const rawLogoUrl = String(organization?.logo_url || '').trim();
+        if (!organizationId || !rawLogoUrl) return;
+        if (logoRetryInFlightRef.current.has(organizationId)) return;
+
+        logoRetryInFlightRef.current.add(organizationId);
+        try {
+            const signedLogo = await resolveStorageAssetUrlWithRetry(rawLogoUrl, {
+                expiresInSeconds: 900,
+                attempts: 4,
+                baseDelayMs: 350,
+            });
+            const fallbackLogo = /^https?:\/\//i.test(rawLogoUrl) ? rawLogoUrl : null;
+            const nextLogoUrl = signedLogo || fallbackLogo;
+            if (!nextLogoUrl) return;
+
+            setSourceOrganizations((previousOrganizations) => {
+                const nextOrganizations = previousOrganizations.map((currentOrganization) => {
+                    if (currentOrganization.id !== organizationId) return currentOrganization;
+                    if (currentOrganization.logo_signed_url === nextLogoUrl) return currentOrganization;
+                    return {
+                        ...currentOrganization,
+                        logo_signed_url: nextLogoUrl,
+                    };
+                });
+
+                setCachedValue<HomeCachePayload>(
+                    HOME_RUNTIME_CACHE_KEY,
+                    {
+                        savedAt: Date.now(),
+                        organizations: nextOrganizations,
+                        openTournaments,
+                    },
+                    HOME_CACHE_TTL_MS
+                );
+
+                return nextOrganizations;
+            });
+        } finally {
+            logoRetryInFlightRef.current.delete(organizationId);
+        }
+    }, [openTournaments]);
+
     async function loadOrganizationsSource(forceRefresh = false) {
         setLoading(true);
         let hydratedFromCache = false;
@@ -147,7 +192,7 @@ export default function InicioScreen() {
                         baseDelayMs: 250,
                     });
                     const rawLogoUrl = String(organization.logo_url || '').trim();
-                    const storageUrlFallback = /^https?:\/\//i.test(rawLogoUrl) && rawLogoUrl.includes('/storage/v1/object/')
+                    const storageUrlFallback = /^https?:\/\//i.test(rawLogoUrl)
                         ? rawLogoUrl
                         : null;
 
@@ -196,7 +241,9 @@ export default function InicioScreen() {
                         attempts: 3,
                         baseDelayMs: 350,
                     });
-                    return { id: org.id, signedLogo };
+                    const rawLogoUrl = String(org.logo_url || '').trim();
+                    const fallbackLogo = /^https?:\/\//i.test(rawLogoUrl) ? rawLogoUrl : null;
+                    return { id: org.id, signedLogo: signedLogo || fallbackLogo };
                 })
             );
 
@@ -324,6 +371,9 @@ export default function InicioScreen() {
                                             style={styles.orgLogo}
                                             fadeDuration={0}
                                             resizeMode="contain"
+                                            onError={() => {
+                                                retryOrganizationLogo(org);
+                                            }}
                                         />
                                     ) : (
                                         <Ionicons name="business" size={40} color={colors.primary[500]} />

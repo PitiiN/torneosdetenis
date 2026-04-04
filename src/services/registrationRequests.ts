@@ -1,9 +1,11 @@
 import { supabase } from './supabase';
 import { notifyTournamentAdminsOnRegistrationRequest } from './pushNotifications';
+import { normalizeTournamentStatus } from './tournamentStatus';
 
 const STORAGE_BUCKET = 'organizations';
 const ALLOWED_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const OPEN_TOURNAMENT_STATUSES = new Set(['open', 'ongoing', 'in_progress']);
 
 export type TournamentRegistrationRequestStatus = 'pending' | 'approved' | 'rejected';
 
@@ -108,6 +110,21 @@ export async function submitTournamentRegistrationRequest(options: {
   ensureUuid(tournamentId, 'tournamentId');
   ensureUuid(organizationId, 'organizationId');
   ensureUuid(playerId, 'playerId');
+
+  const { data: tournamentRow, error: tournamentError } = await supabase
+    .from('tournaments')
+    .select('id, status')
+    .eq('id', tournamentId)
+    .maybeSingle();
+
+  if (tournamentError || !tournamentRow) {
+    throw new Error('registration request window is closed');
+  }
+
+  const tournamentStatus = normalizeTournamentStatus(tournamentRow.status);
+  if (!OPEN_TOURNAMENT_STATUSES.has(tournamentStatus)) {
+    throw new Error('registration request window is closed');
+  }
 
   const extension = resolveImageExtension(assetUri, mimeType);
   if (!extension) {

@@ -53,7 +53,7 @@ async function bootstrapMissingProfile(session: Session) {
         role: 'player',
         org_id: null,
         is_super_admin: false,
-        notifications_enabled: false,
+        notifications_enabled: true,
     };
 
     const withName = {

@@ -98,7 +98,7 @@ export function extractStoragePath(pathOrUrl?: string | null): string | null {
     return null;
 }
 
-export async function resolveStorageAssetUrl(pathOrUrl?: string | null, expiresInSeconds = 300) {
+export async function resolveStorageAssetUrl(pathOrUrl?: string | null, expiresInSeconds = 3600) {
     if (!pathOrUrl) return null;
 
     const storagePath = extractStoragePath(pathOrUrl);
@@ -106,7 +106,7 @@ export async function resolveStorageAssetUrl(pathOrUrl?: string | null, expiresI
 
     if (!isAllowedStorageAssetPath(storagePath)) return null;
 
-    const clampedExpiry = Math.max(60, Math.min(expiresInSeconds, 900));
+    const clampedExpiry = Math.max(60, Math.min(expiresInSeconds, 86400));
 
     const { data, error } = await supabase.storage
         .from(STORAGE_BUCKET)
@@ -129,7 +129,7 @@ export async function resolveStorageAssetUrlWithRetry(
     pathOrUrl?: string | null,
     options?: ResolveWithRetryOptions
 ) {
-    const expiresInSeconds = options?.expiresInSeconds ?? 300;
+    const expiresInSeconds = options?.expiresInSeconds ?? 3600;
     const attempts = Math.max(1, Math.min(options?.attempts ?? 3, 5));
     const baseDelayMs = Math.max(100, Math.min(options?.baseDelayMs ?? 300, 1500));
 

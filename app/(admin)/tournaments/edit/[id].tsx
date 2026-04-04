@@ -144,6 +144,20 @@ export default function EditTournamentScreen() {
         loadTournament();
     }, [id]);
 
+    const navigateBackToExpectedScreen = () => {
+        if (tournamentData?.is_tournament_master) {
+            router.replace('/(tabs)/tournaments');
+            return;
+        }
+
+        if (tournamentData?.parent_tournament_id) {
+            router.replace(`/(admin)/tournaments/master/${tournamentData.parent_tournament_id}` as any);
+            return;
+        }
+
+        router.replace('/(tabs)/tournaments');
+    };
+
     const loadTournament = async () => {
         try {
             const access = await getCurrentUserAccessContext();
@@ -183,7 +197,7 @@ export default function EditTournamentScreen() {
             setRankingPointRows(buildRankingRowsFromDescription(data.description));
         } catch (error) {
             Alert.alert('Error', 'No se pudo cargar el torneo');
-            router.back();
+            router.replace('/(tabs)/tournaments');
         } finally {
             setIsLoading(false);
         }
@@ -333,7 +347,7 @@ export default function EditTournamentScreen() {
             if (isMasterTournament) {
                 router.replace(`/(admin)/tournaments/master/${id}` as any);
             } else {
-                router.back();
+                navigateBackToExpectedScreen();
             }
         } catch (error) {
             Alert.alert('Error', 'No se pudo actualizar el torneo');
@@ -355,7 +369,7 @@ export default function EditTournamentScreen() {
     return (
         <View style={[styles.container, { paddingTop: insets.top }]}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                <TouchableOpacity onPress={navigateBackToExpectedScreen} style={styles.backButton}>
                     <Ionicons name="arrow-back" size={24} color={colors.text} />
                 </TouchableOpacity>
                 <Text style={styles.title}>{isMasterTournament ? 'Editar Torneo Completo' : 'Editar Campeonato'}</Text>

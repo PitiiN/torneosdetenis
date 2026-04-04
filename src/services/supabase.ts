@@ -33,7 +33,7 @@ export const supabase = createClient(
     },
 });
 
-const SESSION_ARTIFACT_KEYS = ['selected_org_id', 'selected_org_name'];
+const SESSION_ARTIFACT_KEYS = ['selected_org_id', 'selected_org_name', 'app_theme_preference'];
 
 export async function clearSessionArtifacts() {
     await Promise.allSettled(
