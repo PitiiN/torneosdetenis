@@ -159,7 +159,10 @@ export default function InicioScreen() {
     }, [openTournaments]);
 
     async function loadOrganizationsSource(forceRefresh = false) {
-        setLoading(true);
+        const shouldShowSpinner = !sourceOrganizations.length && !openTournaments.length;
+        if (shouldShowSpinner) {
+            setLoading(true);
+        }
         let hydratedFromCache = false;
         try {
             let cachedPayload = getCachedValue<HomeCachePayload>(HOME_RUNTIME_CACHE_KEY);
@@ -168,6 +171,7 @@ export default function InicioScreen() {
                 setSourceOrganizations(cachedPayload.organizations);
                 setOpenTournaments(cachedPayload.openTournaments);
                 hydratedFromCache = true;
+                setLoading(false);
                 const isCacheFresh = Date.now() - cachedPayload.savedAt < HOME_CACHE_TTL_MS;
                 if (isCacheFresh && !forceRefresh) {
                     return;
@@ -184,35 +188,21 @@ export default function InicioScreen() {
                 .select('organization_id, comuna, start_date, status')
                 .eq('status', 'open');
 
-            const enrichedOrganizations = await Promise.all(
-                ((orgData || []) as Organization[]).map(async (organization) => {
-                    const signedLogo = await resolveStorageAssetUrlWithRetry(organization.logo_url, {
-                        expiresInSeconds: 900,
-                        attempts: 3,
-                        baseDelayMs: 250,
-                    });
-                    const rawLogoUrl = String(organization.logo_url || '').trim();
-                    const storageUrlFallback = /^https?:\/\//i.test(rawLogoUrl)
-                        ? rawLogoUrl
-                        : null;
+            const baseOrganizations = ((orgData || []) as Organization[]).map((organization) => {
+                const rawLogoUrl = String(organization.logo_url || '').trim();
+                const externalLogoUrl = /^https?:\/\//i.test(rawLogoUrl)
+                    ? rawLogoUrl
+                    : null;
 
-                    return {
-                        ...organization,
-                        logo_signed_url: signedLogo || storageUrlFallback,
-                    };
-                })
-            );
-
-            await Promise.allSettled(
-                enrichedOrganizations
-                    .map((organization) => organization.logo_signed_url)
-                    .filter((url): url is string => Boolean(url))
-                    .map((url) => Image.prefetch(url))
-            );
+                return {
+                    ...organization,
+                    logo_signed_url: externalLogoUrl,
+                };
+            });
 
             const nextPayload: HomeCachePayload = {
                 savedAt: Date.now(),
-                organizations: enrichedOrganizations,
+                organizations: baseOrganizations,
                 openTournaments: tournamentsError ? [] : ((tournamentData || []) as OpenTournamentRef[]),
             };
 

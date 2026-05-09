@@ -3,6 +3,7 @@ const appJson = require('./app.json');
 module.exports = () => {
   const expo = appJson.expo || {};
   const isEasBuild = process.env.EAS_BUILD === 'true' || process.env.EAS_BUILD === '1';
+  const baseScheme = expo.scheme || expo.slug || 'app';
   const androidGoogleServicesFile =
     process.env.GOOGLE_SERVICES_JSON || expo.android?.googleServicesFile;
   const iosGoogleServicesFile =
@@ -10,6 +11,8 @@ module.exports = () => {
 
   return {
     ...expo,
+    name: expo.name,
+    scheme: baseScheme,
     android: {
       ...(expo.android || {}),
       ...(androidGoogleServicesFile ? { googleServicesFile: androidGoogleServicesFile } : {}),

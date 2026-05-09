@@ -303,7 +303,10 @@ export default function TournamentMasterDetailScreen() {
   const handlePickProof = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permiso requerido', 'Debes permitir acceso a tu galeria para adjuntar el comprobante.');
+      Alert.alert(
+        'Permiso requerido',
+        'SweetSpot necesita acceso a tu galer\u00eda para que puedas adjuntar el comprobante de pago del torneo.',
+      );
       return;
     }
 

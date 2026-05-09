@@ -85,9 +85,17 @@ export default function ProfileScreen() {
     const [newPassword, setNewPassword] = useState('');
     const [confirmNewPassword, setConfirmNewPassword] = useState('');
     const [updatingPassword, setUpdatingPassword] = useState(false);
+    const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+    const [deleteAccountPassword, setDeleteAccountPassword] = useState('');
+    const [deletingAccount, setDeletingAccount] = useState(false);
 
     useEffect(() => {
         const backAction = () => {
+            if (showDeleteConfirmModal && !deletingAccount) {
+                setShowDeleteConfirmModal(false);
+                setDeleteAccountPassword('');
+                return true;
+            }
             if (showContextModal) {
                 setShowContextModal(false);
                 return true;
@@ -109,7 +117,7 @@ export default function ProfileScreen() {
         );
 
         return () => backHandler.remove();
-    }, [showContextModal, showOrgSearchModal, showPrivacyModal]);
+    }, [showContextModal, showOrgSearchModal, showPrivacyModal, showDeleteConfirmModal, deletingAccount]);
 
     useEffect(() => {
         loadProfileData();
@@ -469,7 +477,7 @@ export default function ProfileScreen() {
             if (error) throw error;
             setUser({ ...user, location: newLocation });
         } catch (error) {
-            Alert.alert('Error', 'No se pudo actualizar la ubicación.');
+            Alert.alert('Error', 'No se pudo actualizar la ubicaci\u00f3n.');
         }
     };
 
@@ -483,7 +491,7 @@ export default function ProfileScreen() {
             if (error) throw error;
             setUser({ ...user, phone: newPhone.trim() });
         } catch (error) {
-            Alert.alert('Error', 'No se pudo actualizar el teléfono.');
+            Alert.alert('Error', 'No se pudo actualizar el tel\u00e9fono.');
         }
     };
 
@@ -498,6 +506,23 @@ export default function ProfileScreen() {
     const handleToggleNotifications = async () => {
         if (!user) return;
         const newValue = !user.notifications_enabled;
+        if (newValue) {
+            Alert.alert(
+                'Activar notificaciones',
+                'SweetSpot te enviar\u00e1 notificaciones sobre cambios relevantes en tus torneos, partidos y eventos.',
+                [
+                    { text: 'Cancelar', style: 'cancel' },
+                    { text: 'Activar', onPress: () => updateNotificationsPreference(true) },
+                ],
+            );
+            return;
+        }
+
+        updateNotificationsPreference(false);
+    };
+
+    const updateNotificationsPreference = async (newValue: boolean) => {
+        if (!user) return;
         setUpdating(true);
         try {
             const { error } = await supabase
@@ -513,7 +538,7 @@ export default function ProfileScreen() {
             setUser({ ...user, notifications_enabled: newValue });
         } catch (error) {
             console.error(error);
-            Alert.alert('Error', 'No se pudo actualizar la configuración de notificaciones.');
+            Alert.alert('Error', 'No se pudo actualizar la configuraci\u00f3n de notificaciones.');
         } finally {
             setUpdating(false);
         }
@@ -538,28 +563,28 @@ export default function ProfileScreen() {
         const trimmedConfirmPassword = confirmNewPassword.trim();
 
         if (!trimmedCurrentPassword) {
-            Alert.alert('Error', 'Debes ingresar tu contraseña actual.');
+            Alert.alert('Error', 'Debes ingresar tu contrase\u00f1a actual.');
             return;
         }
 
         if (!trimmedNewPassword) {
-            Alert.alert('Error', 'Debes ingresar una nueva contraseña.');
+            Alert.alert('Error', 'Debes ingresar una nueva contrase\u00f1a.');
             return;
         }
 
         if (trimmedNewPassword.length < 8) {
-            Alert.alert('Error', 'La nueva contraseña debe tener al menos 8 caracteres.');
+            Alert.alert('Error', 'La nueva contrase\u00f1a debe tener al menos 8 caracteres.');
             return;
         }
 
         if (trimmedConfirmPassword !== trimmedNewPassword) {
-            Alert.alert('Error', 'La confirmación no coincide con la nueva contraseña.');
+            Alert.alert('Error', 'La confirmaci\u00f3n no coincide con la nueva contrase\u00f1a.');
             return;
         }
 
         const email = String(currentUserEmail || '').trim().toLowerCase();
         if (!email) {
-            Alert.alert('Error', 'No pudimos validar tu correo para cambiar la contraseña.');
+            Alert.alert('Error', 'No pudimos validar tu correo para cambiar la contrase\u00f1a.');
             return;
         }
 
@@ -570,7 +595,7 @@ export default function ProfileScreen() {
                 password: trimmedCurrentPassword,
             });
             if (reauthError) {
-                Alert.alert('Error', 'La contraseña actual no es correcta.');
+                Alert.alert('Error', 'La contrase\u00f1a actual no es correcta.');
                 return;
             }
 
@@ -585,11 +610,86 @@ export default function ProfileScreen() {
             setNewPassword('');
             setConfirmNewPassword('');
             setShowPrivacyModal(false);
-            Alert.alert('Éxito', 'Tu contraseña se actualizó correctamente.');
+            Alert.alert('\u00c9xito', 'Tu contrase\u00f1a se actualiz\u00f3 correctamente.');
         } catch (error: any) {
-            Alert.alert('Error', error?.message || 'No se pudo actualizar la contraseña.');
+            Alert.alert('Error', error?.message || 'No se pudo actualizar la contrase\u00f1a.');
         } finally {
             setUpdatingPassword(false);
+        }
+    };
+
+    const handleDeleteAccount = () => {
+        Alert.alert(
+            'Eliminar Cuenta',
+            '\u00bfEst\u00e1s seguro de que deseas eliminar tu cuenta?\n\nEsta acci\u00f3n es IRREVERSIBLE. Se eliminar\u00e1n todos tus datos, registros en torneos, estad\u00edsticas e historial de partidos de forma permanente.',
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Continuar',
+                    style: 'destructive',
+                    onPress: () => {
+                        Alert.alert(
+                            '\u00daltima Advertencia',
+                            'NO PODR\u00c1S RECUPERAR TU CUENTA.\n\nTodos tus datos ser\u00e1n eliminados permanentemente. Si fuiste campe\u00f3n en alg\u00fan torneo, el t\u00edtulo pasar\u00e1 al otro finalista.\n\n\u00bfDeseas continuar?',
+                            [
+                                { text: 'Cancelar', style: 'cancel' },
+                                {
+                                    text: 'S\u00ed, eliminar mi cuenta',
+                                    style: 'destructive',
+                                    onPress: () => {
+                                        setShowDeleteConfirmModal(true);
+                                    },
+                                },
+                            ]
+                        );
+                    },
+                },
+            ]
+        );
+    };
+
+    const executeAccountDeletion = async () => {
+        const trimmedPassword = deleteAccountPassword.trim();
+        if (!trimmedPassword) {
+            Alert.alert('Error', 'Debes ingresar tu contrase\u00f1a para confirmar la eliminaci\u00f3n.');
+            return;
+        }
+
+        const email = String(currentUserEmail || '').trim().toLowerCase();
+        if (!email) {
+            Alert.alert('Error', 'No pudimos validar tu correo.');
+            return;
+        }
+
+        setDeletingAccount(true);
+        try {
+            // Verify password
+            const { error: reauthError } = await supabase.auth.signInWithPassword({
+                email,
+                password: trimmedPassword,
+            });
+            if (reauthError) {
+                Alert.alert('Contrase\u00f1a Incorrecta', 'La contrase\u00f1a ingresada no es correcta. Int\u00e9ntalo nuevamente.');
+                return;
+            }
+
+            // Call the RPC to delete the account
+            const { error: deleteError } = await supabase.rpc('delete_own_account');
+            if (deleteError) {
+                throw deleteError;
+            }
+
+            // Sign out locally and redirect
+            setShowDeleteConfirmModal(false);
+            setShowPrivacyModal(false);
+            setDeleteAccountPassword('');
+            await supabase.auth.signOut();
+            router.replace('/(auth)/login');
+        } catch (error: any) {
+            console.error('Error deleting account:', error);
+            Alert.alert('Error', error?.message || 'No se pudo eliminar la cuenta. Int\u00e9ntalo m\u00e1s tarde.');
+        } finally {
+            setDeletingAccount(false);
         }
     };
 
@@ -607,7 +707,7 @@ export default function ProfileScreen() {
                 })
                 .eq('id', user.id);
             if (error) throw error;
-            Alert.alert('Éxito', 'Cambios guardados correctamente.');
+            Alert.alert('\u00c9xito', 'Cambios guardados correctamente.');
             setIsEditingBackhand(false);
             setIsEditingDominantHand(false);
         } catch (error) {
@@ -625,7 +725,10 @@ export default function ProfileScreen() {
     const launchImagePicker = async () => {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
-            Alert.alert('Permiso denegado', 'Necesitamos acceso a la galeria.');
+            Alert.alert(
+                'Permiso denegado',
+                'SweetSpot necesita acceso a tu galer\u00eda para que puedas seleccionar una foto de perfil.',
+            );
             return;
         }
 
@@ -671,7 +774,7 @@ export default function ProfileScreen() {
             const signedAvatar = await resolveStorageAssetUrlWithRetry(filePath, { attempts: 4, baseDelayMs: 350 });
             setProfileAvatarUrl(signedAvatar || '');
             setUser({ ...user, avatar_url: filePath });
-            Alert.alert('Éxito', 'Foto de perfil actualizada.');
+            Alert.alert('\u00c9xito', 'Foto de perfil actualizada.');
         } catch (error) {
             console.error('Error uploading avatar:', error);
             Alert.alert('Error', 'No se pudo subir la imagen.');
@@ -763,7 +866,7 @@ export default function ProfileScreen() {
                                             value={user.phone || ''}
                                             onChangeText={(val) => setUser({ ...user, phone: val })}
                                             onBlur={() => handleUpdatePhone(user.phone)}
-                                            placeholder="Teléfono..."
+                                            placeholder={'Tel\u00e9fono...'}
                                             placeholderTextColor={colors.textTertiary}
                                             keyboardType="phone-pad"
                                         />
@@ -787,7 +890,7 @@ export default function ProfileScreen() {
 
                             <View style={styles.extraFields}>
                                 <TouchableOpacity style={styles.extraField} onPress={() => setIsEditingBackhand(true)}>
-                                    <Text style={styles.extraFieldLabel}>Revés:</Text>
+                                    <Text style={styles.extraFieldLabel}>{'Rev\u00e9s:'}</Text>
                                     {isEditingBackhand ? (
                                         <TextInput
                                             style={styles.extraFieldInput}
@@ -842,7 +945,7 @@ export default function ProfileScreen() {
                             <View style={styles.contextInfo}>
                                 <Ionicons name="filter-outline" size={16} color={colors.primary[500]} />
                                 <Text style={styles.contextText}>
-                                    {selectedContext ? `${selectedContext.org_name} · ${selectedContext.level}` : 'Filtrar por Organización/Nivel'}
+                                    {selectedContext ? `${selectedContext.org_name} \u00b7 ${selectedContext.level}` : 'Filtrar por Organizaci\u00f3n/Nivel'}
                                 </Text>
                             </View>
                             <Ionicons name="chevron-forward" size={16} color={colors.primary[500]} />
@@ -869,7 +972,7 @@ export default function ProfileScreen() {
                 {/* Stats Bento */}
                 <View style={styles.statsGrid}>
                     <View style={styles.mainRankCard}>
-                        <Text style={styles.statLabel} numberOfLines={1}>POSICIÓN RANKING</Text>
+                        <Text style={styles.statLabel} numberOfLines={1}>{'POSICI\u00d3N RANKING'}</Text>
                         <View>
                             <Text style={styles.rankValue}>{stats.rank}</Text>
                             <View style={styles.rankStatus}>
@@ -949,11 +1052,11 @@ export default function ProfileScreen() {
                             </View>
                             <View style={styles.historyInfo}>
                                 <Text style={styles.historyName}>{t.name}</Text>
-                                <Text style={styles.historyMeta}>{t.level} · {t.format} · {t.modality === 'dobles' ? 'Dobles' : 'Singles'}</Text>
+                                <Text style={styles.historyMeta}>{`${t.level} \u00b7 ${t.format} \u00b7 ${t.modality === 'dobles' ? 'Dobles' : 'Singles'}`}</Text>
                             </View>
                             <View style={styles.historyResult}>
-                                <View style={t.place.includes('1Â°') ? styles.winnerBadge : styles.resultBadge}>
-                                    <Text style={t.place.includes('1Â°') ? styles.winnerBadgeText : styles.resultBadgeText}>
+                                <View style={t.place.includes('1\u00b0') ? styles.winnerBadge : styles.resultBadge}>
+                                    <Text style={t.place.includes('1\u00b0') ? styles.winnerBadgeText : styles.resultBadgeText}>
                                         {t.place}
                                     </Text>
                                 </View>
@@ -962,13 +1065,13 @@ export default function ProfileScreen() {
                         </TouchableOpacity>
                     )) : (
                         <View style={styles.emptyCard}>
-                            <Text style={styles.emptyText}>No has participado en torneos aún.</Text>
+                            <Text style={styles.emptyText}>{'No has participado en torneos a\u00fan.'}</Text>
                         </View>
                     )}
-                </View>
+                </View>
                 {/* Account Settings */}
                 <View style={styles.settingsSection}>
-                    <Text style={styles.settingsTitle}>Configuración de Cuenta</Text>
+                    <Text style={styles.settingsTitle}>{'Configuraci\u00f3n de Cuenta'}</Text>
 
                     <View style={styles.settingsGrid}>
                         <TouchableOpacity style={styles.settingItem} onPress={handleToggleNotifications}>
@@ -993,8 +1096,8 @@ export default function ProfileScreen() {
                                 <Ionicons name="lock-closed-outline" size={20} color={colors.textSecondary} />
                             </View>
                             <View style={styles.settingText}>
-                                <Text style={styles.settingLabel}>Privacidad</Text>
-                                <Text style={styles.settingDesc}>Contraseña y visibilidad</Text>
+                                <Text style={styles.settingLabel}>Privacidad y Seguridad</Text>
+                                <Text style={styles.settingDesc}>{'Contrase\u00f1a, visibilidad y cuenta'}</Text>
                             </View>
                             <Ionicons name="chevron-forward" size={20} color={colors.border} />
                         </TouchableOpacity>
@@ -1005,7 +1108,7 @@ export default function ProfileScreen() {
                             </View>
                             <View style={styles.settingText}>
                                 <Text style={styles.settingLabel}>Modo Oscuro</Text>
-                                <Text style={styles.settingDesc}>Cambiar el tema de la aplicación</Text>
+                                <Text style={styles.settingDesc}>{'Cambiar el tema de la aplicaci\u00f3n'}</Text>
                             </View>
                             <View style={[styles.themeToggle, { backgroundColor: isDark ? colors.primary[500] : colors.surfaceSecondary }]}>
                                 <View style={[styles.themeToggleCircle, { alignSelf: isDark ? 'flex-end' : 'flex-start' }]} />
@@ -1017,7 +1120,7 @@ export default function ProfileScreen() {
                                 <Ionicons name="log-out-outline" size={20} color={colors.error} />
                             </View>
                             <View style={styles.settingText}>
-                                <Text style={[styles.settingLabel, { color: colors.error }]}>Cerrar Sesión</Text>
+                                <Text style={[styles.settingLabel, { color: colors.error }]}>{'Cerrar Sesi\u00f3n'}</Text>
                                 <Text style={styles.settingDesc}>Salir de tu cuenta</Text>
                             </View>
                         </TouchableOpacity>
@@ -1030,7 +1133,7 @@ export default function ProfileScreen() {
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Ver Estadísticas en:</Text>
+                            <Text style={styles.modalTitle}>{'Ver Estad\u00edsticas en:'}</Text>
                             <TouchableOpacity onPress={() => setShowContextModal(false)}>
                                 <Ionicons name="close" size={24} color={colors.text} />
                             </TouchableOpacity>
@@ -1046,7 +1149,7 @@ export default function ProfileScreen() {
                                     }}
                                 >
                                     <Text style={[styles.ctxItemText, selectedContext?.org_id === ctx.org_id && selectedContext.level === ctx.level && styles.ctxItemTextActive]}>
-                                        {ctx.org_name} · {ctx.level}
+                                        {ctx.org_name} {'\u00b7'} {ctx.level}
                                     </Text>
                                 </TouchableOpacity>
                             ))}
@@ -1067,7 +1170,7 @@ export default function ProfileScreen() {
                         </View>
                         <TextInput
                             style={styles.modalSearchInput}
-                            placeholder="Buscar organización..."
+                            placeholder={'Buscar organizaci\u00f3n...'}
                             placeholderTextColor={colors.textTertiary}
                             value={orgSearch}
                             onChangeText={setOrgSearch}
@@ -1079,7 +1182,7 @@ export default function ProfileScreen() {
                                     <View key={org.id} style={styles.orgGroup}>
                                         <Text style={styles.orgGroupName}>{org.name}</Text>
                                         <View style={styles.levelChips}>
-                                            {['Primera', 'Segunda', 'Tercera', 'Cuarta', 'Quinta', 'Honor', 'Escalafón'].map(lvl => (
+                                            {['Primera', 'Segunda', 'Tercera', 'Cuarta', 'Quinta', 'Honor', 'Escalaf\u00f3n'].map(lvl => (
                                                 <TouchableOpacity
                                                     key={lvl}
                                                     style={[styles.levelChip, selectedContext?.org_id === org.id && selectedContext.level === lvl && styles.levelChipActive]}
@@ -1119,7 +1222,7 @@ export default function ProfileScreen() {
                         </View>
 
                         <ScrollView
-                            style={{ maxHeight: '100%' }}
+                            style={styles.privacyScrollView}
                             contentContainerStyle={styles.privacyModalBody}
                             keyboardShouldPersistTaps="handled"
                             showsVerticalScrollIndicator={false}
@@ -1127,17 +1230,17 @@ export default function ProfileScreen() {
                             <TouchableOpacity style={styles.privacyLinkButton} onPress={handleOpenPrivacyPolicy}>
                                 <Ionicons name="document-text-outline" size={18} color={colors.primary[500]} />
                                 <View style={{ flex: 1 }}>
-                                    <Text style={styles.privacyLinkTitle}>Política de Privacidad</Text>
+                                    <Text style={styles.privacyLinkTitle}>{'Pol\u00edtica de Privacidad'}</Text>
                                     <Text style={styles.privacyLinkDesc}>Abrir documento publicado en GitHub Pages</Text>
                                 </View>
                                 <Ionicons name="open-outline" size={18} color={colors.textSecondary} />
                             </TouchableOpacity>
 
                             <View style={styles.privacyFormCard}>
-                                <Text style={styles.privacySectionTitle}>Cambiar contraseña</Text>
+                                <Text style={styles.privacySectionTitle}>{'Cambiar contrase\u00f1a'}</Text>
                                 <TextInput
                                     style={styles.privacyInput}
-                                    placeholder="Contraseña actual"
+                                    placeholder={'Contrase\u00f1a actual'}
                                     placeholderTextColor={colors.textTertiary}
                                     secureTextEntry
                                     value={currentPassword}
@@ -1146,7 +1249,7 @@ export default function ProfileScreen() {
                                 />
                                 <TextInput
                                     style={styles.privacyInput}
-                                    placeholder="Nueva contraseña"
+                                    placeholder={'Nueva contrase\u00f1a'}
                                     placeholderTextColor={colors.textTertiary}
                                     secureTextEntry
                                     value={newPassword}
@@ -1155,7 +1258,7 @@ export default function ProfileScreen() {
                                 />
                                 <TextInput
                                     style={styles.privacyInput}
-                                    placeholder="Confirmar nueva contraseña"
+                                    placeholder={'Confirmar nueva contrase\u00f1a'}
                                     placeholderTextColor={colors.textTertiary}
                                     secureTextEntry
                                     value={confirmNewPassword}
@@ -1172,12 +1275,83 @@ export default function ProfileScreen() {
                                     ) : (
                                         <>
                                             <Ionicons name="shield-checkmark-outline" size={16} color="#fff" />
-                                            <Text style={styles.privacySaveButtonText}>Actualizar contraseña</Text>
+                                            <Text style={styles.privacySaveButtonText}>{'Actualizar contrase\u00f1a'}</Text>
                                         </>
                                     )}
                                 </TouchableOpacity>
                             </View>
+
+                            <View style={styles.dangerZoneCard}>
+                                <View style={styles.dangerZoneHeader}>
+                                    <Ionicons name="warning-outline" size={18} color={colors.error} />
+                                    <Text style={styles.dangerZoneTitle}>Zona de Peligro</Text>
+                                </View>
+                                <Text style={styles.dangerZoneDesc}>
+                                    {'Eliminar tu cuenta es una acci\u00f3n permanente e irreversible. Se borrar\u00e1n todos tus datos, registros, estad\u00edsticas e historial.'}
+                                </Text>
+                                <TouchableOpacity
+                                    style={styles.deleteAccountButton}
+                                    onPress={handleDeleteAccount}
+                                >
+                                    <Ionicons name="trash-outline" size={16} color="#fff" />
+                                    <Text style={styles.deleteAccountButtonText}>Eliminar Cuenta</Text>
+                                </TouchableOpacity>
+                            </View>
                         </ScrollView>
+                        
+                    </View>
+                </KeyboardAvoidingView>
+            </Modal>
+
+            {/* Delete Account Password Confirmation Modal */}
+            <Modal
+                visible={showDeleteConfirmModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => { if (!deletingAccount) { setShowDeleteConfirmModal(false); setDeleteAccountPassword(''); } }}
+            >
+                <KeyboardAvoidingView
+                    style={styles.deleteModalOverlay}
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                >
+                    <View style={styles.deleteModalContent}>
+                        <View style={styles.deleteModalIconContainer}>
+                            <Ionicons name="shield-outline" size={32} color={colors.error} />
+                        </View>
+                        <Text style={styles.deleteModalTitle}>{'Confirmar Eliminaci\u00f3n'}</Text>
+                        <Text style={styles.deleteModalDesc}>
+                            {'Ingresa tu contrase\u00f1a actual para confirmar que deseas eliminar tu cuenta de forma permanente.'}
+                        </Text>
+                        <TextInput
+                            style={styles.deleteModalInput}
+                            placeholder={'Contrase\u00f1a actual'}
+                            placeholderTextColor={colors.textTertiary}
+                            secureTextEntry
+                            value={deleteAccountPassword}
+                            onChangeText={setDeleteAccountPassword}
+                            autoCapitalize="none"
+                            editable={!deletingAccount}
+                        />
+                        <View style={styles.deleteModalButtons}>
+                            <TouchableOpacity
+                                style={styles.deleteModalCancelButton}
+                                onPress={() => { setShowDeleteConfirmModal(false); setDeleteAccountPassword(''); }}
+                                disabled={deletingAccount}
+                            >
+                                <Text style={styles.deleteModalCancelText}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.deleteModalConfirmButton, deletingAccount && styles.deleteModalConfirmDisabled]}
+                                onPress={executeAccountDeletion}
+                                disabled={deletingAccount}
+                            >
+                                {deletingAccount ? (
+                                    <TennisSpinner size={16} color="#fff" />
+                                ) : (
+                                    <Text style={styles.deleteModalConfirmText}>Eliminar</Text>
+                                )}
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 </KeyboardAvoidingView>
             </Modal>
@@ -1613,10 +1787,17 @@ const getStyles = (colors: any) => StyleSheet.create({
         borderTopRightRadius: borderRadius['3xl'],
     },
     privacyModalContent: {
-        maxHeight: '85%',
+        height: '88%',
+        maxHeight: '90%',
+        minHeight: 0,
+        overflow: 'hidden',
+    },
+    privacyScrollView: {
+        flex: 1,
+        minHeight: 0,
     },
     privacyModalBody: {
-        paddingBottom: spacing.lg,
+        paddingBottom: spacing.xl * 2,
     },
     modalHeader: {
         flexDirection: 'row',
@@ -1718,6 +1899,135 @@ const getStyles = (colors: any) => StyleSheet.create({
         color: '#fff',
         fontSize: 13,
         fontWeight: '800',
+    },
+    dangerZoneCard: {
+        backgroundColor: colors.error + '0D',
+        borderRadius: borderRadius.lg,
+        borderWidth: 1,
+        borderColor: colors.error + '33',
+        padding: spacing.md,
+        marginTop: spacing.lg,
+        gap: spacing.sm,
+    },
+    dangerZoneHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.xs,
+    },
+    dangerZoneTitle: {
+        color: colors.error,
+        fontSize: 14,
+        fontWeight: '800',
+    },
+    dangerZoneDesc: {
+        color: colors.textSecondary,
+        fontSize: 12,
+        lineHeight: 18,
+    },
+    deleteAccountButton: {
+        marginTop: spacing.xs,
+        height: 44,
+        borderRadius: borderRadius.md,
+        backgroundColor: colors.error,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.xs,
+    },
+    deleteAccountButtonText: {
+        color: '#fff',
+        fontSize: 13,
+        fontWeight: '800',
+        textAlign: 'center',
+    },
+    deleteModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.85)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: spacing.xl,
+    },
+    deleteModalContent: {
+        backgroundColor: colors.surface,
+        borderRadius: borderRadius['2xl'],
+        padding: spacing.xl,
+        width: '100%',
+        maxWidth: 360,
+        alignItems: 'center',
+        gap: spacing.sm,
+    },
+    deleteModalIconContainer: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: colors.error + '1A',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: spacing.xs,
+    },
+    deleteModalTitle: {
+        color: colors.text,
+        fontSize: 18,
+        fontWeight: '800',
+        textAlign: 'center',
+    },
+    deleteModalDesc: {
+        color: colors.textSecondary,
+        fontSize: 13,
+        lineHeight: 19,
+        textAlign: 'center',
+    },
+    deleteModalInput: {
+        width: '100%',
+        height: 46,
+        borderRadius: borderRadius.md,
+        borderWidth: 1,
+        borderColor: colors.error + '55',
+        backgroundColor: colors.background,
+        color: colors.text,
+        paddingHorizontal: spacing.md,
+        fontSize: 13,
+        fontWeight: '600',
+        marginTop: spacing.xs,
+    },
+    deleteModalButtons: {
+        flexDirection: 'row',
+        gap: spacing.sm,
+        marginTop: spacing.sm,
+        width: '100%',
+    },
+    deleteModalCancelButton: {
+        flex: 1,
+        height: 44,
+        borderRadius: borderRadius.md,
+        backgroundColor: colors.surfaceSecondary,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    deleteModalCancelText: {
+        color: colors.text,
+        fontSize: 13,
+        fontWeight: '700',
+        textAlign: 'center',
+    },
+    deleteModalConfirmButton: {
+        flex: 1,
+        height: 44,
+        borderRadius: borderRadius.md,
+        backgroundColor: colors.error,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    deleteModalConfirmDisabled: {
+        opacity: 0.6,
+    },
+    deleteModalConfirmText: {
+        color: '#fff',
+        fontSize: 13,
+        fontWeight: '800',
+        textAlign: 'center',
     },
     orgGroup: {
         marginBottom: spacing.xl,
@@ -1896,6 +2206,3 @@ const getStyles = (colors: any) => StyleSheet.create({
         color: colors.error,
     },
 });
-
-
-

@@ -2,7 +2,7 @@
   "expo": {
     "name": "SweetSpot",
     "slug": "torneosdetenis",
-    "version": "3.0.9",
+    "version": "3.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -15,10 +15,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.pitin.torneosdetenis",
-      "buildNumber": "9",
+      "buildNumber": "11",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSPhotoLibraryUsageDescription": "Necesitamos acceso a la galeria para elegir imagenes de perfil y organizacion.",
+        "NSPhotoLibraryUsageDescription": "SweetSpot necesita acceso a tu galería para que puedas seleccionar una foto de perfil, subir comprobantes de pago y adjuntar imágenes relacionadas con tu participación en torneos.",
         "NSUserNotificationsUsageDescription": "Usamos notificaciones para avisarte de cambios en torneos y partidos."
       }
     },
@@ -33,7 +33,7 @@
         "icon": "./assets/notification-icon.png",
         "color": "#0f172a"
       },
-      "versionCode": 9,
+      "versionCode": 10,
       "blockedPermissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
@@ -53,7 +53,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Necesitamos acceso a tu galeria para seleccionar imagenes."
+          "photosPermission": "SweetSpot necesita acceso a tu galería para que puedas seleccionar una foto de perfil, subir comprobantes de pago y adjuntar imágenes relacionadas con tu participación en torneos."
         }
       ],
       [

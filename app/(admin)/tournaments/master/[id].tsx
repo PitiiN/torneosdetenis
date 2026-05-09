@@ -521,7 +521,10 @@ export default function MasterTournamentAdminScreen() {
   const handlePickPoster = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permiso requerido', 'Debes permitir el acceso a tu galeria.');
+      Alert.alert(
+        'Permiso requerido',
+        'SweetSpot necesita acceso a tu galer\u00eda para que puedas seleccionar una imagen relacionada con el torneo.',
+      );
       return;
     }
 

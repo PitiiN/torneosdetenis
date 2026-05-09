@@ -260,7 +260,10 @@ export default function SettingsScreen() {
     const handlePickImage = async () => {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
-            Alert.alert('Permiso denegado', 'Necesitamos permiso para acceder a tu galeria.');
+            Alert.alert(
+                'Permiso denegado',
+                'SweetSpot necesita acceso a tu galer\u00eda para que puedas seleccionar una imagen de perfil u organizaci\u00f3n.',
+            );
             return;
         }
 
