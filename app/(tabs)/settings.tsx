@@ -615,7 +615,59 @@ export default function SettingsScreen() {
         }
     };
 
+    const handleDeleteOrganization = async () => {
+        if (!organization || !isGlobalAdmin) return;
+
+        Alert.alert(
+            'Confirmar Eliminación',
+            `¿Estás seguro de que deseas eliminar la organización "${organization.name}"? Esta acción borrará permanentemente todos sus torneos, rankings, estadísticas y comprobantes de pago. No se puede deshacer.`,
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                { 
+                    text: 'Eliminar Todo', 
+                    style: 'destructive',
+                    onPress: async () => {
+                        setSaving(true);
+                        try {
+                            const { error } = await supabase.rpc('delete_organization_cascade', {
+                                p_organization_id: organization.id
+                            });
+
+                            if (error) throw error;
+
+                            Alert.alert('Éxito', 'Organización y todos sus datos asociados han sido eliminados.');
+                            
+                            // Reset state
+                            setOrganization(null);
+                            setOrgName('');
+                            setLogoPath('');
+                            setLogoUrl('');
+                            setContactEmail('');
+                            setContactWhatsapp('');
+                            setSocialLinks('');
+                            setPhotosDriveUrl('');
+                            
+                            // Clear stored selection
+                            await SecureStore.deleteItemAsync('selected_org_id');
+                            await SecureStore.deleteItemAsync('selected_org_name');
+                            
+                            // Refresh list
+                            await fetchAllOrganizations();
+                            await notifyOrganizationDataChanged(organization.id);
+                        } catch (error) {
+                            console.error('Error deleting organization:', error);
+                            Alert.alert('Error', 'No se pudo eliminar la organización. Asegúrate de tener permisos de super admin.');
+                        } finally {
+                            setSaving(false);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     if (loading) {
+
         return (
             <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
                 <TennisSpinner size={34} />
@@ -656,13 +708,25 @@ export default function SettingsScreen() {
                     <View style={styles.section}>
                         <View style={styles.sectionHeaderCol}>
                             <Text style={styles.sectionTitle}>Organizaciones</Text>
-                            <TouchableOpacity 
-                                style={styles.createOrgBtn}
-                                onPress={() => setShowCreateOrgModal(true)}
-                            >
-                                <Ionicons name="add-circle-outline" size={20} color="#fff" />
-                                <Text style={styles.createOrgBtnText}>Nueva</Text>
-                            </TouchableOpacity>
+                            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                                {isGlobalAdmin && organization && (
+                                    <TouchableOpacity 
+                                        style={[styles.createOrgBtn, { backgroundColor: colors.error }]}
+                                        onPress={handleDeleteOrganization}
+                                        disabled={saving}
+                                    >
+                                        <Ionicons name="trash-outline" size={16} color="#fff" />
+                                        <Text style={styles.createOrgBtnText}>Eliminar</Text>
+                                    </TouchableOpacity>
+                                )}
+                                <TouchableOpacity 
+                                    style={styles.createOrgBtn}
+                                    onPress={() => setShowCreateOrgModal(true)}
+                                >
+                                    <Ionicons name="add-circle-outline" size={16} color="#fff" />
+                                    <Text style={styles.createOrgBtnText}>Nueva</Text>
+                                </TouchableOpacity>
+                            </View>
                         </View>
                         <TextInput
                             style={styles.input}
@@ -671,22 +735,27 @@ export default function SettingsScreen() {
                             value={orgSearch}
                             onChangeText={setOrgSearch}
                         />
-                        <View style={styles.orgList}>
-                            {allOrganizations
-                                .filter(o => o.name.toLowerCase().includes(orgSearch.toLowerCase()))
-                                .slice(0, 5)
-                                .map(org => (
-                                    <TouchableOpacity 
-                                        key={org.id} 
-                                        style={[styles.orgItem, organization?.id === org.id && styles.orgItemActive]}
-                                        onPress={() => fetchOrgDetails(org.id)}
-                                    >
-                                        <Text style={[styles.orgItemText, organization?.id === org.id && styles.orgItemTextActive]}>{org.name}</Text>
-                                        {organization?.id === org.id && <Ionicons name="checkmark-circle" size={18} color={colors.primary[500]} />}
-                                    </TouchableOpacity>
-                                ))
-                            }
-                        </View>
+                        {orgSearch.trim().length > 0 && (
+                            <View style={styles.orgList}>
+                                {allOrganizations
+                                    .filter(o => o.name.toLowerCase().includes(orgSearch.toLowerCase()))
+                                    .slice(0, 5)
+                                    .map(org => (
+                                        <TouchableOpacity 
+                                            key={org.id} 
+                                            style={[styles.orgItem, organization?.id === org.id && styles.orgItemActive]}
+                                            onPress={() => {
+                                                fetchOrgDetails(org.id);
+                                                setOrgSearch('');
+                                            }}
+                                        >
+                                            <Text style={[styles.orgItemText, organization?.id === org.id && styles.orgItemTextActive]}>{org.name}</Text>
+                                            {organization?.id === org.id && <Ionicons name="checkmark-circle" size={18} color={colors.primary[500]} />}
+                                        </TouchableOpacity>
+                                    ))
+                                }
+                            </View>
+                        )}
                     </View>
                 )}
 
