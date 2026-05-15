@@ -8,16 +8,17 @@ interface SingleEliminationProps {
         title: string;
         matches: {
             id: string;
-            player1: { name: string; avatarUrl?: string | null; scores?: (number | string)[]; isWinner?: boolean };
-            player2: { name: string; avatarUrl?: string | null; scores?: (number | string)[]; isWinner?: boolean };
+            player1: { name: string; avatarUrl?: string | null; scores?: (number | string)[]; isWinner?: boolean; id?: string | null };
+            player2: { name: string; avatarUrl?: string | null; scores?: (number | string)[]; isWinner?: boolean; id?: string | null };
             status?: string;
             scheduledAt?: string | null;
             court?: string | null;
         }[];
     }[];
+    onPlayerPress?: (playerId: string) => void;
 }
 
-export const SingleEliminationBracket = ({ rounds }: SingleEliminationProps) => {
+export const SingleEliminationBracket = ({ rounds, onPlayerPress }: SingleEliminationProps) => {
     const scale = useRef(new Animated.Value(1)).current;
     const baseScaleRef = useRef(1);
     const startDistanceRef = useRef<number | null>(null);
@@ -70,6 +71,7 @@ export const SingleEliminationBracket = ({ rounds }: SingleEliminationProps) => 
                                         status={match.status}
                                         scheduledAt={match.scheduledAt}
                                         court={match.court}
+                                        onPlayerPress={onPlayerPress}
                                     />
                                 </View>
                             ))}

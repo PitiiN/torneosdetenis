@@ -6,7 +6,7 @@ import { useTheme, spacing, borderRadius } from '@/theme';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/services/supabase';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '@/utils/SecureStore';
 import { getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { extractChampionFromDescription, resolveChampionFromMatches } from '@/services/tournamentChampion';
@@ -159,6 +159,8 @@ export default function TorneosScreen() {
     const [userOrgId, setUserOrgId] = useState<string | null>(null);
     const [activeOrgId, setActiveOrgId] = useState<string | null>(normalizedRouteOrgId || null);
     const [pendingRequestCountByMonth, setPendingRequestCountByMonth] = useState<Record<string, number>>({});
+    const [isFollowingOrg, setIsFollowingOrg] = useState(false);
+    const [isTogglingFollow, setIsTogglingFollow] = useState(false);
 
     const filters = ['Pr\u00F3ximos', 'En Curso', 'Finalizados'];
 
@@ -247,6 +249,24 @@ export default function TorneosScreen() {
         await fetchOrgDetails(nextOrgId);
         await fetchTournaments(nextOrgId, canManageOrg);
         await fetchRegistrations(access.session.user.id, nextOrgId);
+        await fetchFollowStatus(access.session.user.id, nextOrgId);
+    }
+
+    async function fetchFollowStatus(currentUserId: string, targetOrgId: string) {
+        try {
+            const { data, error } = await supabase
+                .from('organization_followers')
+                .select('user_id')
+                .eq('user_id', currentUserId)
+                .eq('organization_id', targetOrgId)
+                .maybeSingle();
+            
+            if (error) throw error;
+            setIsFollowingOrg(!!data);
+        } catch (error) {
+            console.error('Error fetching follow status', error);
+            setIsFollowingOrg(false);
+        }
     }
 
     async function fetchOrgDetails(targetOrgId: string) {
@@ -529,6 +549,54 @@ export default function TorneosScreen() {
         );
     };
 
+    const toggleFollowOrganization = () => {
+        if (!activeOrgId) return;
+
+        const actionText = isFollowingOrg ? 'Dejar de Seguir' : 'Seguir';
+        const actionMessage = isFollowingOrg 
+            ? `¿Deseas dejar de seguir a esta organización? Ya no te llegarán más notificaciones cuando publiquen nuevos torneos.`
+            : `¿Deseas seguir a esta organización? Al hacerlo te llegarán notificaciones cuando se publiquen nuevos torneos.`;
+
+        Alert.alert(
+            actionText,
+            actionMessage,
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Confirmar',
+                    onPress: async () => {
+                        setIsTogglingFollow(true);
+                        try {
+                            const { data: userData } = await supabase.auth.getUser();
+                            const currentUserId = userData.user?.id;
+                            if (!currentUserId) throw new Error('No user');
+
+                            if (isFollowingOrg) {
+                                const { error } = await supabase
+                                    .from('organization_followers')
+                                    .delete()
+                                    .eq('user_id', currentUserId)
+                                    .eq('organization_id', activeOrgId);
+                                if (error) throw error;
+                                setIsFollowingOrg(false);
+                            } else {
+                                const { error } = await supabase
+                                    .from('organization_followers')
+                                    .insert({ user_id: currentUserId, organization_id: activeOrgId });
+                                if (error) throw error;
+                                setIsFollowingOrg(true);
+                            }
+                        } catch (error) {
+                            Alert.alert('Error', 'No se pudo actualizar tu preferencia.');
+                        } finally {
+                            setIsTogglingFollow(false);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     const canManage = isSuperAdmin || ((role === 'admin' || role === 'organizer') && userOrgId === activeOrgId);
     const hasOrganizationInfoDetails = Boolean(
         organizationInfo?.contact_email ||
@@ -643,6 +711,33 @@ export default function TorneosScreen() {
                                 )}
                             </View>
                         )}
+
+                        <View style={{ marginTop: spacing.sm, alignItems: 'center' }}>
+                            <TouchableOpacity
+                                style={[
+                                    styles.orgButton, 
+                                    { 
+                                        backgroundColor: isFollowingOrg ? colors.surfaceSecondary : colors.primary[500],
+                                        minWidth: 160,
+                                        justifyContent: 'center',
+                                        paddingHorizontal: spacing.xl
+                                    }
+                                ]}
+                                onPress={toggleFollowOrganization}
+                                disabled={isTogglingFollow}
+                            >
+                                {isTogglingFollow ? (
+                                    <TennisSpinner size={18} color={isFollowingOrg ? colors.text : '#fff'} />
+                                ) : (
+                                    <>
+                                        <Ionicons name={isFollowingOrg ? "notifications-off-outline" : "notifications-outline"} size={18} color={isFollowingOrg ? colors.text : '#fff'} />
+                                        <Text style={[styles.orgButtonText, { color: isFollowingOrg ? colors.text : '#fff' }]}>
+                                            {isFollowingOrg ? 'Dejar de Seguir' : 'Seguir'}
+                                        </Text>
+                                    </>
+                                )}
+                            </TouchableOpacity>
+                        </View>
 
                         {!hasOrganizationInfoDetails && (
                             <Text style={styles.organizationInfoText}>

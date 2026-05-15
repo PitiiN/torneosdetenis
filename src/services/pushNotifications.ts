@@ -221,3 +221,60 @@ export const notifyTournamentAdminsOnRegistrationRequest = async (input: {
     }))
   );
 };
+
+const fetchOrganizationFollowerPushTargets = async (organizationId: string) => {
+  const { data, error } = await supabase.rpc('get_organization_follower_push_targets', {
+    p_organization_id: organizationId,
+  });
+
+  if (error) {
+    console.warn('[pushNotifications] get_organization_follower_push_targets error:', error.message);
+    return [] as PushTargetRow[];
+  }
+
+  return ((data || []) as PushTargetRow[]).filter((row) => UUID_PATTERN.test(String(row?.user_id || '').trim()));
+};
+
+export const notifyOrganizationFollowersOnNewTournament = async (input: {
+  organizationId: string;
+  organizationName: string;
+  tournamentId: string;
+  tournamentName: string;
+}) => {
+  if (!UUID_PATTERN.test(String(input.organizationId || '').trim())) return;
+
+  const targets = await fetchOrganizationFollowerPushTargets(input.organizationId);
+  const followerUserIds = [...new Set(targets.map((target) => String(target.user_id || '').trim()).filter((userId) => UUID_PATTERN.test(userId)))];
+  if (!followerUserIds.length) return;
+
+  const title = '¡Nuevo torneo publicado!';
+  const body = `${input.organizationName || 'La organización'} ha publicado el torneo ${input.tournamentName || 'nuevo'}. ¡Inscríbete ahora!`;
+
+  await createInAppNotifications({
+    userIds: followerUserIds,
+    type: 'new_tournament_published',
+    title,
+    body,
+    tournamentId: input.tournamentId,
+    matchId: null,
+  });
+
+  const tokens = [...new Set(targets.map((target) => String(target?.expo_push_token || '').trim()).filter(isExpoPushToken))];
+  if (!tokens.length) return;
+
+  await sendExpoMessages(
+    tokens.map((token) => ({
+      to: token,
+      title,
+      body,
+      sound: 'default' as const,
+      channelId: 'default' as const,
+      priority: 'high' as const,
+      data: {
+        type: 'new_tournament_published',
+        tournamentId: input.tournamentId,
+        organizationId: input.organizationId,
+      },
+    }))
+  );
+};

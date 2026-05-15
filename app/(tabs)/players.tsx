@@ -5,15 +5,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { TOURNAMENT_CATEGORIES } from '@/constants/tournamentOptions';
-import { getTournamentPlacements } from '@/services/ranking';
-import * as SecureStore from 'expo-secure-store';
+import { getTournamentPlacements, getScoreText, parseSetScore, resolveMatchWinnerSide } from '@/services/ranking';
+import * as SecureStore from '@/utils/SecureStore';
 import { useFocusEffect } from 'expo-router';
 import { TennisSpinner } from '@/components/TennisSpinner';
+import { PlayerProfileModal } from '@/components/players/PlayerProfileModal';
 
 type RankingRow = {
     playerId: string;
     name: string;
     points: number;
+    trophies: number;
+    matchesWon: number;
+    matchesPlayed: number;
+    setsWon: number;
+    gamesWon: number;
     rank: number;
     previousRank: number | null;
     isNewEntry: boolean;
@@ -37,6 +43,13 @@ export default function PlayersScreen() {
     const [rankingRows, setRankingRows] = useState<RankingRow[]>([]);
     const [modality, setModality] = useState<'singles' | 'dobles'>('singles');
     const [page, setPage] = useState(0);
+    const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
+    const [showPlayerProfile, setShowPlayerProfile] = useState(false);
+
+    const handlePlayerPress = (playerId: string) => {
+        setSelectedPlayerId(playerId);
+        setShowPlayerProfile(true);
+    };
 
     useEffect(() => {
         loadRanking(activeCategory);
@@ -170,28 +183,67 @@ export default function PlayersScreen() {
             }, {} as Record<string, any[]>);
 
             const buildRankingMap = (sourceTournaments: any[]) => {
-                const totals: Record<string, number> = {};
+                const stats: Record<string, { points: number, trophies: number, matchesWon: number, matchesPlayed: number, setsWon: number, gamesWon: number }> = {};
+
+                const getInitialStats = () => ({ points: 0, trophies: 0, matchesWon: 0, matchesPlayed: 0, setsWon: 0, gamesWon: 0 });
 
                 sourceTournaments.forEach((tournament: any) => {
-                    const placements = getTournamentPlacements(tournament, matchesByTournament[tournament.id] || []);
+                    const tournamentMatches = matchesByTournament[tournament.id] || [];
+                    const placements = getTournamentPlacements(tournament, tournamentMatches);
+
                     placements.forEach((placement) => {
-                        if (placement.playerId) {
-                            totals[placement.playerId] = (totals[placement.playerId] || 0) + placement.points;
-                        }
-                        if (placement.playerId2) {
-                            totals[placement.playerId2] = (totals[placement.playerId2] || 0) + placement.points;
-                        }
+                        const ids = [placement.playerId, placement.playerId2].filter(Boolean) as string[];
+                        ids.forEach(id => {
+                            if (!stats[id]) stats[id] = getInitialStats();
+                            stats[id].points += placement.points;
+                            if (placement.place === '1') {
+                                stats[id].trophies += 1;
+                            }
+                        });
+                    });
+
+                    tournamentMatches.forEach((match: any) => {
+                        const winnerSide = resolveMatchWinnerSide(match, tournamentMatches);
+                        const scoreText = getScoreText(match.score);
+                        const sets = scoreText.split(/\s*,\s*/).map(s => s.trim()).filter(Boolean);
+
+                        const processPlayer = (id: string, isWinner: boolean, side: 'A' | 'B') => {
+                            if (!id || id === 'BYE') return;
+                            if (!stats[id]) stats[id] = getInitialStats();
+
+                            stats[id].matchesPlayed += 1;
+                            if (isWinner) stats[id].matchesWon += 1;
+
+                            sets.forEach(setStr => {
+                                const parsed = parseSetScore(setStr);
+                                if (!parsed) return;
+                                const { leftValue, rightValue } = parsed;
+                                if (side === 'A') {
+                                    if (leftValue > rightValue) stats[id].setsWon += 1;
+                                    stats[id].gamesWon += leftValue;
+                                } else {
+                                    if (rightValue > leftValue) stats[id].setsWon += 1;
+                                    stats[id].gamesWon += rightValue;
+                                }
+                            });
+                        };
+
+                        const sideAIds = [match.player_a_id, match.player_a2_id].filter(Boolean);
+                        const sideBIds = [match.player_b_id, match.player_b2_id].filter(Boolean);
+
+                        sideAIds.forEach(id => processPlayer(id, winnerSide === 'A', 'A'));
+                        sideBIds.forEach(id => processPlayer(id, winnerSide === 'B', 'B'));
                     });
                 });
 
-                return totals;
+                return stats;
             };
 
-            const currentTotals = buildRankingMap(completedTournaments);
-            const previousTotals = buildRankingMap(completedTournaments.slice(1));
+            const currentStats = buildRankingMap(completedTournaments);
+            const previousStats = buildRankingMap(completedTournaments.slice(1));
             const playerIds = [...new Set([
-                ...Object.keys(currentTotals),
-                ...Object.keys(previousTotals),
+                ...Object.keys(currentStats),
+                ...Object.keys(previousStats),
                 ...((registrations || []).map((registration: any) => registration.player_id).filter(Boolean))
             ])];
 
@@ -212,54 +264,61 @@ export default function PlayersScreen() {
                 return acc;
             }, {} as Record<string, string>);
 
-            const currentSorted = Object.entries(currentTotals)
-                .sort((a, b) => b[1] - a[1] || (profileMap[a[0]] || '').localeCompare(profileMap[b[0]] || ''))
-                .map(([playerId, points], index) => ({
-                    playerId,
-                    name: profileMap[playerId] || 'Jugador',
-                    points,
-                    rank: index + 1,
-                }));
+            const getWinRate = (s: any) => s.matchesPlayed > 0 ? s.matchesWon / s.matchesPlayed : 0;
 
-            playerIds.forEach((playerId) => {
-                if (currentSorted.find((row) => row.playerId === playerId)) return;
-                currentSorted.push({
-                    playerId,
-                    name: profileMap[playerId] || 'Jugador',
-                    points: 0,
-                    rank: 0,
-                });
+            const sortRanking = (a: any, b: any) => {
+                if (b.points !== a.points) return b.points - a.points;
+                if (b.trophies !== a.trophies) return b.trophies - a.trophies;
+                const winRateA = getWinRate(a);
+                const winRateB = getWinRate(b);
+                if (winRateB !== winRateA) return winRateB - winRateA;
+                if (b.setsWon !== a.setsWon) return b.setsWon - a.setsWon;
+                if (b.gamesWon !== a.gamesWon) return b.gamesWon - a.gamesWon;
+                return a.name.localeCompare(b.name);
+            };
+
+            const isTie = (a: any, b: any) => {
+                return a.points === b.points &&
+                       a.trophies === b.trophies &&
+                       getWinRate(a) === getWinRate(b) &&
+                       a.setsWon === b.setsWon &&
+                       a.gamesWon === b.gamesWon;
+            };
+
+            const currentRows = playerIds.map(id => ({
+                playerId: id,
+                name: profileMap[id] || 'Jugador',
+                ...(currentStats[id] || { points: 0, trophies: 0, matchesWon: 0, matchesPlayed: 0, setsWon: 0, gamesWon: 0 })
+            })).sort(sortRanking);
+
+            currentRows.forEach((row, index) => {
+                if (index === 0) {
+                    (row as any).rank = 1;
+                } else {
+                    const prev = currentRows[index - 1];
+                    (row as any).rank = isTie(row, prev) ? (prev as any).rank : index + 1;
+                }
             });
 
-            currentSorted.sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
-            currentSorted.forEach((row) => {
-                row.rank = 1 + currentSorted.filter(r => r.points > row.points).length;
-            });
-
-            // Build previous ranking using ALL players
-            const allPreviousPlayerIds = [...new Set([
-                ...Object.keys(previousTotals),
-                ...Object.keys(currentTotals),
-                ...((registrations || []).map((r: any) => r.player_id).filter(Boolean)),
-            ])];
-
-            const previousSorted = allPreviousPlayerIds
-                .map((playerId) => ({
-                    playerId,
-                    points: previousTotals[playerId] || 0,
-                    name: profileMap[playerId] || 'Jugador',
-                }))
-                .sort((leftRow, rightRow) =>
-                    rightRow.points - leftRow.points || leftRow.name.localeCompare(rightRow.name)
-                );
+            const previousRows = playerIds.map(id => ({
+                playerId: id,
+                name: profileMap[id] || 'Jugador',
+                ...(previousStats[id] || { points: 0, trophies: 0, matchesWon: 0, matchesPlayed: 0, setsWon: 0, gamesWon: 0 })
+            })).sort(sortRanking);
 
             const previousRankMap: Record<string, number> = {};
-            previousSorted.forEach((row) => {
-                previousRankMap[row.playerId] = 1 + previousSorted.filter(r => r.points > row.points).length;
+            previousRows.forEach((row, index) => {
+                if (index === 0) {
+                    (row as any).rank = 1;
+                } else {
+                    const prev = previousRows[index - 1];
+                    (row as any).rank = isTie(row, prev) ? (prev as any).rank : index + 1;
+                }
+                previousRankMap[row.playerId] = (row as any).rank;
             });
 
             const hasHistory = completedTournaments.length > 1;
-            let nextRows = currentSorted.map((row) => {
+            const nextRows = currentRows.map((row: any) => {
                 const previousRank = hasHistory && Object.prototype.hasOwnProperty.call(previousRankMap, row.playerId)
                     ? previousRankMap[row.playerId]
                     : null;
@@ -267,7 +326,7 @@ export default function PlayersScreen() {
                     ...row,
                     previousRank,
                     isNewEntry: hasHistory && previousRank === null && row.points > 0,
-                };
+                } as RankingRow;
             });
 
             setRankingRows(nextRows);
@@ -400,32 +459,36 @@ export default function PlayersScreen() {
                             <View style={styles.topThreeContainer}>
                                 <View style={styles.podiumLayout}>
                                     {topThree[0] && (
-                                        <View
+                                        <TouchableOpacity
                                             key={topThree[0].playerId}
                                             style={[styles.podiumCard, styles.podiumCardFirst, styles.podiumCardFeatured]}
+                                            onPress={() => handlePlayerPress(topThree[0].playerId)}
+                                            activeOpacity={0.7}
                                         >
                                             <Text style={[styles.podiumPlace, styles.podiumPlaceFeatured]}>#1</Text>
                                             <Text style={[styles.podiumName, styles.podiumNameFeatured]}>{topThree[0].name}</Text>
                                             <Text style={[styles.podiumPoints, styles.podiumPointsFeatured]}>{topThree[0].points} pts</Text>
                                             {renderMovement(topThree[0])}
-                                        </View>
+                                        </TouchableOpacity>
                                     )}
 
                                     <View style={styles.podiumSideColumn}>
                                         {topThree.slice(1, 3).map((row, index) => (
-                                            <View
+                                            <TouchableOpacity
                                                 key={row.playerId}
                                                 style={[
                                                     styles.podiumCard,
                                                     styles.podiumCardCompact,
                                                     index === 0 ? styles.podiumCardSecond : styles.podiumCardThird,
                                                 ]}
+                                                onPress={() => handlePlayerPress(row.playerId)}
+                                                activeOpacity={0.7}
                                             >
                                                 <Text style={styles.podiumPlace}>#{row.rank}</Text>
                                                 <Text style={[styles.podiumName, styles.podiumNameCompact]}>{row.name}</Text>
                                                 <Text style={[styles.podiumPoints, styles.podiumPointsCompact]}>{row.points} pts</Text>
                                                 {renderMovement(row)}
-                                            </View>
+                                            </TouchableOpacity>
                                         ))}
                                     </View>
                                 </View>
@@ -434,7 +497,12 @@ export default function PlayersScreen() {
 
                         <View style={styles.listCard}>
                             {listRows.map((row) => (
-                                <View key={row.playerId} style={styles.listRow}>
+                                <TouchableOpacity
+                                    key={row.playerId}
+                                    style={styles.listRow}
+                                    onPress={() => handlePlayerPress(row.playerId)}
+                                    activeOpacity={0.7}
+                                >
                                     <View style={styles.listLeft}>
                                         <Text style={styles.listRank}>#{row.rank}</Text>
                                         <View>
@@ -443,7 +511,7 @@ export default function PlayersScreen() {
                                         </View>
                                     </View>
                                     {renderMovement(row)}
-                                </View>
+                                </TouchableOpacity>
                             ))}
                         </View>
 
@@ -463,6 +531,14 @@ export default function PlayersScreen() {
                     </>
                 )}
             </ScrollView>
+
+            <PlayerProfileModal
+                visible={showPlayerProfile}
+                playerId={selectedPlayerId}
+                tournamentOrgId={organizationId}
+                tournamentLevel={activeCategory}
+                onClose={() => setShowPlayerProfile(false)}
+            />
         </View>
     );
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -9,7 +9,8 @@ import { DateField } from '@/components/DateField';
 import { CHILEAN_COMUNAS, TOURNAMENT_SURFACES } from '@/constants/tournamentOptions';
 import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '@/utils/SecureStore';
+import { notifyOrganizationFollowersOnNewTournament } from '@/services/pushNotifications';
 
 const STATUS_OPTIONS = ['Publicado', 'No Publicado'];
 const STATUS_MAP: Record<string, string> = {
@@ -62,6 +63,7 @@ export default function CreateTournamentScreen() {
   const [comuna, setComuna] = useState('');
   const [surface, setSurface] = useState(TOURNAMENT_SURFACES[0]);
   const [status, setStatus] = useState(STATUS_OPTIONS[0]);
+  const [transferInfo, setTransferInfo] = useState('');
 
   const [showComunaModal, setShowComunaModal] = useState(false);
   const [showSurfaceModal, setShowSurfaceModal] = useState(false);
@@ -145,8 +147,27 @@ export default function CreateTournamentScreen() {
 
       if (error || !createdTournamentId) throw error || new Error('No se obtuvo id del torneo creado.');
 
+      // Guardar datos de transferencia si se proporcionaron
+      if (transferInfo.trim()) {
+        await supabase
+          .from('tournaments')
+          .update({ transfer_info: transferInfo.trim() })
+          .eq('id', createdTournamentId);
+      }
+
       await SecureStore.setItemAsync('selected_org_id', activeOrgId);
       Alert.alert('Exito', 'Torneo completo creado. Ahora agrega los campeonatos por categoria y modalidad.');
+
+      if (STATUS_MAP[status] === 'open') {
+        const orgName = await SecureStore.getItemAsync('selected_org_name') || 'La organización';
+        notifyOrganizationFollowersOnNewTournament({
+          organizationId: activeOrgId,
+          organizationName: orgName,
+          tournamentId: createdTournamentId,
+          tournamentName: name.trim(),
+        }).catch(err => console.warn('Push notification error:', err));
+      }
+
       router.replace(`/(admin)/tournaments/master/${createdTournamentId}`);
     } catch (error: any) {
       const detail = String(error?.message || '').trim();
@@ -181,7 +202,12 @@ export default function CreateTournamentScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 80}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.formCard}>
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Nombre</Text>
@@ -245,8 +271,23 @@ export default function CreateTournamentScreen() {
               <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Datos de Transferencia (opcional)</Text>
+            <TextInput
+              style={[styles.textInput, styles.textArea]}
+              value={transferInfo}
+              onChangeText={setTransferInfo}
+              placeholder={'Ej:\nBanco: Banco Estado\nCuenta Corriente: 12345678\nRUT: 12.345.678-9\nNombre: Juan Pérez\nCorreo: correo@email.com'}
+              placeholderTextColor={colors.textTertiary}
+              multiline
+              numberOfLines={5}
+              textAlignVertical="top"
+            />
+          </View>
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
         <TouchableOpacity
@@ -385,6 +426,11 @@ const getStyles = (colors: any) => StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     fontWeight: '600',
+  },
+  textArea: {
+    height: 120,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
   },
   dropdown: {
     height: 52,

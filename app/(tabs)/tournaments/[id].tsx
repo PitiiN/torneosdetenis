@@ -13,6 +13,7 @@ import { getRoundRobinGroupNames, getRoundRobinSlots, hasConsolationBracket, isR
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { resolveStorageAssetUrl } from '@/services/storage';
 import { RegistrationProofModal } from '@/components/tournaments/RegistrationProofModal';
+import { PlayerProfileModal } from '@/components/players/PlayerProfileModal';
 import {
     TournamentRegistrationRequest,
     getRequestStatusLabel,
@@ -78,6 +79,13 @@ export default function TournamentDetailScreen() {
     const [selectedProofUri, setSelectedProofUri] = useState<string | null>(null);
     const [selectedProofMimeType, setSelectedProofMimeType] = useState<string | null>(null);
     const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
+    const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
+    const [showPlayerProfile, setShowPlayerProfile] = useState(false);
+
+    const handlePlayerPress = (playerId: string) => {
+        setSelectedPlayerId(playerId);
+        setShowPlayerProfile(true);
+    };
 
     const goBackToParentOrTournaments = React.useCallback(() => {
         if (tournament?.parent_tournament_id) {
@@ -305,13 +313,15 @@ export default function TournamentDetailScreen() {
                     name: m.player_a?.name || 'TBD', 
                     avatarUrl: m.player_a?.avatar_url || null,
                     scores: setScores.map((s: string[]) => s[0]).filter((s: string | undefined) => s !== undefined),
-                    isWinner: m.winner_id === m.player_a_id && !!m.player_a_id 
+                    isWinner: m.winner_id === m.player_a_id && !!m.player_a_id,
+                    id: m.player_a_id || null,
                 },
                 player2: { 
                     name: m.player_b?.name || 'TBD', 
                     avatarUrl: m.player_b?.avatar_url || null,
                     scores: setScores.map((s: string[]) => s[1]).filter((s: string | undefined) => s !== undefined),
-                    isWinner: m.winner_id === m.player_b_id && !!m.player_b_id 
+                    isWinner: m.winner_id === m.player_b_id && !!m.player_b_id,
+                    id: m.player_b_id || null,
                 },
                 status: m.status === 'finished' ? 'Finalizado' : (m.status === 'live' ? 'En Vivo' : 'Pendiente'),
                 scheduledAt: m.scheduled_at,
@@ -504,17 +514,19 @@ export default function TournamentDetailScreen() {
                 return {
                     key: keyByIds || keyByNames || '',
                     name: displayName,
+                    playerId: null, // Doubles: no single player profile
                 };
             }
 
             return {
                 key: hasP1Id ? p1Id.toUpperCase() : normalizedP1Name,
                 name: p1Name || 'Por definir',
+                playerId: hasP1Id ? p1Id : null,
             };
         };
 
         const rowsMap: Record<string, any> = {};
-        const ensureRow = (key: string, name: string) => {
+        const ensureRow = (key: string, name: string, playerId?: string | null) => {
             const normalizedKey = String(key || '').trim();
             if (!normalizedKey) return;
             if (!rowsMap[normalizedKey]) {
@@ -528,17 +540,23 @@ export default function TournamentDetailScreen() {
                     gamesWon: 0,
                     gamesLost: 0,
                     isActive: false,
+                    playerId: playerId || null,
                 };
-            } else if (name && (rowsMap[normalizedKey].name === 'Por definir' || rowsMap[normalizedKey].name.startsWith('Cupo '))) {
-                rowsMap[normalizedKey].name = name;
+            } else {
+                if (name && (rowsMap[normalizedKey].name === 'Por definir' || rowsMap[normalizedKey].name.startsWith('Cupo '))) {
+                    rowsMap[normalizedKey].name = name;
+                }
+                if (playerId && !rowsMap[normalizedKey].playerId) {
+                    rowsMap[normalizedKey].playerId = playerId;
+                }
             }
         };
 
         groupMatches.forEach((match) => {
             const sideA = buildEntry(match, 'A');
             const sideB = buildEntry(match, 'B');
-            if (sideA.key) ensureRow(sideA.key, sideA.name);
-            if (sideB.key) ensureRow(sideB.key, sideB.name);
+            if (sideA.key) ensureRow(sideA.key, sideA.name, sideA.playerId);
+            if (sideB.key) ensureRow(sideB.key, sideB.name, sideB.playerId);
         });
 
         if (Object.keys(rowsMap).length === 0) {
@@ -552,8 +570,8 @@ export default function TournamentDetailScreen() {
             const sideB = buildEntry(match, 'B');
             if (!sideA.key || !sideB.key) return;
 
-            ensureRow(sideA.key, sideA.name);
-            ensureRow(sideB.key, sideB.name);
+            ensureRow(sideA.key, sideA.name, sideA.playerId);
+            ensureRow(sideB.key, sideB.name, sideB.playerId);
 
             const rowA = rowsMap[sideA.key];
             const rowB = rowsMap[sideB.key];
@@ -625,6 +643,7 @@ export default function TournamentDetailScreen() {
                 diff: row.diff,
                 pts: row.pts,
                 isActive: row.pj > 0 || index === 0,
+                playerId: row.playerId || null,
             }));
     };
 
@@ -811,21 +830,25 @@ export default function TournamentDetailScreen() {
                                         name: match.player_a?.name || 'Por definir',
                                         group: 'CLASIFICADO',
                                         image: match.player_a?.avatar_url || null,
+                                        id: match.player_a_id || null,
                                     },
                                     player2: {
                                         name: match.player_b?.name || 'Por definir',
                                         group: 'CLASIFICADO',
                                         image: match.player_b?.avatar_url || null,
+                                        id: match.player_b_id || null,
                                     },
                                     time: match.score || 'Por definir',
                                     isGrandFinal: String(match.round || '').includes('Gran Final'),
                                 }))}
+                                onPlayerPress={handlePlayerPress}
                             />
                         ) : (
                             <View style={styles.roundRobinContainer}>
                                 <RoundRobinTable
                                     groupName={`Grupo ${currentGroupName}`}
                                     standings={standingsByGroup[currentGroupName] || []}
+                                    onPlayerPress={handlePlayerPress}
                                 />
                                 <View style={styles.groupMatchesCard}>
                                     <Text style={styles.groupMatchesTitle}>
@@ -834,15 +857,15 @@ export default function TournamentDetailScreen() {
                                     {(groupMatchesByName[currentGroupName] || []).map(match => (
                                         <View key={match.id} style={{ gap: 4 }}>
                                             <View style={styles.groupMatchRow}>
-                                                <View style={styles.groupMatchPlayer}>
+                                                <TouchableOpacity style={styles.groupMatchPlayer} disabled={!match.player_a_id} onPress={() => match.player_a_id && handlePlayerPress(match.player_a_id)} activeOpacity={0.6}>
                                                     {renderPlayerAvatar(match.player_a?.name || 'Por definir', match.player_a?.avatar_url || null)}
-                                                    <Text style={styles.groupMatchName} numberOfLines={1}>{match.player_a?.name || 'Por definir'}</Text>
-                                                </View>
+                                                    <Text style={[styles.groupMatchName, match.player_a_id && styles.tappableGroupName]} numberOfLines={1}>{match.player_a?.name || 'Por definir'}</Text>
+                                                </TouchableOpacity>
                                                 <Text style={styles.groupMatchScore}>{match.score || 'VS'}</Text>
-                                                <View style={[styles.groupMatchPlayer, { justifyContent: 'flex-end' }]}>
-                                                    <Text style={[styles.groupMatchName, { textAlign: 'right' }]} numberOfLines={1}>{match.player_b?.name || 'Por definir'}</Text>
+                                                <TouchableOpacity style={[styles.groupMatchPlayer, { justifyContent: 'flex-end' }]} disabled={!match.player_b_id} onPress={() => match.player_b_id && handlePlayerPress(match.player_b_id)} activeOpacity={0.6}>
+                                                    <Text style={[styles.groupMatchName, { textAlign: 'right' }, match.player_b_id && styles.tappableGroupName]} numberOfLines={1}>{match.player_b?.name || 'Por definir'}</Text>
                                                     {renderPlayerAvatar(match.player_b?.name || 'Por definir', match.player_b?.avatar_url || null)}
-                                                </View>
+                                                </TouchableOpacity>
                                             </View>
                                             {(match.scheduled_at || match.court) && (
                                                 <View style={{ flexDirection: 'row', justifyContent: 'center', gap: spacing.lg, marginBottom: spacing.sm }}>
@@ -869,7 +892,7 @@ export default function TournamentDetailScreen() {
                         )
                     ) : (
                         <View style={styles.bracketContainer}>
-                            <SingleEliminationBracket rounds={rounds} />
+                            <SingleEliminationBracket rounds={rounds} onPlayerPress={handlePlayerPress} />
                         </View>
                     )
                 ) : (
@@ -916,6 +939,17 @@ export default function TournamentDetailScreen() {
                 }}
                 onPickImage={handlePickProof}
                 onSubmit={handleSubmitJoinRequest}
+            />
+
+            <PlayerProfileModal
+                visible={showPlayerProfile}
+                playerId={selectedPlayerId}
+                tournamentOrgId={tournament?.organization_id}
+                tournamentLevel={tournament?.level}
+                onClose={() => {
+                    setShowPlayerProfile(false);
+                    setSelectedPlayerId(null);
+                }}
             />
         </View>
     );
@@ -1089,6 +1123,10 @@ const getStyles = (colors: any) => StyleSheet.create({
         color: colors.primary[500],
         fontSize: 12,
         fontWeight: '800',
+    },
+    tappableGroupName: {
+        textDecorationLine: 'underline',
+        textDecorationStyle: 'dotted',
     },
     footerActions: {
         position: 'absolute',

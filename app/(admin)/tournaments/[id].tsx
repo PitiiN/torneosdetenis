@@ -1,17 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, TextInput, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, TextInput, Image, FlatList, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/services/supabase';
 import { useTheme, spacing, borderRadius } from '@/theme';
-import { FlatList, KeyboardAvoidingView, Platform } from 'react-native';
 import { createInitialMatches, getRoundRobinGroupNames, getRoundRobinSlots, getSetsToShow, hasConsolationBracket, isRoundRobinFormat } from '@/services/tournamentStructure';
 import { DateField } from '@/components/DateField';
 import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { resolveStorageAssetUrl } from '@/services/storage';
 import { AdminQuickActionsBar } from '@/components/navigation/AdminQuickActionsBar';
+import { PlayerProfileModal } from '@/components/players/PlayerProfileModal';
+import { useAuth } from '@/hooks/useAuth';
 import { getTournamentPlacements } from '@/services/ranking';
 import { formatDateDDMMYYYY, formatTime24, parseTimeRelaxed } from '@/utils/datetime';
 import {
@@ -46,7 +47,7 @@ export default function AdminTournamentDetailScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const { colors } = useTheme();
-    const styles = getStyles(colors); // Assuming getStyles is defined elsewhere or needs to be added.
+    const styles = getStyles(colors);
 
     const [tournament, setTournament] = useState<any>(null);
     const [players, setPlayers] = useState<any[]>([]);
@@ -74,6 +75,7 @@ export default function AdminTournamentDetailScreen() {
     const [isPlayerModalVisible, setIsPlayerModalVisible] = useState(false);
     const [selectedSlot, setSelectedSlot] = useState<{ matchId: string, slot: MatchSlot } | null>(null);
     const [selectedGroupSlot, setSelectedGroupSlot] = useState<{ groupName: string, slotIndex: number, member: GroupMember } | null>(null);
+    const [selectedPlayerForProfile, setSelectedPlayerForProfile] = useState<string | null>(null);
     const [assignmentTargets, setAssignmentTargets] = useState<AssignmentTarget[]>([]);
     const [activeAssignmentIndex, setActiveAssignmentIndex] = useState(0);
     const [searchQuery, setSearchQuery] = useState('');
@@ -1547,6 +1549,12 @@ export default function AdminTournamentDetailScreen() {
     const handleGroupSlotPress = (groupName: string, slotIndex: number, member: GroupMember = 1) => {
         const orderedTargets = buildTargetsForGroupSlot(groupName, slotIndex, member);
         openAssignmentModal(orderedTargets, 0);
+    };
+
+    const handlePlayerLongPress = (playerId: string | null) => {
+        if (playerId && UUID_PATTERN.test(playerId)) {
+            setSelectedPlayerForProfile(playerId);
+        }
     };
 
     const setActiveAssignmentTarget = (targetIndex: number) => {
@@ -3762,7 +3770,7 @@ export default function AdminTournamentDetailScreen() {
         setIsFinalsCountModalVisible(true);
     };
 
-    const handleConfirmRoundRobinFinalsCount = () => {
+    const handleConfirmFinalsCount = () => {
         const parsedValue = Number(finalsCountInput.replace(/\D/g, ''));
         if (!Number.isFinite(parsedValue) || parsedValue < 1) {
             Alert.alert('Error', 'Ingresa una cantidad válida.');
@@ -4087,7 +4095,7 @@ export default function AdminTournamentDetailScreen() {
                 )}
             </View>
 
-                        <ScrollView contentContainerStyle={styles.scrollContent}>
+            <ScrollView contentContainerStyle={styles.scrollContent}>
 
                 {/* Summary Info Card */}
                 <View style={[styles.summaryCard, { paddingVertical: spacing.lg }]}>
@@ -4166,7 +4174,11 @@ export default function AdminTournamentDetailScreen() {
                             <>
                                 {listedRegisteredPlayers.map((p) => (
                                     <View key={p.player_id} style={styles.playerListItem}>
-                                        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                                        <TouchableOpacity 
+                                            style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
+                                            onLongPress={() => handlePlayerLongPress(p.player_id)}
+                                            delayLongPress={2000}
+                                        >
                                             <View style={styles.playerListItemAvatar}>
                                                 <Text style={styles.playerListItemInitials}>
                                                     {p.profiles?.name?.substring(0, 2).toUpperCase()}
@@ -4176,7 +4188,7 @@ export default function AdminTournamentDetailScreen() {
                                                 <Text style={styles.playerListItemName}>{p.profiles?.name || 'Desconocido'}</Text>
                                                 <Text style={styles.playerSearchRole}>Participante Inscrito</Text>
                                             </View>
-                                        </View>
+                                        </TouchableOpacity>
                                         <TouchableOpacity 
                                             style={{ padding: spacing.sm }} 
                                             onPress={() => removeParticipant(p.player_id)}
@@ -4187,7 +4199,11 @@ export default function AdminTournamentDetailScreen() {
                                 ))}
                                 {IS_DOUBLES ? manualDoublesTeamRows.map((team) => (
                                     <View key={team.id} style={styles.playerListItem}>
-                                        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                                        <TouchableOpacity 
+                                            style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
+                                            onLongPress={() => handlePlayerLongPress(team.p1Id || team.p2Id)}
+                                            delayLongPress={2000}
+                                        >
                                             <View style={styles.playerListItemAvatar}>
                                                 <Text style={styles.playerListItemInitials}>
                                                     {team.p1Name.substring(0, 1).toUpperCase()}{team.p2Name.substring(0, 1).toUpperCase()}
@@ -4197,7 +4213,7 @@ export default function AdminTournamentDetailScreen() {
                                                 <Text style={styles.playerListItemName}>{team.label}</Text>
                                                 <Text style={styles.playerSearchRole}>Dupla definida</Text>
                                             </View>
-                                        </View>
+                                        </TouchableOpacity>
                                         <TouchableOpacity
                                             style={{ padding: spacing.sm }}
                                             onPress={() =>
@@ -4267,12 +4283,22 @@ export default function AdminTournamentDetailScreen() {
                                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md }}>
                                     {/* Team A */}
                                     <View style={{ flex: 1, gap: spacing.sm }}>
-                                        <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 1)}>
+                                        <TouchableOpacity 
+                                            style={{ alignItems: 'center', gap: spacing.xs }} 
+                                            onPress={() => handlePlayerPress(m.id, 1)}
+                                            onLongPress={() => handlePlayerLongPress(getPlayerIdBySlot(m, 1))}
+                                            delayLongPress={2000}
+                                        >
                                             {renderPlayerAvatar(getDisplayName(m, 1), getDisplayAvatar(m, 1))}
                                             <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 1)}</Text>
                                         </TouchableOpacity>
                                         {IS_DOUBLES && (
-                                            <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 2)}>
+                                            <TouchableOpacity 
+                                                style={{ alignItems: 'center', gap: spacing.xs }} 
+                                                onPress={() => handlePlayerPress(m.id, 2)}
+                                                onLongPress={() => handlePlayerLongPress(getPlayerIdBySlot(m, 2))}
+                                                delayLongPress={2000}
+                                            >
                                                 {renderPlayerAvatar(getDisplayName(m, 2), getDisplayAvatar(m, 2))}
                                                 <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 2)}</Text>
                                             </TouchableOpacity>
@@ -4290,12 +4316,22 @@ export default function AdminTournamentDetailScreen() {
 
                                     {/* Team B */}
                                     <View style={{ flex: 1, gap: spacing.sm }}>
-                                        <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 3)}>
+                                        <TouchableOpacity 
+                                            style={{ alignItems: 'center', gap: spacing.xs }} 
+                                            onPress={() => handlePlayerPress(m.id, 3)}
+                                            onLongPress={() => handlePlayerLongPress(getPlayerIdBySlot(m, 3))}
+                                            delayLongPress={2000}
+                                        >
                                             {renderPlayerAvatar(getDisplayName(m, 3), getDisplayAvatar(m, 3))}
                                             <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 3)}</Text>
                                         </TouchableOpacity>
                                         {IS_DOUBLES && (
-                                            <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 4)}>
+                                            <TouchableOpacity 
+                                                style={{ alignItems: 'center', gap: spacing.xs }} 
+                                                onPress={() => handlePlayerPress(m.id, 4)}
+                                                onLongPress={() => handlePlayerLongPress(getPlayerIdBySlot(m, 4))}
+                                                delayLongPress={2000}
+                                            >
                                                 {renderPlayerAvatar(getDisplayName(m, 4), getDisplayAvatar(m, 4))}
                                                 <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 4)}</Text>
                                             </TouchableOpacity>
@@ -4367,6 +4403,11 @@ export default function AdminTournamentDetailScreen() {
                                         onPress={() => {
                                             handleGroupSlotPress(currentGroupName, playerRow.slotIndex, 1);
                                         }}
+                                        onLongPress={() => {
+                                            if (playerRow.p1Id) handlePlayerLongPress(playerRow.p1Id);
+                                            else if (playerRow.p2Id) handlePlayerLongPress(playerRow.p2Id);
+                                        }}
+                                        delayLongPress={2000}
                                         style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: spacing.md, paddingHorizontal: spacing.md }}
                                     >
                                         <View style={{ flex: 3, flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
@@ -4401,12 +4442,22 @@ export default function AdminTournamentDetailScreen() {
                                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md }}>
                                                 {/* Team A */}
                                                 <View style={{ flex: 1, gap: spacing.sm }}>
-                                                    <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 1)}>
+                                                    <TouchableOpacity 
+                                                        style={{ alignItems: 'center', gap: spacing.xs }} 
+                                                        onPress={() => handlePlayerPress(m.id, 1)}
+                                                        onLongPress={() => handlePlayerLongPress(getPlayerIdBySlot(m, 1))}
+                                                        delayLongPress={2000}
+                                                    >
                                                         {renderPlayerAvatar(getDisplayName(m, 1), getDisplayAvatar(m, 1))}
                                                         <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 1)}</Text>
                                                     </TouchableOpacity>
                                                     {IS_DOUBLES && (
-                                                        <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 2)}>
+                                                        <TouchableOpacity 
+                                                            style={{ alignItems: 'center', gap: spacing.xs }} 
+                                                            onPress={() => handlePlayerPress(m.id, 2)}
+                                                            onLongPress={() => handlePlayerLongPress(getPlayerIdBySlot(m, 2))}
+                                                            delayLongPress={2000}
+                                                        >
                                                             {renderPlayerAvatar(getDisplayName(m, 2), getDisplayAvatar(m, 2))}
                                                             <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 2)}</Text>
                                                         </TouchableOpacity>
@@ -4424,12 +4475,22 @@ export default function AdminTournamentDetailScreen() {
 
                                                 {/* Team B */}
                                                 <View style={{ flex: 1, gap: spacing.sm }}>
-                                                    <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 3)}>
+                                                    <TouchableOpacity 
+                                                        style={{ alignItems: 'center', gap: spacing.xs }} 
+                                                        onPress={() => handlePlayerPress(m.id, 3)}
+                                                        onLongPress={() => handlePlayerLongPress(getPlayerIdBySlot(m, 3))}
+                                                        delayLongPress={2000}
+                                                    >
                                                         {renderPlayerAvatar(getDisplayName(m, 3), getDisplayAvatar(m, 3))}
                                                         <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 3)}</Text>
                                                     </TouchableOpacity>
                                                     {IS_DOUBLES && (
-                                                        <TouchableOpacity style={{ alignItems: 'center', gap: spacing.xs }} onPress={() => handlePlayerPress(m.id, 4)}>
+                                                        <TouchableOpacity 
+                                                            style={{ alignItems: 'center', gap: spacing.xs }} 
+                                                            onPress={() => handlePlayerPress(m.id, 4)}
+                                                            onLongPress={() => handlePlayerLongPress(getPlayerIdBySlot(m, 4))}
+                                                            delayLongPress={2000}
+                                                        >
                                                             {renderPlayerAvatar(getDisplayName(m, 4), getDisplayAvatar(m, 4))}
                                                             <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' }} numberOfLines={1}>{getDisplayName(m, 4)}</Text>
                                                         </TouchableOpacity>
@@ -4533,6 +4594,8 @@ export default function AdminTournamentDetailScreen() {
                                                                         <TouchableOpacity
                                                                             style={{ paddingHorizontal: spacing.md, paddingVertical: IS_DOUBLES ? 4 : spacing.md, justifyContent: 'center' }}
                                                                             onPress={() => handlePlayerPress(m.id, 1)}
+                                                                            onLongPress={() => handlePlayerLongPress(getPlayerIdBySlot(m, 1))}
+                                                                            delayLongPress={2000}
                                                                         >
                                                                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                                                                 {renderPlayerAvatar(getDisplayName(m, 1), getDisplayAvatar(m, 1), 22)}
@@ -4543,6 +4606,8 @@ export default function AdminTournamentDetailScreen() {
                                                                             <TouchableOpacity
                                                                                 style={{ paddingHorizontal: spacing.md, paddingVertical: 4, justifyContent: 'center' }}
                                                                                 onPress={() => handlePlayerPress(m.id, 2)}
+                                                                                onLongPress={() => handlePlayerLongPress(getPlayerIdBySlot(m, 2))}
+                                                                                delayLongPress={2000}
                                                                             >
                                                                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                                                                     {renderPlayerAvatar(getDisplayName(m, 2), getDisplayAvatar(m, 2), 22)}
@@ -4572,6 +4637,8 @@ export default function AdminTournamentDetailScreen() {
                                                                         <TouchableOpacity
                                                                             style={{ paddingHorizontal: spacing.md, paddingVertical: IS_DOUBLES ? 4 : spacing.md, justifyContent: 'center' }}
                                                                             onPress={() => handlePlayerPress(m.id, 3)}
+                                                                            onLongPress={() => handlePlayerLongPress(getPlayerIdBySlot(m, 3))}
+                                                                            delayLongPress={2000}
                                                                         >
                                                                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                                                                 {renderPlayerAvatar(getDisplayName(m, 3), getDisplayAvatar(m, 3), 22)}
@@ -4582,6 +4649,8 @@ export default function AdminTournamentDetailScreen() {
                                                                             <TouchableOpacity
                                                                                 style={{ paddingHorizontal: spacing.md, paddingVertical: 4, justifyContent: 'center' }}
                                                                                 onPress={() => handlePlayerPress(m.id, 4)}
+                                                                                onLongPress={() => handlePlayerLongPress(getPlayerIdBySlot(m, 4))}
+                                                                                delayLongPress={2000}
                                                                             >
                                                                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                                                                     {renderPlayerAvatar(getDisplayName(m, 4), getDisplayAvatar(m, 4), 22)}
@@ -5177,12 +5246,12 @@ export default function AdminTournamentDetailScreen() {
                         </Text>
                         <TextInput
                             style={[styles.scoreInput, { color: colors.text, textAlign: 'left' }]}
-                            placeholder="Ej: 1 o 2"
+                            placeholder="Ej: 2"
                             placeholderTextColor={colors.textTertiary}
                             keyboardType="number-pad"
                             value={finalsCountInput}
                             onChangeText={(value) => setFinalsCountInput(value.replace(/\D/g, ''))}
-                            maxLength={3}
+                            maxLength={1}
                         />
                         <View style={styles.modalButtons}>
                             <TouchableOpacity
@@ -5193,7 +5262,7 @@ export default function AdminTournamentDetailScreen() {
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={[styles.modalBtn, styles.modalBtnSave]}
-                                onPress={handleConfirmRoundRobinFinalsCount}
+                                onPress={handleConfirmFinalsCount}
                             >
                                 <Text style={styles.modalBtnSaveText}>Generar</Text>
                             </TouchableOpacity>
@@ -5201,14 +5270,22 @@ export default function AdminTournamentDetailScreen() {
                     </View>
                 </View>
             </Modal>
-        </View>
+
+            {selectedPlayerForProfile && (
+                <PlayerProfileModal
+                    playerId={selectedPlayerForProfile}
+                    visible={!!selectedPlayerForProfile}
+                    onClose={() => setSelectedPlayerForProfile(null)}
+                />
+            )}
+    </View>
     );
 }
 
-function getStyles(colors: any) {
+const getStyles = (colors: any) => {
     return StyleSheet.create({
         container: { flex: 1, backgroundColor: colors.background },
-        centerAll: { justifyContent: 'center', alignItems: 'center' },
+        centerAll: { flex: 1, justifyContent: 'center', alignItems: 'center' },
         errorText: { fontSize: 16, color: colors.error },
 
         header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.xl, paddingVertical: spacing.md, backgroundColor: colors.surface },
@@ -5457,9 +5534,3 @@ function getStyles(colors: any) {
         },
     });
 }
-
-
-
-
-
-

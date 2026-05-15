@@ -31,6 +31,7 @@ type MasterTournament = {
   surface: string | null;
   is_tournament_master: boolean;
   poster_url?: string | null;
+  transfer_info?: string | null;
 };
 
 type Championship = {
@@ -157,6 +158,7 @@ export default function TournamentMasterDetailScreen() {
   const [selectedProofUri, setSelectedProofUri] = useState<string | null>(null);
   const [selectedProofMimeType, setSelectedProofMimeType] = useState<string | null>(null);
   const [isProofModalVisible, setIsProofModalVisible] = useState(false);
+  const [isTransferModalVisible, setIsTransferModalVisible] = useState(false);
 
   const loadMasterData = useCallback(async () => {
     if (!masterTournamentId) return;
@@ -165,7 +167,7 @@ export default function TournamentMasterDetailScreen() {
     try {
       const { data: masterData, error: masterError } = await supabase
         .from('tournaments')
-        .select('id, organization_id, name, status, start_date, registration_close_at, registration_close_time, address, comuna, surface, is_tournament_master, poster_url')
+        .select('id, organization_id, name, status, start_date, registration_close_at, registration_close_time, address, comuna, surface, is_tournament_master, poster_url, transfer_info')
         .eq('id', masterTournamentId)
         .single();
 
@@ -494,7 +496,7 @@ export default function TournamentMasterDetailScreen() {
         </View>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Campeonatos disponibles</Text>
+          <Text style={styles.sectionTitle}>Categorías disponibles</Text>
           <Text style={styles.sectionCount}>{championships.length}</Text>
         </View>
 
@@ -587,18 +589,21 @@ export default function TournamentMasterDetailScreen() {
               >
                 <Text style={styles.requestButtonText}>{requestButtonText}</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.detailsButton, !canViewBracket && styles.requestButtonDisabled]}
-                onPress={() => {
-                  if (!canViewBracket) {
-                    Alert.alert('Acceso restringido', 'Debes tener la inscripcion aprobada para ver el cuadro.');
-                    return;
-                  }
-                  router.push(`/(tabs)/tournaments/${championship.id}`);
-                }}
-              >
-                <Text style={styles.detailsButtonText}>{canViewBracket ? 'Ver cuadro' : 'Sin acceso'}</Text>
-              </TouchableOpacity>
+              {!registeredTournamentIds.has(championship.id) && latestRequest?.status !== 'approved' && masterTournament?.transfer_info ? (
+                <TouchableOpacity
+                  style={styles.detailsButton}
+                  onPress={() => setIsTransferModalVisible(true)}
+                >
+                  <Text style={styles.detailsButtonText}>Ver datos de transferencia</Text>
+                </TouchableOpacity>
+              ) : canViewBracket ? (
+                <TouchableOpacity
+                  style={styles.detailsButton}
+                  onPress={() => router.push(`/(tabs)/tournaments/${championship.id}`)}
+                >
+                  <Text style={styles.detailsButtonText}>Ver cuadro</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           </View>
         ))}
@@ -645,6 +650,45 @@ export default function TournamentMasterDetailScreen() {
         onPickImage={handlePickProof}
         onSubmit={handleSubmitRequest}
       />
+
+      {/* Transfer Info Modal */}
+      <Modal
+        visible={isTransferModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsTransferModalVisible(false)}
+      >
+        <View style={styles.posterModalOverlay}>
+          <View style={styles.transferModalContent}>
+            <View style={styles.transferModalHeader}>
+              <Text style={styles.transferModalTitle}>Datos de Transferencia</Text>
+              <TouchableOpacity onPress={() => setIsTransferModalVisible(false)}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.transferModalText} selectable={true}>{masterTournament?.transfer_info || ''}</Text>
+            <TouchableOpacity
+              style={styles.transferCopyButton}
+              onPress={async () => {
+                try {
+                  const { Clipboard: RNClipboard } = require('react-native');
+                  if (RNClipboard && RNClipboard.setString) {
+                    RNClipboard.setString(masterTournament?.transfer_info || '');
+                    Alert.alert('Copiado', 'Los datos de transferencia se copiaron al portapapeles.');
+                  } else {
+                    Alert.alert('Aviso', 'Por favor, mantén presionado el texto arriba para copiarlo manualmente.');
+                  }
+                } catch (err) {
+                  Alert.alert('Aviso', 'Por favor, mantén presionado el texto arriba para copiarlo manualmente.');
+                }
+              }}
+            >
+              <Ionicons name="copy-outline" size={18} color="#fff" />
+              <Text style={styles.transferCopyButtonText}>Copiar datos</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -905,5 +949,48 @@ const getStyles = (colors: any) => StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 13,
     textAlign: 'center',
+  },
+  transferModalContent: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xl,
+    marginHorizontal: spacing.xl,
+    maxWidth: 400,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  transferModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  transferModalTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  transferModalText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 22,
+    marginBottom: spacing.xl,
+  },
+  transferCopyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    height: 44,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.primary[500],
+  },
+  transferCopyButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
   },
 });

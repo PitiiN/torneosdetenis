@@ -33,3 +33,7 @@ ios/build/
 # Firebase native config files (should not be versioned)
 google-services.json
 GoogleService-Info.plist
+
+# Scratch files
+scratch/
+

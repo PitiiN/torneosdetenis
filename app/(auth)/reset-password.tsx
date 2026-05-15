@@ -1,53 +1,72 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ImageBackground, KeyboardAvoidingView, Platform, Alert, ScrollView, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { supabase } from '@/services/supabase';
-import { colors, spacing, borderRadius, typography } from '@/theme';
+import { colors, spacing, borderRadius } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
-import { getSafeAuthErrorMessage } from '@/services/errorMessages';
 import { TennisSpinner } from '@/components/TennisSpinner';
+import { getSafeAuthErrorMessage } from '@/services/errorMessages';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 
-import { useRouter } from 'expo-router';
-
-export default function LoginScreen() {
+export default function ResetPasswordScreen() {
     const router = useRouter();
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
+    const { email: emailParam } = useLocalSearchParams<{ email: string }>();
+    const [email, setEmail] = useState(emailParam || '');
+    const [token, setToken] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
-    const [keyboardVisible, setKeyboardVisible] = useState(false);
 
-    useEffect(() => {
-        const showSubscription = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
-        const hideSubscription = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    async function handleResetPassword() {
+        const code = token.trim();
+        if (!code || !newPassword || !confirmPassword) {
+            Alert.alert('Error', 'Completa todos los campos.');
+            return;
+        }
 
-        return () => {
-            showSubscription.remove();
-            hideSubscription.remove();
-        };
-    }, []);
+        if (newPassword !== confirmPassword) {
+            Alert.alert('Error', 'Las contraseñas no coinciden.');
+            return;
+        }
 
-    async function signInWithEmail() {
-        const normalizedEmail = email.trim().toLowerCase();
-        const normalizedPassword = password;
-        if (!normalizedEmail || !normalizedPassword) {
-            Alert.alert('Error', 'Ingresa correo y contraseña.');
+        if (newPassword.length < 6) {
+            Alert.alert('Error', 'La contraseña debe tener al menos 6 caracteres.');
             return;
         }
 
         setLoading(true);
-        const { error } = await supabase.auth.signInWithPassword({
-            email: normalizedEmail,
-            password: normalizedPassword,
-        });
+        
+        try {
+            // 1. Verificar el código OTP (inicia sesión temporalmente)
+            const { error: verifyError } = await supabase.auth.verifyOtp({
+                email: email.trim().toLowerCase(),
+                token: code,
+                type: 'recovery',
+            });
 
-        if (error) {
-            Alert.alert('Error', getSafeAuthErrorMessage(error, 'login'));
+            if (verifyError) throw verifyError;
+
+            // 2. Actualizar la contraseña del usuario (no requiere la contraseña antigua)
+            const { error: updateError } = await supabase.auth.updateUser({
+                password: newPassword
+            });
+
+            if (updateError) throw updateError;
+
+            Alert.alert(
+                '¡Éxito!',
+                'Tu contraseña ha sido actualizada correctamente.',
+                [{ text: 'Iniciar Sesión', onPress: () => router.replace('/(auth)/login') }]
+            );
+
+        } catch (error: any) {
+            Alert.alert('Error', getSafeAuthErrorMessage(error, 'general'));
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     }
-
 
     return (
         <View style={styles.container}>
@@ -65,24 +84,26 @@ export default function LoginScreen() {
                             style={styles.keyboardView}
                         >
                             <ScrollView
-                                contentContainerStyle={[
-                                    styles.keyboardScrollContent,
-                                    keyboardVisible && styles.keyboardScrollContentWithKeyboard,
-                                ]}
+                                contentContainerStyle={styles.keyboardScrollContent}
                                 keyboardShouldPersistTaps="handled"
                                 showsVerticalScrollIndicator={false}
                             >
+                                <TouchableOpacity 
+                                    style={styles.backButton} 
+                                    onPress={() => router.back()}
+                                >
+                                    <Ionicons name="arrow-back" size={24} color="#fff" />
+                                </TouchableOpacity>
+
                                 <View style={styles.header}>
                                     <View style={styles.logoContainer}>
-                                        <Ionicons name="tennisball" size={60} color={colors.primary[500]} />
+                                        <Ionicons name="key" size={50} color={colors.primary[500]} />
                                     </View>
-                                    <Text style={styles.title}>SweetSpot</Text>
-                                    <Text style={styles.subtitle}>Tu próximo torneo comienza aquí</Text>
+                                    <Text style={styles.title}>Nueva Contraseña</Text>
+                                    <Text style={styles.subtitle}>Ingresa el código que recibiste en tu correo y tu nueva contraseña</Text>
                                 </View>
 
                                 <BlurView intensity={20} tint="dark" style={styles.formContainer}>
-                                    <Text style={styles.formTitle}>Bienvenido</Text>
-                                    
                                     <View style={styles.inputGroup}>
                                         <Text style={styles.label}>Correo Electrónico</Text>
                                         <View style={styles.inputWrapper}>
@@ -93,55 +114,72 @@ export default function LoginScreen() {
                                                 placeholderTextColor={colors.textTertiary}
                                                 value={email}
                                                 onChangeText={setEmail}
-                                                autoCapitalize="none"
                                                 keyboardType="email-address"
+                                                autoCapitalize="none"
                                             />
                                         </View>
                                     </View>
 
                                     <View style={styles.inputGroup}>
-                                        <Text style={styles.label}>Contraseña</Text>
+                                        <Text style={styles.label}>Código recibido</Text>
+                                        <View style={styles.inputWrapper}>
+                                            <Ionicons name="key-outline" size={20} color={colors.textTertiary} style={styles.inputIcon} />
+                                            <TextInput
+                                                style={styles.input}
+                                                placeholder="Ingresa el código"
+                                                placeholderTextColor={colors.textTertiary}
+                                                value={token}
+                                                onChangeText={setToken}
+                                                keyboardType="default"
+                                                autoCapitalize="none"
+                                                autoCorrect={false}
+                                            />
+                                        </View>
+                                    </View>
+
+                                    <View style={styles.inputGroup}>
+                                        <Text style={styles.label}>Nueva Contraseña</Text>
                                         <View style={styles.inputWrapper}>
                                             <Ionicons name="lock-closed-outline" size={20} color={colors.textTertiary} style={styles.inputIcon} />
                                             <TextInput
                                                 style={styles.input}
                                                 placeholder="********"
                                                 placeholderTextColor={colors.textTertiary}
-                                                value={password}
-                                                onChangeText={setPassword}
+                                                value={newPassword}
+                                                onChangeText={setNewPassword}
                                                 secureTextEntry={!showPassword}
                                             />
                                             <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
                                                 <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.textTertiary} />
                                             </TouchableOpacity>
                                         </View>
-                                        
-                                        <TouchableOpacity 
-                                            style={styles.forgotPasswordContainer}
-                                            onPress={() => router.push('/(auth)/forgot-password')}
-                                        >
-                                            <Text style={styles.forgotPasswordText}>¿Olvidaste tu contraseña?</Text>
-                                        </TouchableOpacity>
+                                    </View>
+
+                                    <View style={styles.inputGroup}>
+                                        <Text style={styles.label}>Confirmar Contraseña</Text>
+                                        <View style={styles.inputWrapper}>
+                                            <Ionicons name="lock-closed-outline" size={20} color={colors.textTertiary} style={styles.inputIcon} />
+                                            <TextInput
+                                                style={styles.input}
+                                                placeholder="********"
+                                                placeholderTextColor={colors.textTertiary}
+                                                value={confirmPassword}
+                                                onChangeText={setConfirmPassword}
+                                                secureTextEntry={!showPassword}
+                                            />
+                                        </View>
                                     </View>
 
                                     <TouchableOpacity 
-                                        style={styles.loginButton} 
-                                        onPress={signInWithEmail}
+                                        style={styles.submitButton} 
+                                        onPress={handleResetPassword}
                                         disabled={loading}
                                     >
                                         {loading ? (
                                             <TennisSpinner size={16} color="#fff" />
                                         ) : (
-                                            <Text style={styles.loginButtonText}>Iniciar Sesión</Text>
+                                            <Text style={styles.submitButtonText}>Actualizar Contraseña</Text>
                                         )}
-                                    </TouchableOpacity>
-
-                                    <TouchableOpacity 
-                                        style={styles.registerButton} 
-                                        onPress={() => router.push('/(auth)/register')}
-                                        disabled={loading}
-                                    >
-                                        <Text style={styles.registerButtonText}>Crear una cuenta</Text>
                                     </TouchableOpacity>
                                 </BlurView>
                             </ScrollView>
@@ -164,9 +202,18 @@ const styles = StyleSheet.create({
     },
     overlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: 'rgba(0,0,0,0.6)',
         justifyContent: 'center',
         padding: spacing.xl,
+    },
+    backButton: {
+        position: 'absolute',
+        top: Platform.OS === 'ios' ? 40 : 20,
+        left: 0,
+        zIndex: 10,
+        padding: spacing.sm,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        borderRadius: 20,
     },
     keyboardView: {
         flex: 1,
@@ -174,21 +221,18 @@ const styles = StyleSheet.create({
     keyboardScrollContent: {
         flexGrow: 1,
         justifyContent: 'center',
-        paddingBottom: spacing.xl,
-    },
-    keyboardScrollContentWithKeyboard: {
-        justifyContent: 'flex-start',
-        paddingTop: spacing['3xl'],
-        paddingBottom: spacing['4xl'],
+        paddingTop: spacing.xl,
+        paddingBottom: 120,
     },
     header: {
         alignItems: 'center',
-        marginBottom: spacing['4xl'],
+        marginBottom: spacing.xl,
+        marginTop: spacing.md,
     },
     logoContainer: {
-        width: 100,
-        height: 100,
-        borderRadius: 50,
+        width: 80,
+        height: 80,
+        borderRadius: 40,
         backgroundColor: 'rgba(34, 197, 94, 0.15)',
         justifyContent: 'center',
         alignItems: 'center',
@@ -197,17 +241,19 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(34, 197, 94, 0.3)',
     },
     title: {
-        fontSize: 32,
+        fontSize: 28,
         fontWeight: '900',
         color: '#fff',
-        fontStyle: 'italic',
-        letterSpacing: -1,
+        letterSpacing: -0.5,
+        textAlign: 'center',
     },
     subtitle: {
-        fontSize: 16,
+        fontSize: 15,
         color: colors.textSecondary,
-        marginTop: spacing.xs,
+        marginTop: spacing.sm,
         fontWeight: '500',
+        textAlign: 'center',
+        paddingHorizontal: spacing.lg,
     },
     formContainer: {
         padding: spacing.xl,
@@ -216,14 +262,8 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255,255,255,0.1)',
         overflow: 'hidden',
     },
-    formTitle: {
-        fontSize: 24,
-        fontWeight: '700',
-        color: '#fff',
-        marginBottom: spacing.xl,
-    },
     inputGroup: {
-        marginBottom: spacing.lg,
+        marginBottom: spacing.md,
     },
     label: {
         fontSize: 14,
@@ -250,42 +290,23 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 16,
     },
-    loginButton: {
+    submitButton: {
         backgroundColor: colors.primary[500],
         height: 56,
         borderRadius: borderRadius.xl,
         justifyContent: 'center',
         alignItems: 'center',
-        marginTop: spacing.md,
         shadowColor: colors.primary[500],
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
         elevation: 5,
+        marginTop: spacing.md,
     },
-    loginButtonText: {
+    submitButtonText: {
         color: '#fff',
         fontSize: 18,
         fontWeight: '700',
-        textAlign: 'center',
-    },
-    forgotPasswordContainer: {
-        alignItems: 'flex-end',
-        marginTop: spacing.sm,
-    },
-    forgotPasswordText: {
-        color: colors.primary[400],
-        fontSize: 13,
-        fontWeight: '600',
-    },
-    registerButton: {
-        marginTop: spacing.xl,
-        alignItems: 'center',
-    },
-    registerButtonText: {
-        color: colors.primary[400],
-        fontSize: 14,
-        fontWeight: '600',
         textAlign: 'center',
     },
 });

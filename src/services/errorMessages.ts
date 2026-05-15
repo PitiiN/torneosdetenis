@@ -56,14 +56,14 @@ export const getSafeAuthErrorMessage = (
         if (isAuthSignupConfigurationError(error)) {
             return 'No pudimos crear la cuenta por una configuración del servidor. Intenta más tarde o contacta al administrador.';
         }
-        return 'No pudimos crear tu cuenta. Revisa los datos e intenta nuevamente.';
+        return 'No pudimos crear tu cuenta. Error: ' + (error?.message || 'Desconocido');
     }
 
     if (AUTH_INVALID_CREDENTIALS_MARKERS.some(marker => normalized.includes(marker))) {
         return 'Credenciales inválidas. Revisa correo y contraseña.';
     }
 
-    return 'No pudimos iniciar sesión. Intenta nuevamente en unos minutos.';
+    return 'No pudimos iniciar sesión. Error: ' + (error?.message || 'Desconocido');
 };
 
 export const getSafeUnexpectedErrorMessage = () =>

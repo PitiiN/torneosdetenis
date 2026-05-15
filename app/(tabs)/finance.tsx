@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/services/supabase';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '@/utils/SecureStore';
 import { useRouter } from 'expo-router';
 import { canAccessAdminArea, getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
 
@@ -8,6 +8,7 @@ interface Player {
   avatarUrl?: string | null;
   scores?: (number | string)[];
   isWinner?: boolean;
+  id?: string | null;
 }
 
 interface MatchCardProps {
@@ -16,9 +17,10 @@ interface MatchCardProps {
   status?: string;
   scheduledAt?: string | null;
   court?: string | null;
+  onPlayerPress?: (playerId: string) => void;
 }
 
-export const MatchCard = ({ player1, player2, status, scheduledAt, court }: MatchCardProps) => {
+export const MatchCard = ({ player1, player2, status, scheduledAt, court, onPlayerPress }: MatchCardProps) => {
   const { colors } = useTheme();
   const styles = getStyles(colors);
 
@@ -62,27 +64,46 @@ export const MatchCard = ({ player1, player2, status, scheduledAt, court }: Matc
     ));
   };
 
+  const isTappable = (player: Player) =>
+    !!onPlayerPress && !!player.id && player.name !== 'TBD' && player.name !== 'BYE';
+
+  const handlePlayerPress = (player: Player) => {
+    if (isTappable(player) && player.id) {
+      onPlayerPress!(player.id);
+    }
+  };
+
   return (
     <View style={styles.card}>
       <View style={[styles.playerRow, player1.isWinner && styles.winnerRow]}>
-        <View style={styles.playerInfo}>
+        <TouchableOpacity
+          style={styles.playerInfo}
+          onPress={() => handlePlayerPress(player1)}
+          disabled={!isTappable(player1)}
+          activeOpacity={0.6}
+        >
           {renderAvatar(player1.name, player1.avatarUrl)}
-          <Text style={[styles.playerName, !player1.isWinner && player2.isWinner && styles.loserText]} numberOfLines={1}>
+          <Text style={[styles.playerName, !player1.isWinner && player2.isWinner && styles.loserText, isTappable(player1) && styles.tappableName]} numberOfLines={1}>
             {player1.name}
           </Text>
-        </View>
+        </TouchableOpacity>
         <View style={styles.scoresRow}>
           {renderScores(player1, player2)}
         </View>
       </View>
       
       <View style={[styles.playerRow, player2.isWinner && styles.winnerRow, styles.bottomRow]}>
-        <View style={styles.playerInfo}>
+        <TouchableOpacity
+          style={styles.playerInfo}
+          onPress={() => handlePlayerPress(player2)}
+          disabled={!isTappable(player2)}
+          activeOpacity={0.6}
+        >
           {renderAvatar(player2.name, player2.avatarUrl)}
-          <Text style={[styles.playerName, !player2.isWinner && player1.isWinner && styles.loserText]} numberOfLines={1}>
+          <Text style={[styles.playerName, !player2.isWinner && player1.isWinner && styles.loserText, isTappable(player2) && styles.tappableName]} numberOfLines={1}>
             {player2.name}
           </Text>
-        </View>
+        </TouchableOpacity>
         <View style={styles.scoresRow}>
           {renderScores(player2, player1)}
         </View>
@@ -147,6 +168,10 @@ const getStyles = (colors: any) => StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     flex: 1,
+  },
+  tappableName: {
+    textDecorationLine: 'underline',
+    textDecorationStyle: 'dotted',
   },
   playerInfo: {
     flexDirection: 'row',

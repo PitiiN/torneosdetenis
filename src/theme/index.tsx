@@ -1,5 +1,5 @@
-﻿import React, { createContext, useContext, useState, useEffect } from 'react';
-import * as SecureStore from 'expo-secure-store';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import * as SecureStore from '@/utils/SecureStore';
 import { darkTheme, lightTheme } from './colors';
 import { typography } from './typography';
 import { spacing, borderRadius } from './spacing';

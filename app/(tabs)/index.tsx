@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '@/services/supabase';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '@/utils/SecureStore';
 import { DateField } from '@/components/DateField';
 import { CHILEAN_COMUNAS } from '@/constants/tournamentOptions';
 import { Modal } from 'react-native';

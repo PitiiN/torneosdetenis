@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useTheme, spacing, borderRadius } from '@/theme';
 
 interface Standing {
@@ -10,16 +10,24 @@ interface Standing {
     diff: number;
     pts: number;
     isActive?: boolean;
+    playerId?: string | null;
 }
 
 interface RoundRobinTableProps {
     groupName: string;
     standings: Standing[];
+    onPlayerPress?: (playerId: string) => void;
 }
 
-export const RoundRobinTable = ({ groupName, standings }: RoundRobinTableProps) => {
+export const RoundRobinTable = ({ groupName, standings, onPlayerPress }: RoundRobinTableProps) => {
     const { colors } = useTheme();
     const styles = getStyles(colors);
+
+    const handlePress = (standing: Standing) => {
+        if (onPlayerPress && standing.playerId) {
+            onPlayerPress(standing.playerId);
+        }
+    };
 
     return (
         <View style={styles.container}>
@@ -44,7 +52,13 @@ export const RoundRobinTable = ({ groupName, standings }: RoundRobinTableProps) 
                     <View key={s.name} style={[styles.row, idx === standings.length - 1 && styles.lastRow]}>
                         <View style={[styles.cell, styles.nameCellComponent]}>
                             <View style={[styles.statusDot, s.isActive && styles.activeDot]} />
-                            <Text style={styles.playerName}>{s.name}</Text>
+                            {onPlayerPress && s.playerId ? (
+                                <TouchableOpacity onPress={() => handlePress(s)} activeOpacity={0.6}>
+                                    <Text style={[styles.playerName, styles.tappablePlayerName]}>{s.name}</Text>
+                                </TouchableOpacity>
+                            ) : (
+                                <Text style={styles.playerName}>{s.name}</Text>
+                            )}
                         </View>
                         <Text style={styles.cell}>{s.pj}</Text>
                         <Text style={styles.cell}>{s.pg}</Text>
@@ -153,6 +167,10 @@ const getStyles = (colors: any) => StyleSheet.create({
         fontSize: 14,
         flexShrink: 1,
         flexWrap: 'wrap',
+    },
+    tappablePlayerName: {
+        textDecorationLine: 'underline',
+        textDecorationStyle: 'dotted',
     },
     ptsValue: {
         color: colors.primary[500],

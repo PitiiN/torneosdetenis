@@ -57,11 +57,12 @@ export default function RootLayout() {
     if (!initialized) return;
 
     const inAuthGroup = segments[0] === '(auth)';
+    const inResetPassword = segments[1] === 'reset-password';
 
     if (!session && !inAuthGroup) {
       // Redirect to login if not authenticated and not in auth group
       router.replace('/(auth)/login');
-    } else if (session && inAuthGroup) {
+    } else if (session && inAuthGroup && !inResetPassword) {
       // Redirect to tabs if authenticated and in auth group
       router.replace('/(tabs)');
     }

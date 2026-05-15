@@ -7,7 +7,7 @@ import { supabase } from '@/services/supabase';
 import * as ImagePicker from 'expo-image-picker';
 import { getCurrentUserAccessContext } from '@/services/accessControl';
 import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '@/utils/SecureStore';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { clearCachedValue } from '@/services/runtimeCache';
 
@@ -645,7 +645,7 @@ export default function SettingsScreen() {
                 keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
             >
             <ScrollView
-                contentContainerStyle={styles.content}
+                contentContainerStyle={[styles.content, { paddingBottom: 250 }]}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode="on-drag"
@@ -654,8 +654,8 @@ export default function SettingsScreen() {
                 {/* GLOBAL ADMIN SECTION: Organization Selector */}
                 {isGlobalAdmin && (
                     <View style={styles.section}>
-                        <View style={styles.sectionHeaderRow}>
-                            <Text style={styles.sectionTitle}>Contexto de Organización</Text>
+                        <View style={styles.sectionHeaderCol}>
+                            <Text style={styles.sectionTitle}>Organizaciones</Text>
                             <TouchableOpacity 
                                 style={styles.createOrgBtn}
                                 onPress={() => setShowCreateOrgModal(true)}
@@ -1245,6 +1245,11 @@ const getStyles = (colors: any) => StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: spacing.md,
+    },
+    sectionHeaderCol: {
+        alignItems: 'center',
+        marginBottom: spacing.md,
+        gap: spacing.sm,
     },
     createOrgBtn: {
         flexDirection: 'row',

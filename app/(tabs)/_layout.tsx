@@ -5,7 +5,7 @@ import { useTheme } from '@/theme';
 import { StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getCurrentUserAccessContext } from '@/services/accessControl';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '@/utils/SecureStore';
 import { supabase } from '@/services/supabase';
 
 export default function TabsLayout() {

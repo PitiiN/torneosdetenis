@@ -1,14 +1,30 @@
 import { createClient } from '@supabase/supabase-js';
-import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
+import * as SecureStore from '@/utils/SecureStore';
 
 const SECURE_STORE_OPTIONS: SecureStore.SecureStoreOptions = {
     keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
 };
 
 const ExpoSecureStoreAdapter = {
-    getItem: (key: string) => SecureStore.getItemAsync(key),
-    setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value, SECURE_STORE_OPTIONS),
-    removeItem: (key: string) => SecureStore.deleteItemAsync(key),
+    getItem: (key: string) => {
+        if (Platform.OS === 'web') return Promise.resolve(localStorage.getItem(key));
+        return SecureStore.getItemAsync(key);
+    },
+    setItem: (key: string, value: string) => {
+        if (Platform.OS === 'web') {
+            localStorage.setItem(key, value);
+            return Promise.resolve();
+        }
+        return SecureStore.setItemAsync(key, value, SECURE_STORE_OPTIONS);
+    },
+    removeItem: (key: string) => {
+        if (Platform.OS === 'web') {
+            localStorage.removeItem(key);
+            return Promise.resolve();
+        }
+        return SecureStore.deleteItemAsync(key);
+    },
 };
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim();
@@ -37,7 +53,13 @@ const SESSION_ARTIFACT_KEYS = ['selected_org_id', 'selected_org_name', 'app_them
 
 export async function clearSessionArtifacts() {
     await Promise.allSettled(
-        SESSION_ARTIFACT_KEYS.map((key) => SecureStore.deleteItemAsync(key))
+        SESSION_ARTIFACT_KEYS.map((key) => {
+            if (Platform.OS === 'web') {
+                localStorage.removeItem(key);
+                return Promise.resolve();
+            }
+            return SecureStore.deleteItemAsync(key);
+        })
     );
 }
 

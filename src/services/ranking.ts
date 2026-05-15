@@ -28,7 +28,7 @@ export const buildDescriptionWithRankingPoints = (
   return [baseDescription, `[RANKING_POINTS:${encodedPoints}]`].filter(Boolean).join(' ').trim();
 };
 
-const getScoreText = (scoreValue: any): string => {
+export const getScoreText = (scoreValue: any): string => {
   if (!scoreValue) return '';
   if (typeof scoreValue === 'string') return scoreValue.trim();
 
@@ -47,7 +47,7 @@ const getScoreText = (scoreValue: any): string => {
   return String(scoreValue || '').trim();
 };
 
-const parseSetScore = (setScore: string) => {
+export const parseSetScore = (setScore: string) => {
   const normalized = String(setScore || '')
     .replace(/\u2013/g, '-')
     .trim();
@@ -104,7 +104,7 @@ const inferWinnerSideFromNextRound = (match: any, allMatches?: any[]): 'A' | 'B'
   return null;
 };
 
-const resolveMatchWinnerSide = (match: any, allMatches?: any[]): 'A' | 'B' | null => {
+export const resolveMatchWinnerSide = (match: any, allMatches?: any[]): 'A' | 'B' | null => {
   if (!match) return null;
 
   if (match.winner_id && match.winner_id === match.player_a_id) return 'A';

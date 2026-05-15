@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert,
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '@/utils/SecureStore';
 import { borderRadius, spacing, useTheme } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { TOURNAMENT_CATEGORIES, TOURNAMENT_SET_TYPES } from '@/constants/tournamentOptions';
@@ -531,6 +531,7 @@ export default function MasterTournamentAdminScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
+      aspect: [4, 5],
       quality: 0.7,
       base64: true,
     });
@@ -667,7 +668,7 @@ export default function MasterTournamentAdminScreen() {
         </TouchableOpacity>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Campeonatos</Text>
+          <Text style={styles.sectionTitle}>Categorías</Text>
           <Text style={styles.sectionCount}>{championshipCards.length}</Text>
         </View>
 

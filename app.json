@@ -34,6 +34,10 @@
         "color": "#0f172a"
       },
       "versionCode": 10,
+      "navigationBar": {
+        "visible": "always",
+        "backgroundColor": "#000000"
+      },
       "blockedPermissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"

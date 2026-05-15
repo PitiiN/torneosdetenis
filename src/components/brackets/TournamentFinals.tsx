@@ -1,11 +1,11 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import { useTheme, spacing, borderRadius } from '@/theme';
 
 interface FinalMatch {
     title: string;
-    player1: { name: string; group: string; image?: string | null };
-    player2: { name: string; group: string; image?: string | null };
+    player1: { name: string; group: string; image?: string | null; id?: string | null };
+    player2: { name: string; group: string; image?: string | null; id?: string | null };
     time: string;
     isGrandFinal?: boolean;
 }
@@ -18,9 +18,10 @@ interface TournamentFinalsProps {
         groupBLeaderImage?: string | null;
     };
     matches: FinalMatch[];
+    onPlayerPress?: (playerId: string) => void;
 }
 
-export const TournamentFinals = ({ summary, matches }: TournamentFinalsProps) => {
+export const TournamentFinals = ({ summary, matches, onPlayerPress }: TournamentFinalsProps) => {
     const { colors } = useTheme();
     const styles = getStyles(colors);
 
@@ -47,6 +48,9 @@ export const TournamentFinals = ({ summary, matches }: TournamentFinalsProps) =>
             </View>
         );
     };
+
+    const isTappable = (player: FinalMatch['player1']) =>
+        !!onPlayerPress && !!player.id && player.name !== 'Por definir';
 
     return (
         <View style={styles.container}>
@@ -88,11 +92,16 @@ export const TournamentFinals = ({ summary, matches }: TournamentFinalsProps) =>
                         )}
 
                         <View style={styles.matchContent}>
-                            <View style={styles.playerWrapper}>
+                            <TouchableOpacity
+                                style={styles.playerWrapper}
+                                disabled={!isTappable(match.player1)}
+                                onPress={() => match.player1.id && onPlayerPress?.(match.player1.id)}
+                                activeOpacity={0.6}
+                            >
                                 {renderAvatar(match.player1.name, match.player1.image, 60)}
-                                <Text style={styles.matchPlayerName}>{match.player1.name}</Text>
+                                <Text style={[styles.matchPlayerName, isTappable(match.player1) && styles.tappableName]}>{match.player1.name}</Text>
                                 <Text style={styles.matchPlayerGroup}>{match.player1.group}</Text>
-                            </View>
+                            </TouchableOpacity>
 
                             <View style={styles.vsWrapper}>
                                 <Text style={styles.vsText}>VS</Text>
@@ -101,11 +110,16 @@ export const TournamentFinals = ({ summary, matches }: TournamentFinalsProps) =>
                                 </View>
                             </View>
 
-                            <View style={styles.playerWrapper}>
+                            <TouchableOpacity
+                                style={styles.playerWrapper}
+                                disabled={!isTappable(match.player2)}
+                                onPress={() => match.player2.id && onPlayerPress?.(match.player2.id)}
+                                activeOpacity={0.6}
+                            >
                                 {renderAvatar(match.player2.name, match.player2.image, 60)}
-                                <Text style={styles.matchPlayerName}>{match.player2.name}</Text>
+                                <Text style={[styles.matchPlayerName, isTappable(match.player2) && styles.tappableName]}>{match.player2.name}</Text>
                                 <Text style={styles.matchPlayerGroup}>{match.player2.group}</Text>
-                            </View>
+                            </TouchableOpacity>
                         </View>
                     </View>
                 ))}
@@ -205,6 +219,10 @@ const getStyles = (colors: any) => StyleSheet.create({
         fontSize: 14,
         fontWeight: '700',
         textAlign: 'center',
+    },
+    tappableName: {
+        textDecorationLine: 'underline',
+        textDecorationStyle: 'dotted',
     },
     matchPlayerGroup: {
         color: colors.primary[500],
