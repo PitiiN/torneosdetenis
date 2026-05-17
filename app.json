@@ -30,7 +30,7 @@
       "package": "com.pitin.torneosdetenis",
       "googleServicesFile": "./google-services.json",
       "notification": {
-        "icon": "./assets/notification-icon.png",
+        "icon": "./assets/Logos/LogoNotificación.png",
         "color": "#0f172a"
       },
       "versionCode": 10,
@@ -63,7 +63,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/notification-icon.png",
+          "icon": "./assets/Logos/LogoNotificación.png",
           "color": "#0f172a"
         }
       ],
