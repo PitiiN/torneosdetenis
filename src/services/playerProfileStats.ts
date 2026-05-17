@@ -877,8 +877,8 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
       case 'CampeónEscalafón.png': return require('../../assets/Medallas/CampeónEscalafón.png');
       case 'CampeónHonor.png': return require('../../assets/Medallas/CampeónHonor.png');
       case 'CampeónInicial.png': return require('../../assets/Medallas/CampeónInicial.png');
-      case 'CampeónInvicto.png': return require('../../assets/Medallas/CampeónInvicta.png'); // fallback
-      case 'CampeónInvicto.png': return require('../../assets/Medallas/CampeónInvicto.png');
+      case 'CampeónInvicto.png':
+      case 'CampeónInvicta.png': return require('../../assets/Medallas/CampeónInvicta.png');
       case 'CampeónPrimera.png': return require('../../assets/Medallas/CampeónPrimera.png');
       case 'CampeónQuinta.png': return require('../../assets/Medallas/CampeónQuinta.png');
       case 'CampeónSegunda.png': return require('../../assets/Medallas/CampeónSegunda.png');
