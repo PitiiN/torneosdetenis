@@ -60,7 +60,7 @@ export default function CreateTournamentScreen() {
   const [registrationCloseAt, setRegistrationCloseAt] = useState('');
   const [registrationCloseTime, setRegistrationCloseTime] = useState('');
   const [address, setAddress] = useState('');
-  const [comuna, setComuna] = useState('');
+  const [comuna, setComuna] = useState('Libre');
   const [surface, setSurface] = useState(TOURNAMENT_SURFACES[0]);
   const [status, setStatus] = useState(STATUS_OPTIONS[0]);
   const [transferInfo, setTransferInfo] = useState('');

@@ -1599,6 +1599,8 @@ export default function AdminTournamentDetailScreen() {
     const handlePlayerLongPress = (playerId: string | null) => {
         if (playerId && UUID_PATTERN.test(playerId)) {
             setSelectedPlayerForProfile(playerId);
+        } else {
+            Alert.alert('Información', 'Este jugador no tiene registro en la aplicación');
         }
     };
 

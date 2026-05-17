@@ -50,7 +50,7 @@ export const TournamentFinals = ({ summary, matches, onPlayerPress }: Tournament
     };
 
     const isTappable = (player: FinalMatch['player1']) =>
-        !!onPlayerPress && !!player.id && player.name !== 'Por definir';
+        !!onPlayerPress && player.name && player.name !== 'Por definir' && player.name !== 'TBD' && player.name !== 'BYE';
 
     return (
         <View style={styles.container}>
@@ -95,7 +95,7 @@ export const TournamentFinals = ({ summary, matches, onPlayerPress }: Tournament
                             <TouchableOpacity
                                 style={styles.playerWrapper}
                                 disabled={!isTappable(match.player1)}
-                                onPress={() => match.player1.id && onPlayerPress?.(match.player1.id)}
+                                onPress={() => onPlayerPress?.(match.player1.id || 'non_registered')}
                                 activeOpacity={0.6}
                             >
                                 {renderAvatar(match.player1.name, match.player1.image, 60)}
@@ -113,7 +113,7 @@ export const TournamentFinals = ({ summary, matches, onPlayerPress }: Tournament
                             <TouchableOpacity
                                 style={styles.playerWrapper}
                                 disabled={!isTappable(match.player2)}
-                                onPress={() => match.player2.id && onPlayerPress?.(match.player2.id)}
+                                onPress={() => onPlayerPress?.(match.player2.id || 'non_registered')}
                                 activeOpacity={0.6}
                             >
                                 {renderAvatar(match.player2.name, match.player2.image, 60)}

@@ -24,8 +24,8 @@ export const RoundRobinTable = ({ groupName, standings, onPlayerPress }: RoundRo
     const styles = getStyles(colors);
 
     const handlePress = (standing: Standing) => {
-        if (onPlayerPress && standing.playerId) {
-            onPlayerPress(standing.playerId);
+        if (onPlayerPress) {
+            onPlayerPress(standing.playerId || 'non_registered');
         }
     };
 
@@ -52,7 +52,7 @@ export const RoundRobinTable = ({ groupName, standings, onPlayerPress }: RoundRo
                     <View key={s.name} style={[styles.row, idx === standings.length - 1 && styles.lastRow]}>
                         <View style={[styles.cell, styles.nameCellComponent]}>
                             <View style={[styles.statusDot, s.isActive && styles.activeDot]} />
-                            {onPlayerPress && s.playerId ? (
+                            {onPlayerPress && s.name && s.name !== 'TBD' && s.name !== 'Por definir' && s.name !== 'BYE' ? (
                                 <TouchableOpacity onPress={() => handlePress(s)} activeOpacity={0.6}>
                                     <Text style={[styles.playerName, styles.tappablePlayerName]}>{s.name}</Text>
                                 </TouchableOpacity>

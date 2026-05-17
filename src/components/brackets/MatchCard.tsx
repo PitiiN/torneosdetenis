@@ -67,11 +67,11 @@ export const MatchCard = ({ player1, player2, status, scheduledAt, court, onPlay
   };
 
   const isTappable = (player: Player) =>
-    !!onPlayerPress && !!player.id && player.name !== 'TBD' && player.name !== 'BYE';
+    !!onPlayerPress && player.name && player.name !== 'TBD' && player.name !== 'BYE';
 
   const handlePlayerPress = (player: Player) => {
-    if (isTappable(player) && player.id) {
-      onPlayerPress!(player.id);
+    if (isTappable(player)) {
+      onPlayerPress!(player.id || 'non_registered');
     }
   };
 

@@ -22,7 +22,7 @@ import {
 } from '@/services/registrationRequests';
 import { normalizeTournamentStatus } from '@/services/tournamentStatus';
 import { notifyTournamentUsers } from '@/services/pushNotifications';
-
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const { width } = Dimensions.get('window');
 const OPEN_STATUSES = new Set(['open', 'in_progress']);
@@ -93,9 +93,13 @@ export default function TournamentDetailScreen() {
 
 
 
-    const handlePlayerPress = (playerId: string) => {
-        setSelectedPlayerId(playerId);
-        setShowPlayerProfile(true);
+    const handlePlayerPress = (playerId: string | null) => {
+        if (playerId && UUID_PATTERN.test(playerId)) {
+            setSelectedPlayerId(playerId);
+            setShowPlayerProfile(true);
+        } else {
+            Alert.alert('Información', 'Este jugador no tiene registro en la aplicación');
+        }
     };
 
     const goBackToParentOrTournaments = React.useCallback(() => {
@@ -283,17 +287,122 @@ export default function TournamentDetailScreen() {
                 }, {});
             }
 
+            // Parse manual assignments from tournament description
+            const parseManualAssignments = (description?: string | null) => {
+                const match = (description || '').match(/\[MANUAL_ASSIGNMENTS:([^\]]+)\]/);
+                if (!match?.[1]) {
+                    return { rrSlots: {}, matchSlots: {} };
+                }
+                try {
+                    return JSON.parse(decodeURIComponent(match[1]));
+                } catch {
+                    return { rrSlots: {}, matchSlots: {} };
+                }
+            };
+
+            const manualAssignments = parseManualAssignments(tourData?.description);
+            const isDoublesModality = String(tourData?.modality || '').toLowerCase() === 'dobles';
+
+            const getMatchManualKey = (slot: number) => {
+                if (slot === 1) return 'player_a';
+                if (slot === 2) return 'player_a2';
+                if (slot === 3) return 'player_b';
+                return 'player_b2';
+            };
+
+            const getMatchManualFallbackKey = (slot: number) => (slot === 1 || slot === 2 ? 'player_a' : 'player_b');
+
+            const getAssignedNameForMatchSlot = (matchId: string, slot: number) => {
+                if (!manualAssignments?.matchSlots?.[matchId]) return null;
+                const key = getMatchManualKey(slot);
+                if (manualAssignments.matchSlots[matchId][key]?.name) {
+                    return manualAssignments.matchSlots[matchId][key].name;
+                }
+                if (!isDoublesModality) {
+                    const fallbackKey = getMatchManualFallbackKey(slot);
+                    if (manualAssignments.matchSlots[matchId][fallbackKey]?.name) {
+                        return manualAssignments.matchSlots[matchId][fallbackKey].name;
+                    }
+                }
+                return null;
+            };
+
+            const getRoundRobinMatchesByGroup = () => {
+                return loadedMatches.reduce((acc: Record<string, any[]>, m: any) => {
+                    if (String(m.round || '').startsWith('Grupo ')) {
+                        const gName = String(m.round || '').replace('Grupo ', '');
+                        acc[gName] = acc[gName] || [];
+                        acc[gName].push(m);
+                    }
+                    return acc;
+                }, {} as Record<string, any[]>);
+            };
+
+            const getRoundRobinSlotIndexForMatchSide = (groupName: string, matchId: string, slot: 1 | 2) => {
+                const groupMatches = [...(getRoundRobinMatchesByGroup()[groupName] || [])].sort(
+                    (a, b) => (a.match_order || 0) - (b.match_order || 0)
+                );
+                const slots = getRoundRobinSlots(tourData?.max_players || 2, groupName, tourData?.format, tourData?.description);
+                const pairings = [];
+                for (let i = 0; i < slots.length; i++) {
+                    for (let j = i + 1; j < slots.length; j++) {
+                        pairings.push([i, j]);
+                    }
+                }
+                const matchIndex = groupMatches.findIndex(m => m.id === matchId);
+                const pairing = pairings[matchIndex];
+                if (!pairing) return null;
+                return slot === 1 ? pairing[0] : pairing[1];
+            };
+
+            const getAssignedNameForGroupSlot = (groupName: string, slotIndex: number, member: 1 | 2) => {
+                const key = member === 2 ? `${slotIndex}:2` : String(slotIndex);
+                if (manualAssignments?.rrSlots?.[groupName]?.[key]?.name) {
+                    return manualAssignments.rrSlots[groupName][key].name;
+                }
+                if (!isDoublesModality && member === 2) {
+                    if (manualAssignments?.rrSlots?.[groupName]?.[String(slotIndex)]?.name) {
+                        return manualAssignments.rrSlots[groupName][String(slotIndex)].name;
+                    }
+                }
+                return null;
+            };
+
+            const resolvePlayerName = (match: any, slot: number) => {
+                const playerId = slot === 1 ? match.player_a_id : (slot === 2 ? match.player_a2_id : (slot === 3 ? match.player_b_id : match.player_b2_id));
+                if (playerId) return playerNameMap[playerId] || 'TBD';
+
+                // Check group/round robin manual assignments
+                if (String(match.round || '').startsWith('Grupo ')) {
+                    const groupName = String(match.round || '').replace('Grupo ', '');
+                    const entrySlot = (slot === 1 || slot === 2) ? 1 : 2;
+                    const slotIndex = getRoundRobinSlotIndexForMatchSide(groupName, match.id, entrySlot as 1 | 2);
+                    if (slotIndex !== null) {
+                        const assignedName = getAssignedNameForGroupSlot(groupName, slotIndex, (slot === 2 || slot === 4) ? 2 : 1);
+                        if (assignedName) return assignedName;
+                        return `Cupo ${groupName}${slotIndex + 1}${ (slot === 2 || slot === 4) ? ' (P2)' : ''}`;
+                    }
+                }
+
+                // Check bracket manual assignments
+                const assignedName = getAssignedNameForMatchSlot(match.id, slot);
+                if (assignedName) return assignedName;
+
+                return 'TBD';
+            };
+
             setPlayerCache({ names: playerNameMap, avatars: playerAvatarMap });
 
             setMatches(
                 loadedMatches.map((match: any) => ({
                     ...match,
-                    player_a: { name: playerNameMap[match.player_a_id] || 'TBD', avatar_url: playerAvatarMap[match.player_a_id] || null },
-                    player_a2: { name: playerNameMap[match.player_a2_id] || 'TBD', avatar_url: playerAvatarMap[match.player_a2_id] || null },
-                    player_b: { name: playerNameMap[match.player_b_id] || 'TBD', avatar_url: playerAvatarMap[match.player_b_id] || null },
-                    player_b2: { name: playerNameMap[match.player_b2_id] || 'TBD', avatar_url: playerAvatarMap[match.player_b2_id] || null },
+                    player_a: { name: resolvePlayerName(match, 1), avatar_url: playerAvatarMap[match.player_a_id] || null },
+                    player_a2: { name: resolvePlayerName(match, 2), avatar_url: playerAvatarMap[match.player_a2_id] || null },
+                    player_b: { name: resolvePlayerName(match, 3), avatar_url: playerAvatarMap[match.player_b_id] || null },
+                    player_b2: { name: resolvePlayerName(match, 4), avatar_url: playerAvatarMap[match.player_b2_id] || null },
                 }))
             );
+
 
 
         } catch (error) {
@@ -319,7 +428,6 @@ export default function TournamentDetailScreen() {
         }
     }, [tournament?.format]);
 
-    const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     const IS_DOUBLES = String(tournament?.modality || '').toLowerCase() === 'dobles';
 
     const getDisplayName = (match: any, index: number) => {
@@ -1321,9 +1429,9 @@ export default function TournamentDetailScreen() {
                                         return (
                                             <View key={match.id} style={{ gap: 4 }}>
                                                 <View style={styles.groupMatchRow}>
-                                                    <TouchableOpacity style={styles.groupMatchPlayer} disabled={!match.player_a_id} onPress={() => match.player_a_id && handlePlayerPress(match.player_a_id)} activeOpacity={0.6}>
+                                                    <TouchableOpacity style={styles.groupMatchPlayer} disabled={!match.player_a_id && (!match.player_a?.name || match.player_a?.name === 'Por definir' || match.player_a?.name === 'TBD')} onPress={() => handlePlayerPress(match.player_a_id)} activeOpacity={0.6}>
                                                         {renderPlayerAvatar(match.player_a?.name || 'Por definir', match.player_a?.avatar_url || null)}
-                                                        <Text style={[styles.groupMatchName, match.player_a_id && styles.tappableGroupName]} numberOfLines={1}>{match.player_a?.name || 'Por definir'}</Text>
+                                                        <Text style={[styles.groupMatchName, (match.player_a_id || (match.player_a?.name && match.player_a?.name !== 'Por definir' && match.player_a?.name !== 'TBD')) && styles.tappableGroupName]} numberOfLines={1}>{match.player_a?.name || 'Por definir'}</Text>
                                                     </TouchableOpacity>
                                                     
                                                     {canSubmitScoreForGroupMatch ? (
@@ -1345,8 +1453,8 @@ export default function TournamentDetailScreen() {
                                                         <Text style={styles.groupMatchScore}>{match.score || 'VS'}</Text>
                                                     )}
 
-                                                    <TouchableOpacity style={[styles.groupMatchPlayer, { justifyContent: 'flex-end' }]} disabled={!match.player_b_id} onPress={() => match.player_b_id && handlePlayerPress(match.player_b_id)} activeOpacity={0.6}>
-                                                        <Text style={[styles.groupMatchName, { textAlign: 'right' }, match.player_b_id && styles.tappableGroupName]} numberOfLines={1}>{match.player_b?.name || 'Por definir'}</Text>
+                                                    <TouchableOpacity style={[styles.groupMatchPlayer, { justifyContent: 'flex-end' }]} disabled={!match.player_b_id && (!match.player_b?.name || match.player_b?.name === 'Por definir' || match.player_b?.name === 'TBD')} onPress={() => handlePlayerPress(match.player_b_id)} activeOpacity={0.6}>
+                                                        <Text style={[styles.groupMatchName, { textAlign: 'right' }, (match.player_b_id || (match.player_b?.name && match.player_b?.name !== 'Por definir' && match.player_b?.name !== 'TBD')) && styles.tappableGroupName]} numberOfLines={1}>{match.player_b?.name || 'Por definir'}</Text>
                                                         {renderPlayerAvatar(match.player_b?.name || 'Por definir', match.player_b?.avatar_url || null)}
                                                     </TouchableOpacity>
                                                 </View>
