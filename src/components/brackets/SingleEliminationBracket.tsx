@@ -13,6 +13,8 @@ interface SingleEliminationProps {
             status?: string;
             scheduledAt?: string | null;
             court?: string | null;
+            canSubmitScore?: boolean;
+            onSubmitScore?: () => void;
         }[];
     }[];
     onPlayerPress?: (playerId: string) => void;
@@ -72,6 +74,8 @@ export const SingleEliminationBracket = ({ rounds, onPlayerPress }: SingleElimin
                                         scheduledAt={match.scheduledAt}
                                         court={match.court}
                                         onPlayerPress={onPlayerPress}
+                                        canSubmitScore={match.canSubmitScore}
+                                        onSubmitScore={match.onSubmitScore}
                                     />
                                 </View>
                             ))}

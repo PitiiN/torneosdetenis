@@ -515,6 +515,20 @@ export default function AdminTournamentDetailScreen() {
                 .eq('id', id)
                 .single();
             if (tourErr) throw tourErr;
+
+            // Fetch players_can_submit_scores separately (column may not exist yet)
+            let playersCanSubmitScores = false;
+            try {
+                const { data: scoreFlag } = await supabase
+                    .from('tournaments')
+                    .select('players_can_submit_scores')
+                    .eq('id', id)
+                    .single();
+                playersCanSubmitScores = Boolean(scoreFlag?.players_can_submit_scores);
+            } catch {
+                // Column doesn't exist yet – keep default false
+            }
+            (tourData as any).players_can_submit_scores = playersCanSubmitScores;
             if (!canManageOrganization(access, tourData.organization_id)) {
                 router.replace('/(tabs)/tournaments');
                 return;
@@ -1334,6 +1348,36 @@ export default function AdminTournamentDetailScreen() {
         } finally {
             setSavingMatch(false);
         }
+    };
+
+    const handleTogglePlayerScoreSubmission = () => {
+        if (!tournament?.id) return;
+        const nextValue = !tournament.players_can_submit_scores;
+        Alert.alert(
+            nextValue ? 'Habilitar resultados' : 'Deshabilitar resultados',
+            nextValue
+                ? 'Los jugadores inscritos podran ingresar sus propios resultados en los partidos donde participan.'
+                : 'Los jugadores ya no podran ingresar resultados desde su vista.',
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: nextValue ? 'Habilitar' : 'Deshabilitar',
+                    onPress: async () => {
+                        const { error } = await supabase
+                            .from('tournaments')
+                            .update({ players_can_submit_scores: nextValue })
+                            .eq('id', tournament.id);
+
+                        if (error) {
+                            Alert.alert('Error', 'No se pudo actualizar esta opcion.');
+                            return;
+                        }
+
+                        setTournament((prev: any) => prev ? { ...prev, players_can_submit_scores: nextValue } : prev);
+                    },
+                },
+            ]
+        );
     };
 
     const generateMatches = async () => {
@@ -4134,6 +4178,34 @@ export default function AdminTournamentDetailScreen() {
                             >
                                 <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Finalizar Torneo</Text>
                             </TouchableOpacity>
+                            <TouchableOpacity
+                                style={{
+                                    alignSelf: 'flex-start',
+                                    backgroundColor: tournament.players_can_submit_scores ? colors.primary[500] : colors.surfaceSecondary,
+                                    paddingHorizontal: spacing.md,
+                                    paddingVertical: spacing.xs,
+                                    borderRadius: borderRadius.sm,
+                                    borderWidth: 1,
+                                    borderColor: tournament.players_can_submit_scores ? colors.primary[500] : colors.border,
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    gap: spacing.xs
+                                }}
+                                onPress={handleTogglePlayerScoreSubmission}
+                            >
+                                <Ionicons
+                                    name={tournament.players_can_submit_scores ? 'checkmark-circle' : 'create-outline'}
+                                    size={14}
+                                    color={tournament.players_can_submit_scores ? '#fff' : colors.textSecondary}
+                                />
+                                <Text style={{
+                                    color: tournament.players_can_submit_scores ? '#fff' : colors.textSecondary,
+                                    fontSize: 12,
+                                    fontWeight: '700'
+                                }}>
+                                    {tournament.players_can_submit_scores ? 'Autocarga Habilitada' : 'Habilitar Autocarga'}
+                                </Text>
+                            </TouchableOpacity>
                         </View>
                     )}
                     {(tournament.status === 'finished' || tournament.status === 'completed') && (
@@ -5303,6 +5375,17 @@ const getStyles = (colors: any) => {
             alignItems: 'center'
         },
         actionButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'flex-end' },
+        playerScoreToggle: {
+            alignItems: 'center',
+            borderRadius: 20,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.surfaceSecondary,
+        },
+        playerScoreToggleActive: {
+            backgroundColor: colors.primary[500],
+            borderColor: colors.primary[500],
+        },
         headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: colors.text, textAlign: 'center' },
 
         tabsContainer: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.surface },

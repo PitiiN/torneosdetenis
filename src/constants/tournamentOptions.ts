@@ -1,6 +1,6 @@
 export const TOURNAMENT_CATEGORIES = ['Escalafón', 'Honor', '1ra', '2da', '3ra', '4ta', '5ta', 'Inicial'];
 
-export const CHILEAN_COMUNAS = [
+const sortedComunas = [
     'Alhué', 'Buin', 'Calera de Tango', 'Cerrillos', 'Cerro Navia', 
     'Colina', 'Conchalí', 'Curacaví', 'El Bosque', 'El Monte', 
     'Estación Central', 'Huechuraba', 'Independencia', 'Isla de Maipo', 
@@ -13,6 +13,8 @@ export const CHILEAN_COMUNAS = [
     'San Miguel', 'San Pedro', 'San Ramón', 'Santiago', 'Talagante', 
     'Tiltil', 'Vitacura'
 ].sort();
+
+export const CHILEAN_COMUNAS = ['Libre', ...sortedComunas];
 
 export const TOURNAMENT_SURFACES = ['Arcilla', 'Dura', 'Césped', 'Carpeta'];
 export const TOURNAMENT_SET_TYPES = ['Al mejor de 3 Sets', 'Set Corto', 'Al mejor de 5 Sets'];

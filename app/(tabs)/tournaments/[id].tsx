@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert, Image, BackHandler, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert, Image, BackHandler, Keyboard, Modal, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
@@ -9,7 +9,7 @@ import { SingleEliminationBracket } from '@/components/brackets/SingleEliminatio
 import { RoundRobinTable } from '@/components/brackets/RoundRobinTable';
 import { TournamentFinals } from '@/components/brackets/TournamentFinals';
 import { supabase } from '@/services/supabase';
-import { getRoundRobinGroupNames, getRoundRobinSlots, hasConsolationBracket, isRoundRobinFormat } from '@/services/tournamentStructure';
+import { getRoundRobinGroupNames, getRoundRobinSlots, getSetsToShow, hasConsolationBracket, isRoundRobinFormat } from '@/services/tournamentStructure';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { resolveStorageAssetUrl } from '@/services/storage';
 import { RegistrationProofModal } from '@/components/tournaments/RegistrationProofModal';
@@ -21,6 +21,8 @@ import {
     submitTournamentRegistrationRequest,
 } from '@/services/registrationRequests';
 import { normalizeTournamentStatus } from '@/services/tournamentStatus';
+import { notifyTournamentUsers } from '@/services/pushNotifications';
+
 
 const { width } = Dimensions.get('window');
 const OPEN_STATUSES = new Set(['open', 'in_progress']);
@@ -81,6 +83,15 @@ export default function TournamentDetailScreen() {
     const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
     const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
     const [showPlayerProfile, setShowPlayerProfile] = useState(false);
+    const [scoreModalVisible, setScoreModalVisible] = useState(false);
+    const [selectedScoreMatch, setSelectedScoreMatch] = useState<any | null>(null);
+    const [setScores, setSetScores] = useState([{ s1: '', s2: '' }, { s1: '', s2: '' }, { s1: '', s2: '' }]);
+    const [savingScore, setSavingScore] = useState(false);
+    const [playerCache, setPlayerCache] = useState<{ names: Record<string, string>; avatars: Record<string, string | null> }>({ names: {}, avatars: {} });
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const scoreInputRefs = React.useRef<(any | null)[]>([]);
+
+
 
     const handlePlayerPress = (playerId: string) => {
         setSelectedPlayerId(playerId);
@@ -128,6 +139,20 @@ export default function TournamentDetailScreen() {
                 .single();
             
             if (tourErr) throw tourErr;
+
+            // Fetch players_can_submit_scores separately (column may not exist yet)
+            let playersCanSubmitScores = false;
+            try {
+                const { data: scoreFlag } = await supabase
+                    .from('tournaments')
+                    .select('players_can_submit_scores')
+                    .eq('id', tournamentId)
+                    .maybeSingle();
+                playersCanSubmitScores = Boolean(scoreFlag?.players_can_submit_scores);
+            } catch (e) {
+                // Graceful fallback if column doesn't exist
+            }
+
             let effectiveRegistrationCloseAt = tourData?.registration_close_at || null;
             let effectiveRegistrationCloseTime = tourData?.registration_close_time || null;
 
@@ -154,10 +179,12 @@ export default function TournamentDetailScreen() {
             setTournament({
                 ...tourData,
                 status: ownStatus,
+                players_can_submit_scores: playersCanSubmitScores,
                 effective_registration_close_at: effectiveRegistrationCloseAt,
                 effective_registration_close_time: effectiveRegistrationCloseTime,
                 effective_status: effectiveStatus,
             });
+
 
             if (tourData?.is_tournament_master) {
                 router.replace(`/(tabs)/tournaments/master/${tourData.id}`);
@@ -165,6 +192,7 @@ export default function TournamentDetailScreen() {
             }
 
             const { data: { session } } = await supabase.auth.getSession();
+            setCurrentUserId(session?.user?.id || null);
             if (session?.user?.id) {
                 const { count } = await supabase
                     .from('registrations')
@@ -187,6 +215,7 @@ export default function TournamentDetailScreen() {
                 setIsRegistered(false);
                 setLatestRequest(null);
             }
+
 
             // Fetch Matches
             const { data: matchData, error: matchErr } = await supabase
@@ -254,6 +283,8 @@ export default function TournamentDetailScreen() {
                 }, {});
             }
 
+            setPlayerCache({ names: playerNameMap, avatars: playerAvatarMap });
+
             setMatches(
                 loadedMatches.map((match: any) => ({
                     ...match,
@@ -263,6 +294,7 @@ export default function TournamentDetailScreen() {
                     player_b2: { name: playerNameMap[match.player_b2_id] || 'TBD', avatar_url: playerAvatarMap[match.player_b2_id] || null },
                 }))
             );
+
 
         } catch (error) {
             Alert.alert('Error', 'No se pudo cargar la información del torneo.');
@@ -287,6 +319,413 @@ export default function TournamentDetailScreen() {
         }
     }, [tournament?.format]);
 
+    const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const IS_DOUBLES = String(tournament?.modality || '').toLowerCase() === 'dobles';
+
+    const getDisplayName = (match: any, index: number) => {
+        if (!match) return 'TBD';
+        if (index === 1) {
+            const id = match.player_a_id;
+            if (id && playerCache?.names?.[id]) return playerCache.names[id];
+            return match.player_a?.name || 'TBD';
+        }
+        if (index === 2) {
+            const id = match.player_a2_id;
+            if (id && playerCache?.names?.[id]) return playerCache.names[id];
+            return match.player_a2?.name || '';
+        }
+        if (index === 3) {
+            const id = match.player_b_id;
+            if (id && playerCache?.names?.[id]) return playerCache.names[id];
+            return match.player_b?.name || 'TBD';
+        }
+        if (index === 4) {
+            const id = match.player_b2_id;
+            if (id && playerCache?.names?.[id]) return playerCache.names[id];
+            return match.player_b2?.name || '';
+        }
+        return 'TBD';
+    };
+
+    const getNotifiablePlayerIdsFromMatch = (match: any) => {
+        const candidateIds = [match?.player_a_id, match?.player_a2_id, match?.player_b_id, match?.player_b2_id]
+            .map((value) => String(value || '').trim())
+            .filter((value) => UUID_PATTERN.test(value));
+        return [...new Set(candidateIds)];
+    };
+
+    const isMatchFullyDefinedForNotification = (match: any) => {
+        if (!match) return false;
+        if (IS_DOUBLES) {
+            return [match?.player_a_id, match?.player_a2_id, match?.player_b_id, match?.player_b2_id]
+                .every((value) => UUID_PATTERN.test(String(value || '').trim()));
+        }
+        return [match?.player_a_id, match?.player_b_id]
+            .every((value) => UUID_PATTERN.test(String(value || '').trim()));
+    };
+
+    const buildMatchPairingLabel = (match: any) => {
+        const teamA = IS_DOUBLES
+            ? `${getDisplayName(match, 1)} / ${getDisplayName(match, 2)}`
+            : getDisplayName(match, 1);
+        const teamB = IS_DOUBLES
+            ? `${getDisplayName(match, 3)} / ${getDisplayName(match, 4)}`
+            : getDisplayName(match, 3);
+        return `${teamA} vs ${teamB}`;
+    };
+
+    const notifyDefinedKnockoutMatch = async (match: any) => {
+        const tId = String(tournamentId || '').trim();
+        if (!UUID_PATTERN.test(tId)) return;
+
+        const recipientIds = getNotifiablePlayerIdsFromMatch(match);
+        if (!recipientIds.length) return;
+
+        await notifyTournamentUsers({
+            tournamentId: tId,
+            userIds: recipientIds,
+            type: 'next_match_defined',
+            title: 'Nuevo enfrentamiento definido',
+            body: `Tu proximo partido ya esta definido: ${buildMatchPairingLabel(match)}.`,
+            matchId: String(match?.id || '').trim() || null,
+            data: {
+                type: 'next_match_defined',
+                tournamentId: tId,
+                matchId: String(match?.id || '').trim() || null,
+            },
+        });
+    };
+
+    const getNextMatchLink = (match: any, sourceMatches: any[]) => {
+        if (String(match.round || '').startsWith('Grupo ')) return null;
+        const isRoundRobinFinal = String(match.round || '').includes('RR');
+        const isConsolation = /^Consolaci/i.test(String(match.round || ''));
+        const bracketMatches = sourceMatches
+            .filter(candidate => {
+                if (isRoundRobinFinal) return String(candidate.round || '').includes('RR');
+                if (isConsolation) return /^Consolaci/i.test(String(candidate.round || ''));
+                return !/^Consolaci/i.test(String(candidate.round || '')) && !String(candidate.round || '').includes('RR');
+            })
+            .sort((a, b) => {
+                if ((a.round_number || 0) !== (b.round_number || 0)) return (a.round_number || 0) - (b.round_number || 0);
+                return (a.match_order || 0) - (b.match_order || 0);
+            });
+
+        const currentRoundMatches = bracketMatches.filter(candidate => candidate.round_number === match.round_number);
+        const nextRoundMatches = bracketMatches.filter(candidate => 
+            candidate.round_number === (match.round_number || 0) + 1 &&
+            !/3er|4to|5to|6to|puesto/i.test(String(candidate.round || ''))
+        );
+        if (nextRoundMatches.length === 0) return null;
+
+        const currentIndex = currentRoundMatches.findIndex(candidate => candidate.id === match.id);
+        if (currentIndex === -1) return null;
+
+        const nextMatch = nextRoundMatches[Math.floor(currentIndex / 2)];
+        if (!nextMatch) return null;
+
+        const nextSlotField = currentIndex % 2 === 0 ? 'player_a_id' : 'player_b_id';
+        const nextSlotField2 = currentIndex % 2 === 0 ? 'player_a2_id' : 'player_b2_id';
+        return { nextMatch, nextSlotField, nextSlotField2 };
+    };
+
+    const getConsolationLinkForLoser = (match: any, sourceMatches: any[]) => {
+        if (!hasConsolation) return null;
+        if (String(match.round || '').startsWith('Grupo ')) return null;
+        if (/^Consolaci/i.test(String(match.round || ''))) return null;
+        if (String(match.round || '').includes('RR')) return null;
+        if (/3er|4to|5to|6to|puesto/i.test(String(match.round || ''))) return null;
+        if (Number(match.round_number || 0) !== 1) return null;
+
+        const firstMainRoundMatches = sourceMatches
+            .filter((candidate) =>
+                !String(candidate.round || '').startsWith('Grupo ') &&
+                !/^Consolaci/i.test(String(candidate.round || '')) &&
+                !String(candidate.round || '').includes('RR') &&
+                !/3er|4to|5to|6to|puesto/i.test(String(candidate.round || '')) &&
+                Number(candidate.round_number || 0) === 1
+            )
+            .sort((a, b) => (a.match_order || 0) - (b.match_order || 0));
+
+        const consolationFirstRoundMatches = sourceMatches
+            .filter((candidate) =>
+                /^Consolaci/i.test(String(candidate.round || '')) &&
+                !/3er|4to|5to|6to|puesto/i.test(String(candidate.round || '')) &&
+                Number(candidate.round_number || 0) === 1
+            )
+            .sort((a, b) => (a.match_order || 0) - (b.match_order || 0));
+
+        if (!consolationFirstRoundMatches.length) return null;
+
+        const currentIndex = firstMainRoundMatches.findIndex((candidate) => candidate.id === match.id);
+        if (currentIndex === -1) return null;
+
+        const targetMatch = consolationFirstRoundMatches[Math.floor(currentIndex / 2)];
+        if (!targetMatch) return null;
+
+        const nextSlotField = currentIndex % 2 === 0 ? 'player_a_id' : 'player_b_id';
+        const nextSlotField2 = currentIndex % 2 === 0 ? 'player_a2_id' : 'player_b2_id';
+        return { nextMatch: targetMatch, nextSlotField, nextSlotField2 };
+    };
+
+    const applyMatchPatchLocally = (matchId: string, patch: any) => {
+        setMatches((prevMatches) =>
+            prevMatches.map((m) => {
+                if (m.id !== matchId) return m;
+                const updatedMatch = { ...m, ...patch };
+                // Keep the nested player details in sync from the patch data using our cache
+                if (patch.player_a_id !== undefined) {
+                    updatedMatch.player_a = patch.player_a_id 
+                        ? { name: playerCache.names[patch.player_a_id] || 'TBD', avatar_url: playerCache.avatars[patch.player_a_id] || null }
+                        : { name: 'TBD', avatar_url: null };
+                }
+                if (patch.player_b_id !== undefined) {
+                    updatedMatch.player_b = patch.player_b_id 
+                        ? { name: playerCache.names[patch.player_b_id] || 'TBD', avatar_url: playerCache.avatars[patch.player_b_id] || null }
+                        : { name: 'TBD', avatar_url: null };
+                }
+                if (patch.player_a2_id !== undefined) {
+                    updatedMatch.player_a2 = patch.player_a2_id 
+                        ? { name: playerCache.names[patch.player_a2_id] || 'TBD', avatar_url: playerCache.avatars[patch.player_a2_id] || null }
+                        : { name: 'TBD', avatar_url: null };
+                }
+                if (patch.player_b2_id !== undefined) {
+                    updatedMatch.player_b2 = patch.player_b2_id 
+                        ? { name: playerCache.names[patch.player_b2_id] || 'TBD', avatar_url: playerCache.avatars[patch.player_b2_id] || null }
+                        : { name: 'TBD', avatar_url: null };
+                }
+                return updatedMatch;
+            })
+        );
+    };
+
+    const propagateWinnerToNextMatch = async (
+        match: any,
+        winnerId: string | null,
+        winner2Id: string | null = null,
+        sourceMatches: any[] = matches,
+        notifyOnDefinedMatch = false
+    ) => {
+        if (!winnerId) return false;
+        if (String(match.round || '').startsWith('Grupo ')) return false;
+
+        const nextLink = getNextMatchLink(match, sourceMatches);
+        if (!nextLink) return false;
+        const { nextMatch, nextSlotField, nextSlotField2 } = nextLink;
+        const wasFullyDefinedBefore = isMatchFullyDefinedForNotification(nextMatch);
+        let projectedNextMatch = { ...nextMatch };
+
+        const currentWinnerId = nextMatch?.[nextSlotField] || null;
+        const currentWinner2Id = nextMatch?.[nextSlotField2] || null;
+        if (currentWinnerId && currentWinnerId !== winnerId) return false;
+        if (IS_DOUBLES && winner2Id && currentWinner2Id && currentWinner2Id !== winner2Id) return false;
+
+        let advancedAny = false;
+        const updateData: any = {};
+        if (currentWinnerId !== winnerId) {
+            updateData[nextSlotField] = winnerId;
+            projectedNextMatch = { ...projectedNextMatch, [nextSlotField]: winnerId };
+            const slotPrefix = nextSlotField.startsWith('player_a') ? 'player_a' : 'player_b';
+            projectedNextMatch[slotPrefix] = {
+                name: playerCache.names[winnerId] || 'TBD',
+                avatar_url: playerCache.avatars[winnerId] || null
+            };
+        }
+        if (IS_DOUBLES && winner2Id && currentWinner2Id !== winner2Id) {
+            updateData[nextSlotField2] = winner2Id;
+            projectedNextMatch = { ...projectedNextMatch, [nextSlotField2]: winner2Id };
+            const slotPrefix2 = nextSlotField2.startsWith('player_a2') ? 'player_a2' : 'player_b2';
+            projectedNextMatch[slotPrefix2] = {
+                name: playerCache.names[winner2Id] || 'TBD',
+                avatar_url: playerCache.avatars[winner2Id] || null
+            };
+        }
+
+        if (Object.keys(updateData).length > 0) {
+            const { error } = await supabase
+                .from('matches')
+                .update(updateData)
+                .eq('id', nextMatch.id);
+
+            if (error) throw error;
+            applyMatchPatchLocally(nextMatch.id, updateData);
+            advancedAny = true;
+        }
+
+        if (
+            notifyOnDefinedMatch &&
+            !wasFullyDefinedBefore &&
+            isMatchFullyDefinedForNotification(projectedNextMatch)
+        ) {
+            await notifyDefinedKnockoutMatch(projectedNextMatch);
+        }
+        return advancedAny;
+    };
+
+    const propagateLoserToConsolation = async (
+        match: any,
+        loserId: string | null,
+        loser2Id: string | null = null,
+        sourceMatches: any[] = matches,
+        loserSide?: 'A' | 'B',
+        notifyOnDefinedMatch = false
+    ) => {
+        if (!hasConsolation) return false;
+        if (!loserId && !loserSide) return false;
+        if (String(match.round || '').startsWith('Grupo ')) return false;
+
+        const nextLink = getConsolationLinkForLoser(match, sourceMatches);
+        if (!nextLink) return false;
+        const { nextMatch, nextSlotField, nextSlotField2 } = nextLink;
+        const wasFullyDefinedBefore = isMatchFullyDefinedForNotification(nextMatch);
+        let projectedNextMatch = { ...nextMatch };
+
+        const loserDisplayName = loserSide ? getDisplayName(match, loserSide === 'A' ? 1 : 3) : '';
+        const loserDisplayName2 = IS_DOUBLES && loserSide ? getDisplayName(match, loserSide === 'A' ? 2 : 4) : '';
+        if (loserId === 'BYE' || loserDisplayName === 'BYE' || (IS_DOUBLES && loserDisplayName2 === 'BYE')) {
+            return false;
+        }
+
+        const currentLoserId = nextMatch?.[nextSlotField] || null;
+        const currentLoser2Id = nextMatch?.[nextSlotField2] || null;
+        if (loserId && currentLoserId && currentLoserId !== loserId) return false;
+        if (IS_DOUBLES && loser2Id && currentLoser2Id && currentLoser2Id !== loser2Id) return false;
+
+        let advancedAny = false;
+        const updateData: any = {};
+        if (loserId && currentLoserId !== loserId) {
+            updateData[nextSlotField] = loserId;
+            projectedNextMatch = { ...projectedNextMatch, [nextSlotField]: loserId };
+            const slotPrefix = nextSlotField.startsWith('player_a') ? 'player_a' : 'player_b';
+            projectedNextMatch[slotPrefix] = {
+                name: playerCache.names[loserId] || 'TBD',
+                avatar_url: playerCache.avatars[loserId] || null
+            };
+        }
+        if (IS_DOUBLES && loser2Id && currentLoser2Id !== loser2Id) {
+            updateData[nextSlotField2] = loser2Id;
+            projectedNextMatch = { ...projectedNextMatch, [nextSlotField2]: loser2Id };
+            const slotPrefix2 = nextSlotField2.startsWith('player_a2') ? 'player_a2' : 'player_b2';
+            projectedNextMatch[slotPrefix2] = {
+                name: playerCache.names[loser2Id] || 'TBD',
+                avatar_url: playerCache.avatars[loser2Id] || null
+            };
+        }
+
+        if (Object.keys(updateData).length > 0) {
+            const { error } = await supabase
+                .from('matches')
+                .update(updateData)
+                .eq('id', nextMatch.id);
+
+            if (error) throw error;
+            applyMatchPatchLocally(nextMatch.id, updateData);
+            advancedAny = true;
+        }
+
+        if (
+            notifyOnDefinedMatch &&
+            !wasFullyDefinedBefore &&
+            isMatchFullyDefinedForNotification(projectedNextMatch)
+        ) {
+            await notifyDefinedKnockoutMatch(projectedNextMatch);
+        }
+        return advancedAny;
+    };
+
+    const resolveWinnerIds = (match: any, scoreStr: string) => {
+        if (!scoreStr) return { w1: null, w2: null, side: null };
+        if (/^W\.?O\.?$/i.test(scoreStr)) return { w1: match.winner_id, w2: match.winner_2_id, side: match.winner_id === match.player_a_id ? 'A' : 'B' };
+
+        let playerAWins = 0;
+        let playerBWins = 0;
+
+        scoreStr.split(/\s*,\s*/).forEach(set => {
+            const [aRaw, bRaw] = set.split('-');
+            const a = Number((aRaw || '').match(/\d+/)?.[0]);
+            const b = Number((bRaw || '').match(/\d+/)?.[0]);
+            if (!Number.isFinite(a) || !Number.isFinite(b)) return;
+            if (a > b) playerAWins += 1;
+            if (b > a) playerBWins += 1;
+        });
+
+        if (playerAWins === playerBWins) return { w1: null, w2: null, side: null };
+        return playerAWins > playerBWins 
+            ? { w1: match.player_a_id, w2: match.player_a2_id, side: 'A' }
+            : { w1: match.player_b_id, w2: match.player_b2_id, side: 'B' };
+    };
+
+    const openScoreSubmissionModal = (match: any) => {
+        setSelectedScoreMatch(match);
+        const setsToShow = getSetsToShow(tournament?.set_type);
+        const initialSets = Array.from({ length: setsToShow }, () => ({ s1: '', s2: '' }));
+        if (match.score) {
+            const parts = match.score.split(/\s*,\s*/);
+            parts.forEach((part: string, idx: number) => {
+                if (idx < setsToShow) {
+                    const [s1, s2] = part.split('-');
+                    initialSets[idx] = { s1: s1 || '', s2: s2 || '' };
+                }
+            });
+        }
+        setSetScores(initialSets);
+        setScoreModalVisible(true);
+    };
+
+    const saveMatchScore = async () => {
+        if (!selectedScoreMatch) return;
+        setSavingScore(true);
+
+        const finalScore = setScores
+            .filter(set => set.s1 !== '' || set.s2 !== '')
+            .map(set => `${set.s1}-${set.s2}`)
+            .join(', ');
+
+        try {
+            const { w1, w2, side } = resolveWinnerIds(selectedScoreMatch, finalScore);
+            const { error } = await supabase
+                .from('matches')
+                .update({ 
+                    score: finalScore, 
+                    winner_id: w1, 
+                    winner_2_id: w2,
+                    status: 'finished' 
+                })
+                .eq('id', selectedScoreMatch.id);
+
+            if (error) throw error;
+
+            if (side) {
+                const updatedMatches = matches.map(m => 
+                    m.id === selectedScoreMatch.id 
+                        ? { ...m, score: finalScore, winner_id: w1, winner_2_id: w2, status: 'finished' } 
+                        : m
+                );
+
+                await propagateWinnerToNextMatch(selectedScoreMatch, w1, w2, updatedMatches, true);
+                
+                const loserSide = side === 'A' ? 'B' : 'A';
+                const loserId = loserSide === 'A' ? selectedScoreMatch.player_a_id : selectedScoreMatch.player_b_id;
+                const loser2Id = loserSide === 'A' ? selectedScoreMatch.player_a2_id : selectedScoreMatch.player_b2_id;
+                await propagateLoserToConsolation(selectedScoreMatch, loserId, loser2Id, updatedMatches, loserSide, true);
+            }
+
+            applyMatchPatchLocally(selectedScoreMatch.id, {
+                score: finalScore,
+                winner_id: w1,
+                winner_2_id: w2,
+                status: 'finished'
+            });
+
+            setScoreModalVisible(false);
+            Alert.alert('Éxito', 'Resultado guardado correctamente.');
+        } catch (err: any) {
+            Alert.alert('Error', err.message || 'No se pudo guardar el resultado.');
+        } finally {
+            setSavingScore(false);
+        }
+    };
+
     const transformToRounds = (matchesList: any[]) => {
         const filteredMatches = matchesList.filter(m => {
             const isConsolationMatch = /^(Consolaci|Repechaje)/i.test(String(m.round || ''));
@@ -307,6 +746,17 @@ export default function TournamentDetailScreen() {
             const scoreStr = m.score || '';
             const setScores = scoreStr.split(/\s*,\s*/).map((s: string) => s.split('-'));
             
+            const isPlayerInMatch = currentUserId && (
+                m.player_a_id === currentUserId ||
+                m.player_a2_id === currentUserId ||
+                m.player_b_id === currentUserId ||
+                m.player_b2_id === currentUserId
+            );
+            const canSubmitScore = tournament?.players_can_submit_scores && 
+                                   m.status !== 'finished' && 
+                                   isRegistered && 
+                                   isPlayerInMatch;
+
             roundsMap[roundNum].matches.push({
                 id: m.id,
                 player1: { 
@@ -325,7 +775,9 @@ export default function TournamentDetailScreen() {
                 },
                 status: m.status === 'finished' ? 'Finalizado' : (m.status === 'live' ? 'En Vivo' : 'Pendiente'),
                 scheduledAt: m.scheduled_at,
-                court: m.court
+                court: m.court,
+                canSubmitScore: Boolean(canSubmitScore),
+                onSubmitScore: () => openScoreSubmissionModal(m)
             });
         });
 
@@ -854,20 +1306,51 @@ export default function TournamentDetailScreen() {
                                     <Text style={styles.groupMatchesTitle}>
                                         {`Proximos Partidos - Grupo ${currentGroupName}`}
                                     </Text>
-                                    {(groupMatchesByName[currentGroupName] || []).map(match => (
-                                        <View key={match.id} style={{ gap: 4 }}>
-                                            <View style={styles.groupMatchRow}>
-                                                <TouchableOpacity style={styles.groupMatchPlayer} disabled={!match.player_a_id} onPress={() => match.player_a_id && handlePlayerPress(match.player_a_id)} activeOpacity={0.6}>
-                                                    {renderPlayerAvatar(match.player_a?.name || 'Por definir', match.player_a?.avatar_url || null)}
-                                                    <Text style={[styles.groupMatchName, match.player_a_id && styles.tappableGroupName]} numberOfLines={1}>{match.player_a?.name || 'Por definir'}</Text>
-                                                </TouchableOpacity>
-                                                <Text style={styles.groupMatchScore}>{match.score || 'VS'}</Text>
-                                                <TouchableOpacity style={[styles.groupMatchPlayer, { justifyContent: 'flex-end' }]} disabled={!match.player_b_id} onPress={() => match.player_b_id && handlePlayerPress(match.player_b_id)} activeOpacity={0.6}>
-                                                    <Text style={[styles.groupMatchName, { textAlign: 'right' }, match.player_b_id && styles.tappableGroupName]} numberOfLines={1}>{match.player_b?.name || 'Por definir'}</Text>
-                                                    {renderPlayerAvatar(match.player_b?.name || 'Por definir', match.player_b?.avatar_url || null)}
-                                                </TouchableOpacity>
-                                            </View>
-                                            {(match.scheduled_at || match.court) && (
+                                    {(groupMatchesByName[currentGroupName] || []).map(match => {
+                                        const isPlayerInGroupMatch = currentUserId && (
+                                            match.player_a_id === currentUserId ||
+                                            match.player_a2_id === currentUserId ||
+                                            match.player_b_id === currentUserId ||
+                                            match.player_b2_id === currentUserId
+                                        );
+                                        const canSubmitScoreForGroupMatch = tournament?.players_can_submit_scores && 
+                                                                           match.status !== 'finished' && 
+                                                                           isRegistered && 
+                                                                           isPlayerInGroupMatch;
+
+                                        return (
+                                            <View key={match.id} style={{ gap: 4 }}>
+                                                <View style={styles.groupMatchRow}>
+                                                    <TouchableOpacity style={styles.groupMatchPlayer} disabled={!match.player_a_id} onPress={() => match.player_a_id && handlePlayerPress(match.player_a_id)} activeOpacity={0.6}>
+                                                        {renderPlayerAvatar(match.player_a?.name || 'Por definir', match.player_a?.avatar_url || null)}
+                                                        <Text style={[styles.groupMatchName, match.player_a_id && styles.tappableGroupName]} numberOfLines={1}>{match.player_a?.name || 'Por definir'}</Text>
+                                                    </TouchableOpacity>
+                                                    
+                                                    {canSubmitScoreForGroupMatch ? (
+                                                        <TouchableOpacity 
+                                                            onPress={() => openScoreSubmissionModal(match)} 
+                                                            style={{ 
+                                                                paddingHorizontal: spacing.sm, 
+                                                                paddingVertical: spacing.xs, 
+                                                                backgroundColor: colors.primary[500] + '15', 
+                                                                borderRadius: 6 
+                                                            }}
+                                                            activeOpacity={0.7}
+                                                        >
+                                                            <Text style={[styles.groupMatchScore, { color: colors.primary[500] }]}>
+                                                                {match.score || 'Ingresar'}
+                                                            </Text>
+                                                        </TouchableOpacity>
+                                                    ) : (
+                                                        <Text style={styles.groupMatchScore}>{match.score || 'VS'}</Text>
+                                                    )}
+
+                                                    <TouchableOpacity style={[styles.groupMatchPlayer, { justifyContent: 'flex-end' }]} disabled={!match.player_b_id} onPress={() => match.player_b_id && handlePlayerPress(match.player_b_id)} activeOpacity={0.6}>
+                                                        <Text style={[styles.groupMatchName, { textAlign: 'right' }, match.player_b_id && styles.tappableGroupName]} numberOfLines={1}>{match.player_b?.name || 'Por definir'}</Text>
+                                                        {renderPlayerAvatar(match.player_b?.name || 'Por definir', match.player_b?.avatar_url || null)}
+                                                    </TouchableOpacity>
+                                                </View>
+                                                {(match.scheduled_at || match.court) && (
                                                 <View style={{ flexDirection: 'row', justifyContent: 'center', gap: spacing.lg, marginBottom: spacing.sm }}>
                                                     {match.scheduled_at && (
                                                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -885,8 +1368,9 @@ export default function TournamentDetailScreen() {
                                                     )}
                                                 </View>
                                             )}
-                                        </View>
-                                    ))}
+                                            </View>
+                                        );
+                                    })}
                                 </View>
                             </View>
                         )
@@ -951,6 +1435,101 @@ export default function TournamentDetailScreen() {
                     setSelectedPlayerId(null);
                 }}
             />
+
+            {/* Score Submission Modal for Players */}
+            <Modal
+                visible={scoreModalVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => {
+                    if (savingScore) return;
+                    setScoreModalVisible(false);
+                }}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.scoreModalContent}>
+                        <View style={styles.scoreModalHeader}>
+                            <Text style={styles.scoreModalTitle}>Ingresar Resultado</Text>
+                            <TouchableOpacity disabled={savingScore} onPress={() => setScoreModalVisible(false)}>
+                                <Ionicons name="close" size={24} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <Text style={styles.scoreModalSubtitle}>
+                            Ingresa el resultado de tu partido set por set.
+                        </Text>
+
+                        {selectedScoreMatch && (
+                            <View style={{ gap: spacing.md, marginVertical: spacing.md }}>
+                                {/* Column Headers pointing to the players/teams */}
+                                <View style={{ flexDirection: 'row', paddingLeft: 60, gap: spacing.md, marginBottom: -spacing.sm }}>
+                                    <Text style={{ flex: 1, color: colors.textSecondary, fontSize: 11, fontWeight: '700', textAlign: 'center' }} numberOfLines={2}>
+                                        {getDisplayName(selectedScoreMatch, 1)}{IS_DOUBLES ? ` / ${getDisplayName(selectedScoreMatch, 2)}` : ''}
+                                    </Text>
+                                    <View style={{ width: 10 }} />
+                                    <Text style={{ flex: 1, color: colors.textSecondary, fontSize: 11, fontWeight: '700', textAlign: 'center' }} numberOfLines={2}>
+                                        {getDisplayName(selectedScoreMatch, 3)}{IS_DOUBLES ? ` / ${getDisplayName(selectedScoreMatch, 4)}` : ''}
+                                    </Text>
+                                </View>
+
+                                {setScores.map((set, idx) => (
+                                    <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.md }}>
+                                        <Text style={{ color: colors.textSecondary, fontWeight: '700', width: 44 }}>Set {idx + 1}</Text>
+                                        <TextInput
+                                            style={[styles.scoreInput, { width: 80, color: colors.text, textAlign: 'center' }]}
+                                            keyboardType="number-pad"
+                                            maxLength={2}
+                                            value={set.s1}
+                                            ref={ref => { scoreInputRefs.current[idx * 2] = ref; }}
+                                            onChangeText={(val) => {
+                                                const newSets = [...setScores];
+                                                newSets[idx] = { ...newSets[idx], s1: val };
+                                                setSetScores(newSets);
+                                                if (val && scoreInputRefs.current[(idx * 2) + 1]) {
+                                                    scoreInputRefs.current[(idx * 2) + 1]?.focus();
+                                                }
+                                            }}
+                                        />
+                                        <Text style={{ color: colors.textTertiary }}>-</Text>
+                                        <TextInput
+                                            style={[styles.scoreInput, { width: 80, color: colors.text, textAlign: 'center' }]}
+                                            keyboardType="number-pad"
+                                            maxLength={2}
+                                            value={set.s2}
+                                            ref={ref => { scoreInputRefs.current[(idx * 2) + 1] = ref; }}
+                                            onChangeText={(val) => {
+                                                const newSets = [...setScores];
+                                                newSets[idx] = { ...newSets[idx], s2: val };
+                                                setSetScores(newSets);
+                                                if (val && scoreInputRefs.current[(idx * 2) + 2]) {
+                                                    scoreInputRefs.current[(idx * 2) + 2]?.focus();
+                                                }
+                                            }}
+                                        />
+                                    </View>
+                                ))}
+                            </View>
+                        )}
+
+                        <View style={styles.scoreModalButtons}>
+                            <TouchableOpacity 
+                                style={[styles.scoreModalBtn, styles.scoreModalBtnCancel]} 
+                                onPress={() => setScoreModalVisible(false)}
+                                disabled={savingScore}
+                            >
+                                <Text style={styles.scoreModalBtnCancelText}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={[styles.scoreModalBtn, styles.scoreModalBtnSave]} 
+                                onPress={saveMatchScore}
+                                disabled={savingScore}
+                            >
+                                {savingScore ? <TennisSpinner size={18} color="#fff" /> : <Text style={styles.scoreModalBtnSaveText}>Guardar</Text>}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -1190,6 +1769,76 @@ const getStyles = (colors: any) => StyleSheet.create({
         fontSize: 12,
         textAlign: 'center',
         lineHeight: 18,
+    },
+    scoreInput: {
+        backgroundColor: colors.background,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: borderRadius.md,
+        height: 48,
+        paddingHorizontal: spacing.md,
+        fontSize: 16,
+        textAlign: 'center',
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: spacing.xl,
+    },
+    scoreModalContent: {
+        backgroundColor: colors.surface,
+        borderRadius: borderRadius.xl,
+        borderWidth: 1,
+        borderColor: colors.border,
+        width: '100%',
+        maxWidth: 400,
+        padding: spacing.xl,
+        gap: spacing.lg,
+    },
+    scoreModalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    scoreModalTitle: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: colors.text,
+    },
+    scoreModalSubtitle: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        lineHeight: 18,
+    },
+    scoreModalButtons: {
+        flexDirection: 'row',
+        gap: spacing.md,
+        marginTop: spacing.md,
+    },
+    scoreModalBtn: {
+        flex: 1,
+        height: 48,
+        borderRadius: borderRadius.lg,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    scoreModalBtnCancel: {
+        backgroundColor: 'transparent',
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    scoreModalBtnCancelText: {
+        color: colors.textSecondary,
+        fontWeight: '700',
+    },
+    scoreModalBtnSave: {
+        backgroundColor: colors.primary[500],
+    },
+    scoreModalBtnSaveText: {
+        color: '#fff',
+        fontWeight: '700',
     },
 });
 

@@ -18,9 +18,11 @@ interface MatchCardProps {
   scheduledAt?: string | null;
   court?: string | null;
   onPlayerPress?: (playerId: string) => void;
+  canSubmitScore?: boolean;
+  onSubmitScore?: () => void;
 }
 
-export const MatchCard = ({ player1, player2, status, scheduledAt, court, onPlayerPress }: MatchCardProps) => {
+export const MatchCard = ({ player1, player2, status, scheduledAt, court, onPlayerPress, canSubmitScore, onSubmitScore }: MatchCardProps) => {
   const { colors } = useTheme();
   const styles = getStyles(colors);
 
@@ -130,6 +132,13 @@ export const MatchCard = ({ player1, player2, status, scheduledAt, court, onPlay
              </View>
           )}
         </View>
+      )}
+
+      {canSubmitScore && (
+        <TouchableOpacity style={styles.submitScoreButton} onPress={onSubmitScore} activeOpacity={0.82}>
+          <Ionicons name="create-outline" size={13} color={colors.primary[500]} />
+          <Text style={styles.submitScoreText}>Ingresar resultado</Text>
+        </TouchableOpacity>
       )}
     </View>
   );
@@ -251,5 +260,20 @@ const getStyles = (colors: any) => StyleSheet.create({
     fontSize: 10,
     color: colors.textTertiary,
     fontWeight: '700',
-  }
+  },
+  submitScoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.primary[500] + '12',
+  },
+  submitScoreText: {
+    color: colors.primary[500],
+    fontSize: 11,
+    fontWeight: '800',
+  },
 });
