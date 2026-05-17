@@ -1004,7 +1004,11 @@ export default function ProfileScreen() {
             <View style={[styles.header, { paddingTop: Math.max(insets.top, spacing.md) }]}>
                 <View style={styles.headerContent}>
                     <View style={styles.logoRow}>
-                        <Ionicons name="tennisball" size={24} color={colors.primary[500]} />
+                        <Image
+                            source={require('../../assets/Logos/LogoAplicación.png')}
+                            style={{ width: 24, height: 24 }}
+                            resizeMode="contain"
+                        />
                         <Text style={styles.logoText}>SweetSpot</Text>
                     </View>
 

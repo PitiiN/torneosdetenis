@@ -299,7 +299,11 @@ export default function InicioScreen() {
             {/* Top Bar */}
             <View style={[styles.header, { paddingTop: Math.max(insets.top, spacing.md) }]}>
                 <View style={styles.headerLeft}>
-                    <Ionicons name="tennisball" size={24} color={colors.primary[500]} />
+                    <Image
+                        source={require('../../assets/Logos/LogoAplicación.png')}
+                        style={{ width: 24, height: 24 }}
+                        resizeMode="contain"
+                    />
                     <Text style={styles.logoText}>SweetSpot</Text>
                 </View>
                 <View style={{ width: 40, height: 40 }} />
