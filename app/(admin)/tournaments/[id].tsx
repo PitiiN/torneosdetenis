@@ -21,7 +21,7 @@ import {
     resolveChampionFromMatches,
     syncTournamentChampion
 } from '@/services/tournamentChampion';
-import { notifyTournamentUsers } from '@/services/pushNotifications';
+import { notifyRankingChangesOnTournamentFinished, notifyTournamentUsers } from '@/services/pushNotifications';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const COURT_OPTIONS = Array.from({ length: 20 }, (_current, index) => `Cancha ${index + 1}`);
@@ -685,7 +685,7 @@ export default function AdminTournamentDetailScreen() {
             const d = new Date(match.scheduled_at);
             if (!Number.isNaN(d.getTime())) {
                 initialDate = `${d.getFullYear()}-${padTwo(d.getMonth() + 1)}-${padTwo(d.getDate())}`;
-                initialTime = `${padTwo(d.getHours())}:${padTwo(d.getMinutes())}`;
+                initialTime = `${padTwo(d.getHours())}${padTwo(d.getMinutes())}`;
             }
         }
         const normalizedCourt = COURT_OPTIONS.includes(String(match.court || ''))
@@ -1258,6 +1258,7 @@ export default function AdminTournamentDetailScreen() {
                                     },
                                 });
                             }
+                            await notifyRankingChangesOnTournamentFinished({ tournamentId });
                             await loadTournamentData();
                             Alert.alert('Éxito', 'Torneo finalizado.');
                         }
@@ -5124,14 +5125,16 @@ export default function AdminTournamentDetailScreen() {
                             />
                             
                             <View>
-                                <Text style={[styles.modalDividerText, { textAlign: 'left', marginBottom: 4 }]}>Hora (HH:MM)</Text>
+                                <Text style={[styles.modalDividerText, { textAlign: 'left', marginBottom: 4 }]}>Hora (HHMM)</Text>
                                 <TextInput
                                     style={[styles.scoreInput, { color: colors.text, textAlign: 'left' }]}
-                                    placeholder="Ej: 18:30"
+                                    placeholder="Ej: 1830"
                                     placeholderTextColor={colors.textTertiary}
                                     value={scheduleData.time}
-                                    onChangeText={(time) => setScheduleData({ ...scheduleData, time })}
-                                    maxLength={5}
+                                    onChangeText={(time) => setScheduleData({ ...scheduleData, time: time.replace(/[^0-9]/g, '') })}
+                                    keyboardType="number-pad"
+                                    inputMode="numeric"
+                                    maxLength={4}
                                 />
                             </View>
 

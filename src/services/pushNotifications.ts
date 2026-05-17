@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { getScoreText, getTournamentPlacements, parseSetScore, resolveMatchWinnerSide } from './ranking';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
@@ -15,6 +16,16 @@ type NotifyUsersInput = {
   type: string;
   title: string;
   body: string;
+  matchId?: string | null;
+  data?: Record<string, any>;
+};
+
+type NotifyDirectUsersInput = {
+  userIds: string[];
+  type: string;
+  title: string;
+  body: string;
+  tournamentId?: string | null;
   matchId?: string | null;
   data?: Record<string, any>;
 };
@@ -136,6 +147,124 @@ const fetchDirectPlayerPushTargets = async (userIds: string[]) => {
     }));
 };
 
+const getSidePlayerIds = (match: any, side: 'A' | 'B') => {
+  const ids = side === 'A'
+    ? [match?.player_a_id, match?.player_a2_id]
+    : [match?.player_b_id, match?.player_b2_id];
+  return ids
+    .map((id) => String(id || '').trim())
+    .filter((id) => id && id !== 'BYE' && UUID_PATTERN.test(id));
+};
+
+type RankingRow = {
+  playerId: string;
+  name: string;
+  rank: number;
+  points: number;
+  trophies: number;
+  matchesWon: number;
+  matchesPlayed: number;
+  setsWon: number;
+  gamesWon: number;
+};
+
+const groupRowsByTournament = (rows: any[]) =>
+  (rows || []).reduce((acc: Record<string, any[]>, row: any) => {
+    const tournamentId = String(row?.tournament_id || '').trim();
+    if (!tournamentId) return acc;
+    acc[tournamentId] = [...(acc[tournamentId] || []), row];
+    return acc;
+  }, {});
+
+const buildRankingRows = (
+  tournaments: any[],
+  matchesByTournament: Record<string, any[]>,
+  registrationsByTournament: Record<string, any[]>,
+  profileNameById: Record<string, string>
+): RankingRow[] => {
+  const stats: Record<string, Omit<RankingRow, 'playerId' | 'name' | 'rank'>> = {};
+  const ensureStats = (playerId: string) => {
+    if (!stats[playerId]) {
+      stats[playerId] = { points: 0, trophies: 0, matchesWon: 0, matchesPlayed: 0, setsWon: 0, gamesWon: 0 };
+    }
+    return stats[playerId];
+  };
+
+  tournaments.forEach((tournament) => {
+    const tournamentMatches = matchesByTournament[tournament.id] || [];
+    const placements = getTournamentPlacements(tournament, tournamentMatches);
+
+    placements.forEach((placement) => {
+      [placement.playerId, placement.playerId2].filter(Boolean).forEach((id) => {
+        const playerStats = ensureStats(String(id));
+        playerStats.points += Number(placement.points) || 0;
+        if (String(placement.place) === '1') playerStats.trophies += 1;
+      });
+    });
+
+    tournamentMatches.forEach((match) => {
+      const winnerSide = resolveMatchWinnerSide(match, tournamentMatches);
+      const scoreText = getScoreText(match.score);
+      const sets = scoreText.split(/\s*,\s*/).map((set) => set.trim()).filter(Boolean);
+
+      (['A', 'B'] as const).forEach((side) => {
+        getSidePlayerIds(match, side).forEach((playerId) => {
+          const playerStats = ensureStats(playerId);
+          playerStats.matchesPlayed += 1;
+          if (winnerSide === side) playerStats.matchesWon += 1;
+
+          sets.forEach((setScore) => {
+            const parsed = parseSetScore(setScore);
+            if (!parsed) return;
+            const gamesWon = side === 'A' ? parsed.leftValue : parsed.rightValue;
+            const gamesLost = side === 'A' ? parsed.rightValue : parsed.leftValue;
+            playerStats.gamesWon += gamesWon;
+            if (gamesWon > gamesLost) playerStats.setsWon += 1;
+          });
+        });
+      });
+    });
+
+    (registrationsByTournament[tournament.id] || []).forEach((registration) => {
+      const playerId = String(registration?.player_id || '').trim();
+      if (UUID_PATTERN.test(playerId)) ensureStats(playerId);
+    });
+  });
+
+  const getWinRate = (row: Omit<RankingRow, 'playerId' | 'name' | 'rank'>) =>
+    row.matchesPlayed > 0 ? row.matchesWon / row.matchesPlayed : 0;
+
+  const isTie = (left: RankingRow, right: RankingRow) =>
+    left.points === right.points &&
+    left.trophies === right.trophies &&
+    getWinRate(left) === getWinRate(right) &&
+    left.setsWon === right.setsWon &&
+    left.gamesWon === right.gamesWon;
+
+  const rows = Object.entries(stats)
+    .map(([playerId, row]) => ({
+      playerId,
+      name: profileNameById[playerId] || 'Jugador',
+      rank: 0,
+      ...row,
+    }))
+    .sort((left, right) => {
+      if (right.points !== left.points) return right.points - left.points;
+      if (right.trophies !== left.trophies) return right.trophies - left.trophies;
+      const winRateDelta = getWinRate(right) - getWinRate(left);
+      if (winRateDelta !== 0) return winRateDelta;
+      if (right.setsWon !== left.setsWon) return right.setsWon - left.setsWon;
+      if (right.gamesWon !== left.gamesWon) return right.gamesWon - left.gamesWon;
+      return left.name.localeCompare(right.name);
+    });
+
+  rows.forEach((row, index) => {
+    row.rank = index === 0 ? 1 : (isTie(row, rows[index - 1]) ? rows[index - 1].rank : index + 1);
+  });
+
+  return rows;
+};
+
 const fetchTournamentAdminPushTargets = async (tournamentId: string) => {
   const { data, error } = await supabase.rpc('get_tournament_admin_push_targets', {
     p_tournament_id: tournamentId,
@@ -178,6 +307,194 @@ export const notifyTournamentUsers = async (input: NotifyUsersInput) => {
       data: input.data,
     }))
   );
+};
+
+export const notifyDirectUsers = async (input: NotifyDirectUsersInput) => {
+  const normalizedUserIds = normalizeUuidList(input.userIds);
+  if (!normalizedUserIds.length) return;
+
+  await createInAppNotifications({
+    userIds: normalizedUserIds,
+    type: input.type,
+    title: input.title,
+    body: input.body,
+    tournamentId: input.tournamentId || null,
+    matchId: input.matchId || null,
+  });
+
+  const targets = await fetchDirectPlayerPushTargets(normalizedUserIds);
+  const tokens = [...new Set(targets.map((target) => String(target?.expo_push_token || '').trim()).filter(isExpoPushToken))];
+  if (!tokens.length) return;
+
+  await sendExpoMessages(
+    tokens.map((token) => ({
+      to: token,
+      title: input.title,
+      body: input.body,
+      sound: 'default' as const,
+      channelId: 'default' as const,
+      priority: 'high' as const,
+      data: input.data,
+    }))
+  );
+};
+
+export const notifyRankingChangesOnTournamentFinished = async (input: {
+  tournamentId: string;
+}) => {
+  const tournamentId = String(input.tournamentId || '').trim();
+  if (!UUID_PATTERN.test(tournamentId)) return;
+
+  const { data: tournament, error: tournamentError } = await supabase
+    .from('tournaments')
+    .select('id, name, organization_id, level, modality, status')
+    .eq('id', tournamentId)
+    .maybeSingle();
+
+  if (tournamentError || !tournament?.organization_id || !tournament?.level) {
+    if (tournamentError) console.warn('[pushNotifications] tournament ranking fetch error:', tournamentError.message);
+    return;
+  }
+
+  const { data: contextTournamentsRows, error: contextTournamentsError } = await supabase
+    .from('tournaments')
+    .select('id, name, organization_id, level, modality, status, format, description, start_date, end_date, created_at')
+    .eq('organization_id', tournament.organization_id)
+    .eq('level', tournament.level)
+    .in('status', ['completed', 'finalized', 'finished']);
+
+  if (contextTournamentsError) {
+    console.warn('[pushNotifications] ranking tournaments fetch error:', contextTournamentsError.message);
+    return;
+  }
+
+  const modality = tournament.modality === 'dobles' ? 'dobles' : 'singles';
+  const contextTournaments = (contextTournamentsRows || []).filter((row: any) =>
+    modality === 'dobles' ? row.modality === 'dobles' : (!row.modality || row.modality === 'singles')
+  );
+  const currentTournaments = contextTournaments.some((row: any) => row.id === tournamentId)
+    ? contextTournaments
+    : [...contextTournaments, tournament];
+  const previousTournaments = currentTournaments.filter((row: any) => row.id !== tournamentId);
+  const tournamentIds = currentTournaments.map((row: any) => row.id).filter(Boolean);
+
+  if (!tournamentIds.length) return;
+
+  const { data: matchesRows, error: matchesError } = await supabase
+    .from('matches')
+    .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, round_number, match_order, score, status')
+    .in('tournament_id', tournamentIds);
+
+  if (matchesError) {
+    console.warn('[pushNotifications] ranking matches fetch error:', matchesError.message);
+    return;
+  }
+
+  const { data: registrationsRows, error: registrationsError } = await supabase
+    .from('registrations')
+    .select('tournament_id, player_id, status')
+    .in('tournament_id', tournamentIds);
+
+  if (registrationsError) {
+    console.warn('[pushNotifications] ranking registrations fetch error:', registrationsError.message);
+    return;
+  }
+
+  const matchesByTournament = groupRowsByTournament(matchesRows || []);
+  const registrationsByTournament = groupRowsByTournament(registrationsRows || []);
+  const playerIds = [...new Set([
+    ...(matchesRows || []).flatMap((match: any) => [match.player_a_id, match.player_a2_id, match.player_b_id, match.player_b2_id]),
+    ...(registrationsRows || []).map((registration: any) => registration.player_id),
+  ].map((id) => String(id || '').trim()).filter((id) => UUID_PATTERN.test(id)))];
+
+  if (!playerIds.length) return;
+
+  const { data: profilesRows } = await supabase
+    .from('public_profiles')
+    .select('id, name')
+    .in('id', playerIds);
+
+  const profileNameById = (profilesRows || []).reduce((acc: Record<string, string>, profile: any) => {
+    acc[profile.id] = profile.name || 'Jugador';
+    return acc;
+  }, {});
+
+  const currentRows = buildRankingRows(currentTournaments, matchesByTournament, registrationsByTournament, profileNameById);
+  const previousRows = buildRankingRows(previousTournaments, matchesByTournament, registrationsByTournament, profileNameById);
+  const currentRankByPlayer = new Map(currentRows.map((row) => [row.playerId, row.rank]));
+  const previousRankByPlayer = new Map(previousRows.map((row) => [row.playerId, row.rank]));
+
+  const currentTournamentMatches = matchesByTournament[tournamentId] || [];
+  const currentTournamentRegistrations = registrationsByTournament[tournamentId] || [];
+  const participantIds = new Set([
+    ...currentTournamentMatches.flatMap((match: any) => [match.player_a_id, match.player_a2_id, match.player_b_id, match.player_b2_id]),
+    ...currentTournamentRegistrations.map((registration: any) => registration.player_id),
+  ].map((id) => String(id || '').trim()).filter((id) => UUID_PATTERN.test(id)));
+
+  await Promise.allSettled(
+    Array.from(participantIds).map((playerId) => {
+      const currentRank = currentRankByPlayer.get(playerId);
+      if (!currentRank) return Promise.resolve();
+      const previousRank = previousRankByPlayer.get(playerId);
+      const body = previousRank === currentRank
+        ? 'Has mantenido tu posicion actual en el ranking!'
+        : `Tu nueva posicion en el ranking de ${tournament.level} es #${currentRank}.`;
+
+      return notifyTournamentUsers({
+        tournamentId,
+        userIds: [playerId],
+        type: 'ranking_position_updated',
+        title: 'Ranking actualizado',
+        body,
+        data: {
+          type: 'ranking_position_updated',
+          tournamentId,
+          organizationId: tournament.organization_id,
+          level: tournament.level,
+          rank: currentRank,
+          previousRank: previousRank || null,
+        },
+      });
+    })
+  );
+
+  const nonParticipantRankingPlayerIds = currentRows
+    .map((row) => row.playerId)
+    .filter((playerId) => !participantIds.has(playerId));
+  if (nonParticipantRankingPlayerIds.length > 0) {
+    await notifyTournamentUsers({
+      tournamentId,
+      userIds: nonParticipantRankingPlayerIds,
+      type: 'ranking_category_updated',
+      title: 'Ranking actualizado',
+      body: 'Hubo cambios en el ranking de tu categoria! Entra a revisarlos! 😱',
+      data: {
+        type: 'ranking_category_updated',
+        tournamentId,
+        organizationId: tournament.organization_id,
+        level: tournament.level,
+      },
+    });
+  }
+
+  const previousLeader = previousRows.find((row) => row.rank === 1);
+  const currentLeader = currentRows.find((row) => row.rank === 1);
+  if (currentLeader && (!previousLeader || previousLeader.playerId !== currentLeader.playerId)) {
+    await notifyTournamentUsers({
+      tournamentId,
+      userIds: currentRows.map((row) => row.playerId),
+      type: 'ranking_new_number_one',
+      title: 'Nuevo N1',
+      body: `Tenemos nuevo rey! Felicidades a ${currentLeader.name} por su N1 🤘`,
+      data: {
+        type: 'ranking_new_number_one',
+        tournamentId,
+        organizationId: tournament.organization_id,
+        level: tournament.level,
+        playerId: currentLeader.playerId,
+      },
+    });
+  }
 };
 
 export const notifyTournamentAdminsOnRegistrationRequest = async (input: {

@@ -99,6 +99,20 @@ export default function RootLayout() {
     };
   }, [session?.user?.id]);
 
+  useEffect(() => {
+    const unsubscribe = notificationService.addNotificationListeners(
+      () => {},
+      (response) => {
+        const data = response.notification.request.content.data as Record<string, any> | undefined;
+        if (data?.type === 'achievement_unlocked' || data?.target === 'profile') {
+          router.push('/(tabs)/profile');
+        }
+      }
+    );
+
+    return unsubscribe;
+  }, [router]);
+
   if (!initialized) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF' }}>

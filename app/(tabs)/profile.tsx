@@ -12,8 +12,306 @@ import { notificationService } from '@/services/notificationService';
 import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
 import { getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
+import { PlayerAchievement, loadPlayerAchievements, loadProfileStatsBundle } from '@/services/playerProfileStats';
 
 const { width } = Dimensions.get('window');
+
+const formatDate = (dateString?: string) => {
+    if (!dateString) return 'Fecha no disponible';
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) {
+        return dateString;
+    }
+    return d.toLocaleDateString();
+};
+
+const MONTH_NAMES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+function RankingEvolutionChart({
+    rankingHistory,
+    modality,
+    colors,
+    selectedYear,
+    availableYears,
+    onSelectYear,
+}: {
+    rankingHistory: any[];
+    modality: 'singles' | 'dobles';
+    colors: any;
+    selectedYear: number | null;
+    availableYears: number[];
+    onSelectYear: (year: number) => void;
+}) {
+    const validPoints = (rankingHistory || [])
+        .map((p) => {
+            const rank = modality === 'singles' ? p.singlesRank : p.doblesRank;
+            return { month: p.month, rank };
+        })
+        .filter((p) => p.rank !== null && p.rank !== undefined && p.rank > 0) as { month: number; rank: number }[];
+
+    if (validPoints.length === 0) {
+        return (
+            <View style={{
+                backgroundColor: colors.surface,
+                borderRadius: 24,
+                padding: 20,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderWidth: 1,
+                borderColor: colors.border,
+                minHeight: 140,
+                marginTop: 20,
+                marginBottom: 10,
+            }}>
+                <Ionicons name="analytics" size={32} color={colors.textTertiary} />
+                <Text style={{
+                    color: colors.text,
+                    fontSize: 15,
+                    fontWeight: '800',
+                    textAlign: 'center',
+                    marginTop: 8,
+                }}>
+                    Evolución de Ranking
+                </Text>
+                
+                {availableYears.length > 1 && (
+                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 12, marginBottom: 4, flexWrap: 'wrap', justifyContent: 'center' }}>
+                        {availableYears.map((year) => (
+                            <TouchableOpacity
+                                key={year}
+                                style={{
+                                    paddingHorizontal: 12,
+                                    paddingVertical: 6,
+                                    borderRadius: 12,
+                                    backgroundColor: selectedYear === year ? colors.primary[500] : colors.surfaceSecondary + '1A',
+                                    borderWidth: 1,
+                                    borderColor: selectedYear === year ? colors.primary[500] : colors.border,
+                                }}
+                                onPress={() => onSelectYear(year)}
+                            >
+                                <Text style={{
+                                    fontSize: 10,
+                                    fontWeight: '700',
+                                    color: selectedYear === year ? '#fff' : colors.textSecondary,
+                                }}>
+                                    {year}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                )}
+
+                <Text style={{
+                    color: colors.textTertiary,
+                    fontSize: 11,
+                    textAlign: 'center',
+                    marginTop: 8,
+                }}>
+                    No hay datos de ranking registrados para graficar este año.
+                </Text>
+            </View>
+        );
+    }
+
+    const chartHeight = 160;
+    const paddingLeft = 40;
+    const paddingRight = 20;
+    const paddingTop = 20;
+    const paddingBottom = 30;
+
+    const ranks = validPoints.map(p => p.rank);
+    let minRank = Math.min(...ranks);
+    let maxRank = Math.max(...ranks);
+
+    if (minRank === maxRank) {
+        minRank = Math.max(1, minRank - 1);
+        maxRank = maxRank + 1;
+    }
+
+    const getCoordinate = (month: number, rank: number, containerWidth: number) => {
+        const x = paddingLeft + (month / 11) * (containerWidth - paddingLeft - paddingRight);
+        const y = paddingTop + ((rank - minRank) / (maxRank - minRank)) * (chartHeight - paddingTop - paddingBottom);
+        return { x, y };
+    };
+
+    const containerWidth = width - 48; // spacing.xl is 24 on each side
+
+    const coords = validPoints.map(p => ({
+        ...getCoordinate(p.month, p.rank, containerWidth),
+        month: p.month,
+        rank: p.rank
+    }));
+
+    return (
+        <View style={{
+            backgroundColor: colors.surface,
+            borderRadius: 24,
+            padding: 16,
+            borderWidth: 1,
+            borderColor: colors.border,
+            marginTop: 20,
+            marginBottom: 10,
+            width: '100%',
+        }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <Text style={{
+                    color: colors.text,
+                    fontSize: 16,
+                    fontWeight: '800',
+                }}>
+                    Evolución de Ranking
+                </Text>
+            </View>
+
+            {availableYears.length > 1 && (
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                    {availableYears.map((year) => (
+                        <TouchableOpacity
+                            key={year}
+                            style={{
+                                paddingHorizontal: 12,
+                                paddingVertical: 6,
+                                borderRadius: 12,
+                                backgroundColor: selectedYear === year ? colors.primary[500] : colors.surfaceSecondary + '1A',
+                                borderWidth: 1,
+                                borderColor: selectedYear === year ? colors.primary[500] : colors.border,
+                            }}
+                            onPress={() => onSelectYear(year)}
+                        >
+                            <Text style={{
+                                fontSize: 10,
+                                fontWeight: '700',
+                                color: selectedYear === year ? '#fff' : colors.textSecondary,
+                            }}>
+                                {year}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            )}
+
+            <View style={{ height: chartHeight, width: '100%', position: 'relative' }}>
+                {/* Grid Lines & Y Axis Labels */}
+                {Array.from({ length: 4 }).map((_, index) => {
+                    const ratio = index / 3;
+                    const rankVal = Math.round(minRank + ratio * (maxRank - minRank));
+                    const y = paddingTop + ratio * (chartHeight - paddingTop - paddingBottom);
+                    return (
+                        <React.Fragment key={index}>
+                            <Text style={{
+                                position: 'absolute',
+                                left: 0,
+                                top: y - 7,
+                                width: paddingLeft - 8,
+                                textAlign: 'right',
+                                fontSize: 10,
+                                fontWeight: '700',
+                                color: colors.textTertiary,
+                            }}>
+                                #{rankVal}
+                            </Text>
+                            <View style={{
+                                position: 'absolute',
+                                left: paddingLeft,
+                                right: paddingRight,
+                                top: y,
+                                height: 1,
+                                backgroundColor: colors.border,
+                                opacity: 0.5,
+                            }} />
+                        </React.Fragment>
+                    );
+                })}
+
+                {/* Connecting Lines */}
+                {coords.map((curr, idx) => {
+                    if (idx === 0) return null;
+                    const prev = coords[idx - 1];
+                    
+                    const dx = curr.x - prev.x;
+                    const dy = curr.y - prev.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const angle = Math.atan2(dy, dx);
+
+                    return (
+                        <View
+                            key={`line-${idx}`}
+                            style={{
+                                position: 'absolute',
+                                left: prev.x + dx / 2 - distance / 2,
+                                top: prev.y + dy / 2,
+                                width: distance,
+                                height: 3,
+                                backgroundColor: colors.primary[500],
+                                borderRadius: 1.5,
+                                transform: [{ rotate: `${angle}rad` }],
+                            }}
+                        />
+                    );
+                })}
+
+                {/* Data Dots */}
+                {coords.map((pt, idx) => (
+                    <View
+                        key={`dot-${idx}`}
+                        style={{
+                            position: 'absolute',
+                            left: pt.x - 5,
+                            top: pt.y - 5,
+                            width: 10,
+                            height: 10,
+                            borderRadius: 5,
+                            backgroundColor: '#fff',
+                            borderWidth: 3,
+                            borderColor: colors.primary[500],
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            shadowColor: '#000',
+                            shadowOffset: { width: 0, height: 2 },
+                            shadowOpacity: 0.15,
+                            shadowRadius: 3,
+                            elevation: 2,
+                        }}
+                    >
+                        <View style={{
+                            position: 'absolute',
+                            top: -22,
+                            backgroundColor: colors.surfaceSecondary,
+                            paddingHorizontal: 6,
+                            paddingVertical: 2,
+                            borderRadius: 4,
+                            borderWidth: 0.5,
+                            borderColor: colors.border,
+                        }}>
+                            <Text style={{ fontSize: 8, fontWeight: '800', color: colors.text }}>
+                                #{pt.rank}
+                            </Text>
+                        </View>
+                    </View>
+                ))}
+
+                {/* X Axis Labels */}
+                {coords.map((pt, idx) => (
+                    <Text
+                        key={`label-${idx}`}
+                        style={{
+                            position: 'absolute',
+                            left: pt.x - 15,
+                            width: 30,
+                            top: chartHeight - 20,
+                            textAlign: 'center',
+                            fontSize: 9,
+                            fontWeight: '700',
+                            color: colors.textSecondary,
+                        }}
+                    >
+                        {MONTH_NAMES[pt.month]}
+                    </Text>
+                ))}
+            </View>
+        </View>
+    );
+}
 const BACKHAND_FIELD = 'rev\u00E9s';
 const VIEW_TOGGLE_BLOCKED_EMAILS = new Set(['javier.aravena25@gmail.com']);
 const PRIVACY_POLICY_URL = 'https://pitiin.github.io/torneosdetenis/privacy.html';
@@ -40,6 +338,16 @@ const getScoreText = (scoreValue: any): string => {
     return fallback === '[object Object]' ? '' : fallback;
 };
 
+const getAchievementColor = (tone: string) => {
+    switch (tone) {
+        case 'gold': return '#FFD700';
+        case 'silver': return '#C0C0C0';
+        case 'bronze': return '#CD7F32';
+        case 'special': return '#12b981'; // default primary
+        default: return '#888';
+    }
+};
+
 export default function ProfileScreen() {
     const insets = useSafeAreaInsets();
     const { colors, toggleTheme, isDark } = useTheme();
@@ -59,10 +367,23 @@ export default function ProfileScreen() {
         setsWon: 0,
         setsLost: 0,
         gamesWon: 0,
-        gamesLost: 0
+        gamesLost: 0,
+        finalsPlayed: 0,
+        currentStreak: 0,
+        bestStreak: 0,
+        debutYear: '-',
+        bestRanking: '-',
+        worstRanking: '-',
+        mostFacedRivalName: '-',
+        mostFacedRivalMatches: 0,
     });
     const [modality, setModality] = useState<'singles' | 'dobles'>('singles');
     const [recentTournaments, setRecentTournaments] = useState<any[]>([]);
+    const [achievements, setAchievements] = useState<PlayerAchievement[]>([]);
+    const [selectedAchievement, setSelectedAchievement] = useState<PlayerAchievement | null>(null);
+    const [rankingHistory, setRankingHistory] = useState<any[]>([]);
+    const [availableYears, setAvailableYears] = useState<number[]>([]);
+    const [selectedYear, setSelectedYear] = useState<number | null>(null);
 
     // Profile Fields
     const [isEditingBackhand, setIsEditingBackhand] = useState(false);
@@ -96,6 +417,10 @@ export default function ProfileScreen() {
                 setDeleteAccountPassword('');
                 return true;
             }
+            if (selectedAchievement) {
+                setSelectedAchievement(null);
+                return true;
+            }
             if (showContextModal) {
                 setShowContextModal(false);
                 return true;
@@ -127,7 +452,7 @@ export default function ProfileScreen() {
         if (selectedContext) {
             calculateStats();
         }
-    }, [selectedContext, user?.id, modality]);
+    }, [selectedContext, user?.id, modality, selectedYear]);
 
     useEffect(() => {
         const unsubscribe = adminModeService.subscribe((m) => {
@@ -141,6 +466,22 @@ export default function ProfileScreen() {
             notificationService.registerForPushNotifications(user.id);
         }
     }, [user?.id, user?.notifications_enabled]);
+
+    useEffect(() => {
+        const fetchAchievements = async () => {
+            if (user?.id) {
+                try {
+                    const data = await loadPlayerAchievements(user.id);
+                    setAchievements(data);
+                } catch (error) {
+                    console.error('Error loading achievements:', error);
+                }
+            } else {
+                setAchievements([]);
+            }
+        };
+        fetchAchievements();
+    }, [user?.id]);
 
     const handleToggleMode = () => {
         const next = viewMode === 'admin' ? 'user' : 'admin';
@@ -292,178 +633,62 @@ export default function ProfileScreen() {
         if (!selectedContext || !user) return;
 
         try {
-            // Load tournaments first to avoid ambiguous matches->tournaments embedding.
-            const { data: scopedTournaments, error: scopedTournamentsError } = await supabase
-                .from('tournaments')
-                .select('id, status, format, description, modality, level, organization_id')
-                .eq('organization_id', selectedContext.org_id)
-                .eq('level', selectedContext.level)
-                .eq('modality', modality);
-
-            if (scopedTournamentsError) throw scopedTournamentsError;
-            const tournamentsForContext = scopedTournaments || [];
-
-            if (tournamentsForContext.length === 0) {
-                setStats({
-                    rank: '-',
-                    trophies: 0,
-                    wins: 0,
-                    winRate: '0%',
-                    totalMatches: 0,
-                    setsWon: 0,
-                    setsLost: 0,
-                    gamesWon: 0,
-                    gamesLost: 0
-                });
-                return;
-            }
-
-            const tournamentIds = tournamentsForContext.map((tournament: any) => tournament.id);
-            const { data: userMatchesRows, error: userMatchesError } = await supabase
-                .from('matches')
-                .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, round_number, match_order, score, status')
-                .in('tournament_id', tournamentIds)
-                .or(`player_a_id.eq.${user.id},player_a2_id.eq.${user.id},player_b_id.eq.${user.id},player_b2_id.eq.${user.id}`);
-
-            if (userMatchesError) throw userMatchesError;
-
-            const userMatches = userMatchesRows || [];
-            const totalMatches = userMatches.length;
-            const wins = userMatches.filter((match: any) => match.winner_id === user.id || match.winner_2_id === user.id).length;
-            const winRate = totalMatches > 0 ? Math.round((wins / totalMatches) * 100) : 0;
-
-            let setsWon = 0;
-            let setsLost = 0;
-            let gamesWon = 0;
-            let gamesLost = 0;
-
-            userMatches.forEach((m: any) => {
-                const isPlayerA = m.player_a_id === user.id || m.player_a2_id === user.id;
-                const scoreText = getScoreText(m.score);
-                if (scoreText && !/^W\.?O\.?$/i.test(scoreText)) {
-                    const sets = scoreText.split(/\s*,\s*/);
-                    sets.forEach((s: string) => {
-                        const parts = s.trim().split(/[- ]+/).map(Number);
-                        if (parts.length >= 2) {
-                            const [s1, s2] = parts;
-                            if (!isNaN(s1) && !isNaN(s2)) {
-                                if (isPlayerA) {
-                                    gamesWon += s1;
-                                    gamesLost += s2;
-                                    if (s1 > s2) setsWon++;
-                                    else if (s2 > s1) setsLost++;
-                                } else {
-                                    gamesWon += s2;
-                                    gamesLost += s1;
-                                    if (s2 > s1) setsWon++;
-                                    else if (s1 > s2) setsLost++;
-                                }
-                            }
-                        }
-                    });
-                }
+            const bundle = await loadProfileStatsBundle({
+                playerId: user.id,
+                context: {
+                    org_id: selectedContext.org_id,
+                    level: selectedContext.level,
+                },
+                modality: modality,
+                selectedYear: selectedYear,
             });
-
-            const completedTournaments = tournamentsForContext.filter((tournament: any) =>
-                ['completed', 'finalized', 'finished'].includes(String(tournament.status || '').toLowerCase())
-            );
-
-            let trophies = 0;
-            let allPlayersPoints: Record<string, number> = {};
-            const rankingPlayerIds = new Set<string>();
-
-            if (completedTournaments.length > 0) {
-                const completedTournamentIds = completedTournaments.map((tournament: any) => tournament.id);
-                const { data: allMatchesRows, error: allMatchesError } = await supabase
-                    .from('matches')
-                    .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, round_number, match_order, score, status')
-                    .in('tournament_id', completedTournamentIds);
-
-                if (allMatchesError) throw allMatchesError;
-
-                const { data: completedRegistrationsRows, error: completedRegistrationsError } = await supabase
-                    .from('registrations')
-                    .select('player_id, status')
-                    .in('tournament_id', completedTournamentIds);
-
-                if (completedRegistrationsError) throw completedRegistrationsError;
-
-                const matchesByTour = (allMatchesRows || []).reduce((acc: any, m: any) => {
-                    acc[m.tournament_id] = [...(acc[m.tournament_id] || []), m];
-                    return acc;
-                }, {});
-
-                completedTournaments.forEach((t: any) => {
-                    const placements = getTournamentPlacements(t, matchesByTour[t.id] || []);
-                    placements.forEach((p: any) => {
-                        if ((p.playerId === user.id || p.playerId2 === user.id) && String(p.place) === '1') trophies += 1;
-                        if (p.playerId) {
-                            allPlayersPoints[p.playerId] = (allPlayersPoints[p.playerId] || 0) + (Number(p.points) || 0);
-                            rankingPlayerIds.add(p.playerId);
-                        }
-                        if (p.playerId2) {
-                            allPlayersPoints[p.playerId2] = (allPlayersPoints[p.playerId2] || 0) + (Number(p.points) || 0);
-                            rankingPlayerIds.add(p.playerId2);
-                        }
-                    });
-                });
-
-                (completedRegistrationsRows || []).forEach((registration: any) => {
-                    const playerId = String(registration?.player_id || '').trim();
-                    const registrationStatus = String(registration?.status || '').toLowerCase();
-                    if (!playerId) return;
-                    if (registrationStatus === 'cancelled' || registrationStatus === 'rejected') return;
-                    rankingPlayerIds.add(playerId);
-                    if (!Object.prototype.hasOwnProperty.call(allPlayersPoints, playerId)) {
-                        allPlayersPoints[playerId] = 0;
-                    }
-                });
-            }
-
-            if (Object.keys(allPlayersPoints).length > 0 && !Object.prototype.hasOwnProperty.call(allPlayersPoints, user.id)) {
-                allPlayersPoints[user.id] = 0;
-                rankingPlayerIds.add(user.id);
-            }
-
-            const rankingPlayerIdList = Array.from(rankingPlayerIds);
-            let rankingNameById: Record<string, string> = {};
-            if (rankingPlayerIdList.length > 0) {
-                const { data: rankingProfiles } = await supabase
-                    .from('public_profiles')
-                    .select('id, name')
-                    .in('id', rankingPlayerIdList);
-
-                rankingNameById = (rankingProfiles || []).reduce((acc: Record<string, string>, profile: any) => {
-                    acc[profile.id] = String(profile?.name || 'Jugador');
-                    return acc;
-                }, {});
-            }
-
-            const sortedRanking = Object.entries(allPlayersPoints).sort((a, b) => {
-                if ((b[1] || 0) !== (a[1] || 0)) return (b[1] || 0) - (a[1] || 0);
-                return String(rankingNameById[a[0]] || '').localeCompare(String(rankingNameById[b[0]] || ''));
-            });
-            const userScore = allPlayersPoints[user.id] || 0;
-            const playersAhead = Object.values(allPlayersPoints).filter(score => score > userScore).length;
-            const hasCompetitiveData = totalMatches > 0 || userScore > 0;
-            const rank = Object.prototype.hasOwnProperty.call(allPlayersPoints, user.id) && hasCompetitiveData
-                ? `#${playersAhead + 1}`
-                : '-';
 
             setStats({
-                rank,
-                trophies,
-                wins,
-                winRate: `${winRate}%`,
-                totalMatches,
-                setsWon,
-                setsLost,
-                gamesWon,
-                gamesLost
+                rank: bundle.stats.rank,
+                trophies: bundle.stats.trophies,
+                wins: bundle.stats.wins,
+                winRate: bundle.stats.winRate,
+                totalMatches: bundle.stats.totalMatches,
+                setsWon: bundle.stats.setsWon,
+                setsLost: bundle.stats.setsLost,
+                gamesWon: bundle.stats.gamesWon,
+                gamesLost: bundle.stats.gamesLost,
+                finalsPlayed: bundle.stats.finalsPlayed,
+                currentStreak: bundle.stats.currentStreak,
+                bestStreak: bundle.stats.bestStreak,
+                debutYear: bundle.stats.debutYear,
+                bestRanking: bundle.stats.bestRanking,
+                worstRanking: bundle.stats.worstRanking,
+                mostFacedRivalName: bundle.stats.mostFacedRivalName,
+                mostFacedRivalMatches: bundle.stats.mostFacedRivalMatches,
             });
 
+            setRankingHistory(bundle.rankingHistory || []);
+            setAvailableYears(bundle.availableYears || []);
+            if (selectedYear === null && bundle.effectiveYear) {
+                setSelectedYear(bundle.effectiveYear);
+            }
         } catch (error) {
-            console.error('Error calculating stats:', error);
+            console.error('Error loading profile stats bundle:', error);
+            setStats({
+                rank: '-',
+                trophies: 0,
+                wins: 0,
+                winRate: '0%',
+                totalMatches: 0,
+                setsWon: 0,
+                setsLost: 0,
+                gamesWon: 0,
+                gamesLost: 0,
+                finalsPlayed: 0,
+                currentStreak: 0,
+                bestStreak: 0,
+                debutYear: '-',
+                bestRanking: '-',
+                worstRanking: '-',
+                mostFacedRivalName: '-',
+                mostFacedRivalMatches: 0,
+            });
         }
     };
 
@@ -970,105 +1195,188 @@ export default function ProfileScreen() {
                 </View>
 
                 {/* Stats Bento */}
-                <View style={styles.statsGrid}>
-                    <View style={styles.mainRankCard}>
-                        <Text style={styles.statLabel} numberOfLines={1}>{'POSICI\u00d3N RANKING'}</Text>
-                        <View>
-                            <Text style={styles.rankValue}>{stats.rank}</Text>
-                            <View style={styles.rankStatus}>
-                                <Text style={styles.rankStatusText}>{selectedContext?.level.toUpperCase() || 'GENERAL'}</Text>
+                <View style={styles.bentoContainer}>
+                    {/* Fila 1: Ranking General & Rango Ranking */}
+                    <View style={styles.bentoRow}>
+                        <View style={styles.mainRankCard}>
+                            <Text style={styles.statLabel} numberOfLines={1}>{'POSICIÓN RANKING'}</Text>
+                            <View>
+                                <Text style={styles.rankValue}>{stats.rank}</Text>
+                                <View style={styles.rankStatus}>
+                                    <Text style={styles.rankStatusText}>{selectedContext?.level.toUpperCase() || 'GENERAL'}</Text>
+                                </View>
+                            </View>
+                        </View>
+                        
+                        <View style={styles.bentoRightColumn}>
+                            <View style={styles.statsMiniRow}>
+                                <View style={styles.miniStatCard}>
+                                    <Ionicons name="trending-up" size={20} color={colors.success} />
+                                    <Text style={styles.miniStatValue}>{stats.bestRanking}</Text>
+                                    <Text style={styles.miniStatLabel} numberOfLines={1}>MEJOR RANKING</Text>
+                                </View>
+                                <View style={styles.miniStatCard}>
+                                    <Ionicons name="trending-down" size={20} color={colors.error} />
+                                    <Text style={styles.miniStatValue}>{stats.worstRanking}</Text>
+                                    <Text style={styles.miniStatLabel} numberOfLines={1}>PEOR RANKING</Text>
+                                </View>
+                            </View>
+                            <View style={styles.statsMiniRow}>
+                                <View style={styles.miniStatCard}>
+                                    <Ionicons name="calendar-outline" size={20} color={colors.primary[500]} />
+                                    <Text style={styles.miniStatValue}>{stats.debutYear}</Text>
+                                    <Text style={styles.miniStatLabel} numberOfLines={1}>DEBUT</Text>
+                                </View>
+                                <View style={styles.miniStatCard}>
+                                    <Ionicons name="ribbon-outline" size={20} color={colors.textSecondary} />
+                                    <Text style={styles.miniStatValue}>{stats.finalsPlayed}</Text>
+                                    <Text style={styles.miniStatLabel} numberOfLines={1}>FINALES</Text>
+                                </View>
                             </View>
                         </View>
                     </View>
 
-                    <View style={styles.statsRightColumn}>
-                        <View style={styles.statsMiniRow}>
-                            <View style={styles.miniStatCard}>
-                                <Ionicons name="trophy" size={24} color={colors.primary[500]} />
-                                <Text style={styles.miniStatValue}>{stats.trophies}</Text>
-                                <Text style={styles.miniStatLabel} numberOfLines={1}>TROFEOS</Text>
-                            </View>
-                            <View style={styles.miniStatCard}>
-                                <Ionicons name="medal" size={24} color={colors.textSecondary} />
-                                <Text style={styles.miniStatValue}>{stats.wins}</Text>
-                                <Text style={styles.miniStatLabel} numberOfLines={1}>VICTORIAS</Text>
-                            </View>
+                    {/* Fila 2: Trofeos, Victorias, Win Rate, Partidos */}
+                    <View style={styles.bentoRow}>
+                        <View style={styles.miniStatCard}>
+                            <Ionicons name="trophy" size={22} color={colors.primary[500]} />
+                            <Text style={styles.miniStatValue}>{stats.trophies}</Text>
+                            <Text style={styles.miniStatLabel} numberOfLines={1}>TROFEOS</Text>
                         </View>
-                        <View style={styles.statsMiniRow}>
-                            <View style={styles.miniStatCard}>
-                                <Ionicons name="analytics" size={24} color={colors.textSecondary} />
-                                <Text style={stats.winRate === '0%' ? styles.miniStatValueDim : styles.miniStatValue}>
-                                    {stats.winRate}
-                                </Text>
-                                <Text style={styles.miniStatLabel} numberOfLines={1}>WIN RATE</Text>
-                            </View>
-                            <View style={styles.miniStatCard}>
-                                <Ionicons name="tennisball" size={24} color={colors.textSecondary} />
-                                <Text style={styles.miniStatValue}>{stats.totalMatches}</Text>
-                                <Text style={styles.miniStatLabel} numberOfLines={1}>PARTIDOS</Text>
-                            </View>
+                        <View style={styles.miniStatCard}>
+                            <Ionicons name="medal" size={22} color={colors.textSecondary} />
+                            <Text style={styles.miniStatValue}>{stats.wins}</Text>
+                            <Text style={styles.miniStatLabel} numberOfLines={1}>VICTORIAS</Text>
                         </View>
-                        
+                        <View style={styles.miniStatCard}>
+                            <Ionicons name="analytics" size={22} color={colors.textSecondary} />
+                            <Text style={stats.winRate === '0%' ? styles.miniStatValueDim : styles.miniStatValue}>
+                                {stats.winRate}
+                            </Text>
+                            <Text style={styles.miniStatLabel} numberOfLines={1}>WIN RATE</Text>
+                        </View>
+                        <View style={styles.miniStatCard}>
+                            <Ionicons name="tennisball" size={22} color={colors.textSecondary} />
+                            <Text style={styles.miniStatValue}>{stats.totalMatches}</Text>
+                            <Text style={styles.miniStatLabel} numberOfLines={1}>PARTIDOS</Text>
+                        </View>
+                    </View>
+
+                    {/* Fila 3: Racha & Rival */}
+                    <View style={styles.bentoRow}>
+                        {/* Racha */}
+                        <View style={[styles.miniStatCard, { flex: 1, paddingVertical: spacing.md }]}>
+                            <Ionicons name="flame" size={24} color="#f97316" />
+                            <View style={{ flexDirection: 'row', gap: spacing.lg, marginTop: 6, alignItems: 'center' }}>
+                                <View style={{ alignItems: 'center' }}>
+                                    <Text style={styles.streakValue}>{stats.currentStreak}</Text>
+                                    <Text style={styles.streakLabel}>ACTUAL</Text>
+                                </View>
+                                <View style={{ width: 1, height: 24, backgroundColor: colors.border }} />
+                                <View style={{ alignItems: 'center' }}>
+                                    <Text style={styles.streakValue}>{stats.bestStreak}</Text>
+                                    <Text style={styles.streakLabel}>MEJOR</Text>
+                                </View>
+                            </View>
+                            <Text style={styles.miniStatLabel} numberOfLines={1}>RACHA VICTORIAS</Text>
+                        </View>
+
+                        {/* Rival */}
+                        <View style={[styles.miniStatCard, { flex: 1, paddingVertical: spacing.md }]}>
+                            <Ionicons name="people" size={24} color={colors.primary[500]} />
+                            <Text style={styles.rivalName} numberOfLines={1}>
+                                {stats.mostFacedRivalName}
+                            </Text>
+                            <Text style={styles.rivalMatches}>
+                                {stats.mostFacedRivalMatches > 0 ? `${stats.mostFacedRivalMatches} partidos` : 'Sin enfrentamientos'}
+                            </Text>
+                            <Text style={styles.miniStatLabel} numberOfLines={1}>RIVAL MÁS ENFRENTADO</Text>
+                        </View>
+                    </View>
+
+                    {/* Fila 4: Sets & Games */}
+                    <View style={styles.bentoRow}>
                         <View style={styles.setsFullCard}>
                              <View style={styles.setStatItem}>
                                 <Text style={[styles.setStatValue, { color: colors.success }]}>{stats.setsWon}</Text>
-                                <Text style={styles.setStatLabel}>TOTAL SETS GANADOS</Text>
+                                <Text style={styles.setStatLabel}>SETS GANADOS</Text>
                              </View>
                              <View style={styles.setStatDivider} />
                              <View style={styles.setStatItem}>
                                 <Text style={[styles.setStatValue, { color: colors.error }]}>{stats.setsLost}</Text>
-                                <Text style={styles.setStatLabel}>TOTAL SETS PERDIDOS</Text>
+                                <Text style={styles.setStatLabel}>SETS PERDIDOS</Text>
                              </View>
                         </View>
+                    </View>
 
-                        <View style={[styles.setsFullCard, { marginTop: spacing.md }]}>
+                    <View style={[styles.bentoRow, { marginTop: -spacing.sm }]}>
+                        <View style={styles.setsFullCard}>
                              <View style={styles.setStatItem}>
                                 <Text style={[styles.setStatValue, { color: colors.success }]}>{stats.gamesWon}</Text>
-                                <Text style={styles.setStatLabel}>TOTAL GAMES GANADOS</Text>
+                                <Text style={styles.setStatLabel}>GAMES GANADOS</Text>
                              </View>
                              <View style={styles.setStatDivider} />
                              <View style={styles.setStatItem}>
                                 <Text style={[styles.setStatValue, { color: colors.error }]}>{stats.gamesLost}</Text>
-                                <Text style={styles.setStatLabel}>TOTAL GAMES PERDIDOS</Text>
+                                <Text style={styles.setStatLabel}>GAMES PERDIDOS</Text>
                              </View>
                         </View>
                     </View>
                 </View>
 
-                {/* Recent Tournaments */}
-                <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Torneos Recientes</Text>
-                </View>
+                {/* Evolution Chart */}
+                <RankingEvolutionChart
+                    rankingHistory={rankingHistory}
+                    modality={modality}
+                    colors={colors}
+                    selectedYear={selectedYear}
+                    availableYears={availableYears}
+                    onSelectYear={(year) => setSelectedYear(year)}
+                />
 
-                <View style={styles.tournamentList}>
-                    {recentTournaments.length > 0 ? recentTournaments.map((t) => (
-                        <TouchableOpacity 
-                            key={t.id} 
-                            style={styles.historyCard}
-                            onPress={() => router.push(`/(tabs)/tournaments/${t.id}`)}
-                        >
-                            <View style={styles.historyIcon}>
-                                <Ionicons name="shield-checkmark" size={28} color={colors.primary[500]} />
-                            </View>
-                            <View style={styles.historyInfo}>
-                                <Text style={styles.historyName}>{t.name}</Text>
-                                <Text style={styles.historyMeta}>{`${t.level} \u00b7 ${t.format} \u00b7 ${t.modality === 'dobles' ? 'Dobles' : 'Singles'}`}</Text>
-                            </View>
-                            <View style={styles.historyResult}>
-                                <View style={t.place.includes('1\u00b0') ? styles.winnerBadge : styles.resultBadge}>
-                                    <Text style={t.place.includes('1\u00b0') ? styles.winnerBadgeText : styles.resultBadgeText}>
-                                        {t.place}
-                                    </Text>
-                                </View>
-                                <Text style={styles.historyDate}>{new Date(t.end_date || t.start_date || Date.now()).toLocaleDateString()}</Text>
-                            </View>
-                        </TouchableOpacity>
-                    )) : (
-                        <View style={styles.emptyCard}>
-                            <Text style={styles.emptyText}>{'No has participado en torneos a\u00fan.'}</Text>
+                {/* Achievements section */}
+                {achievements && achievements.length > 0 && (
+                    <View style={{ marginTop: 24 }}>
+                        <View style={styles.sectionHeader}>
+                            <Text style={styles.sectionTitle}>Logros</Text>
                         </View>
-                    )}
-                </View>
+                        <View style={styles.achievementsList}>
+                            {achievements.map((achievement) => {
+                                const achievementColor = getAchievementColor(achievement.tone || 'special');
+                                return (
+                                    <TouchableOpacity
+                                        key={achievement.id}
+                                        style={styles.achievementRowCard}
+                                        activeOpacity={0.82}
+                                        onPress={() => setSelectedAchievement(achievement)}
+                                    >
+                                        <View style={[
+                                            styles.achievementMedal, 
+                                            !achievement.imageSource && { backgroundColor: achievementColor + '20', borderColor: achievementColor + '55' },
+                                            achievement.imageSource && { borderWidth: 0 }
+                                        ]}>
+                                            {achievement.imageSource ? (
+                                                <Image 
+                                                    source={achievement.imageSource} 
+                                                    style={styles.achievementMedalImage}
+                                                    resizeMode="contain"
+                                                />
+                                            ) : (
+                                                <Ionicons name={achievement.icon as any} size={28} color={achievementColor} />
+                                            )}
+                                        </View>
+                                        <View style={styles.achievementRowInfo}>
+                                            <Text style={styles.achievementRowTitle}>{achievement.title}</Text>
+                                            <Text style={styles.achievementRowDesc} numberOfLines={2}>{achievement.detail}</Text>
+                                        </View>
+                                        <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+                    </View>
+                )}
+
                 {/* Account Settings */}
                 <View style={styles.settingsSection}>
                     <Text style={styles.settingsTitle}>{'Configuraci\u00f3n de Cuenta'}</Text>
@@ -1354,6 +1662,52 @@ export default function ProfileScreen() {
                         </View>
                     </View>
                 </KeyboardAvoidingView>
+            </Modal>
+
+            {/* Achievement Detail Modal */}
+            <Modal
+                visible={!!selectedAchievement}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setSelectedAchievement(null)}
+            >
+                <View style={styles.achievementModalOverlay}>
+                    <View style={styles.achievementModalContent}>
+                        {selectedAchievement && (
+                            <>
+                                <View style={styles.achievementModalHeader}>
+                                    <View style={[
+                                        styles.achievementModalIconWrapper,
+                                        !selectedAchievement.imageSource && { backgroundColor: getAchievementColor(selectedAchievement.tone || 'special') + '20', borderColor: getAchievementColor(selectedAchievement.tone || 'special') + '55' },
+                                        selectedAchievement.imageSource && { borderWidth: 0 }
+                                    ]}>
+                                        {selectedAchievement.imageSource ? (
+                                            <Image 
+                                                source={selectedAchievement.imageSource} 
+                                                style={{ width: 120, height: 120, borderRadius: 60 }} 
+                                                resizeMode="contain"
+                                            />
+                                        ) : (
+                                            <Ionicons 
+                                                name={selectedAchievement.icon as any} 
+                                                size={70} 
+                                                color={getAchievementColor(selectedAchievement.tone || 'special')} 
+                                            />
+                                        )}
+                                    </View>
+                                </View>
+                                <Text style={styles.achievementModalTitle}>{selectedAchievement.title}</Text>
+                                <Text style={styles.achievementModalDesc}>{selectedAchievement.detail}</Text>
+                                <Text style={styles.achievementModalDate}>
+                                    Obtenido: {formatDate(selectedAchievement.dateEarned)}
+                                </Text>
+                                <TouchableOpacity style={styles.achievementModalCloseBtn} onPress={() => setSelectedAchievement(null)}>
+                                    <Text style={styles.achievementModalCloseText}>Cerrar</Text>
+                                </TouchableOpacity>
+                            </>
+                        )}
+                    </View>
+                </View>
             </Modal>
         </View>
     );
@@ -2204,5 +2558,345 @@ const getStyles = (colors: any) => StyleSheet.create({
     },
     statusTagTextUnpaid: {
         color: colors.error,
+    },
+    achievementMedalButton: {
+        marginRight: spacing.md,
+        alignItems: 'center',
+    },
+    achievementMedal: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+    },
+    achievementModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: spacing.xl,
+    },
+    achievementModalContent: {
+        backgroundColor: colors.surface,
+        borderRadius: 24,
+        padding: spacing.xl,
+        width: '100%',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.25,
+        shadowRadius: 20,
+        elevation: 10,
+    },
+    achievementModalHeader: {
+        marginBottom: spacing.xl,
+        alignItems: 'center',
+    },
+    achievementModalIconWrapper: {
+        width: 120,
+        height: 120,
+        borderRadius: 60,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 2,
+    },
+    achievementModalTitle: {
+        fontSize: 24,
+        fontWeight: '800',
+        color: colors.text,
+        textAlign: 'center',
+        marginBottom: spacing.sm,
+    },
+    achievementModalDesc: {
+        fontSize: 15,
+        textAlign: 'center',
+    },
+    levelChipTextActive: {
+        color: '#fff',
+    },
+    viewToggle: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: colors.primary[500],
+        paddingHorizontal: spacing.md,
+        paddingVertical: 6,
+        borderRadius: borderRadius.full,
+        gap: 6,
+    },
+    viewToggleUser: {
+        backgroundColor: colors.textSecondary,
+    },
+    viewToggleText: {
+        color: '#fff',
+        fontSize: 10,
+        fontWeight: '900',
+    },
+    themeToggle: {
+        width: 36,
+        height: 20,
+        borderRadius: 10,
+        padding: 2,
+    },
+    themeToggleCircle: {
+        width: 16,
+        height: 16,
+        borderRadius: 8,
+        backgroundColor: '#fff',
+    },
+    paymentFilters: {
+        gap: spacing.md,
+    },
+    filterScroll: {
+        gap: spacing.sm,
+        paddingRight: spacing.xl,
+    },
+    filterChip: {
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: borderRadius.full,
+        backgroundColor: colors.surfaceSecondary,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    filterChipActive: {
+        backgroundColor: colors.primary[500],
+        borderColor: colors.primary[500],
+    },
+    filterChipText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: colors.textSecondary,
+    },
+    filterChipTextActive: {
+        color: '#fff',
+    },
+    yearRow: {
+        flexDirection: 'row',
+        gap: spacing.sm,
+    },
+    yearChip: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: borderRadius.lg,
+        backgroundColor: colors.surfaceSecondary,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    yearChipActive: {
+        backgroundColor: colors.primary[500],
+        borderColor: colors.primary[500],
+    },
+    yearChipText: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: colors.textSecondary,
+    },
+    yearChipTextActive: {
+        color: '#fff',
+    },
+    paymentList: {
+        gap: spacing.md,
+        marginTop: spacing.sm,
+    },
+    paymentSummaryCard: {
+        backgroundColor: colors.surface,
+        borderRadius: borderRadius.xl,
+        padding: spacing.lg,
+        borderWidth: 1,
+        borderColor: colors.border,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    paymentInfoMain: {
+        flex: 1,
+        marginRight: spacing.md,
+    },
+    paymentName: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: colors.text,
+        marginBottom: 2,
+    },
+    paymentDate: {
+        fontSize: 11,
+        color: colors.textTertiary,
+    },
+    paymentStatusRow: {
+        alignItems: 'flex-end',
+        gap: 4,
+    },
+    paymentAmount: {
+        fontSize: 15,
+        fontWeight: '800',
+        color: colors.text,
+    },
+    statusTag: {
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: borderRadius.sm,
+    },
+    statusTagPaid: {
+        backgroundColor: colors.success + '1A',
+    },
+    statusTagUnpaid: {
+        backgroundColor: colors.error + '1A',
+    },
+    statusTagText: {
+        fontSize: 9,
+        fontWeight: '900',
+    },
+    statusTagTextPaid: {
+        color: colors.success,
+    },
+    statusTagTextUnpaid: {
+        color: colors.error,
+    },
+    achievementMedalButton: {
+        marginRight: spacing.md,
+        alignItems: 'center',
+    },
+    achievementMedal: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+    },
+    achievementModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: spacing.xl,
+    },
+    achievementModalContent: {
+        backgroundColor: colors.surface,
+        borderRadius: 24,
+        padding: spacing.xl,
+        width: '100%',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.25,
+        shadowRadius: 20,
+        elevation: 10,
+    },
+    achievementModalHeader: {
+        marginBottom: spacing.xl,
+        alignItems: 'center',
+    },
+    achievementModalIconWrapper: {
+        width: 120,
+        height: 120,
+        borderRadius: 60,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 2,
+    },
+    achievementModalTitle: {
+        fontSize: 24,
+        fontWeight: '800',
+        color: colors.text,
+        textAlign: 'center',
+        marginBottom: spacing.sm,
+    },
+    achievementModalDesc: {
+        fontSize: 15,
+        color: colors.textSecondary,
+        textAlign: 'center',
+        marginBottom: spacing.xl,
+        lineHeight: 22,
+    },
+    achievementModalDate: {
+        fontSize: 12,
+        color: colors.textTertiary,
+        fontWeight: '600',
+        marginBottom: spacing.xl,
+    },
+    achievementModalCloseBtn: {
+        backgroundColor: colors.primary[500],
+        paddingVertical: spacing.md,
+        paddingHorizontal: 32,
+        borderRadius: borderRadius.full,
+        width: '100%',
+        alignItems: 'center',
+    },
+    achievementModalCloseText: {
+        color: '#fff',
+        fontWeight: '700',
+        fontSize: 16,
+    },
+    bentoContainer: {
+        gap: spacing.md,
+        width: '100%',
+    },
+    bentoRow: {
+        flexDirection: 'row',
+        gap: spacing.md,
+    },
+    bentoRightColumn: {
+        flex: 1.5,
+        gap: spacing.md,
+    },
+    streakValue: {
+        fontSize: 18,
+        fontWeight: '900',
+        color: colors.text,
+    },
+    streakLabel: {
+        fontSize: 8,
+        fontWeight: '700',
+        color: colors.textTertiary,
+    },
+    rivalName: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: colors.text,
+        marginTop: 6,
+        textAlign: 'center',
+        paddingHorizontal: 4,
+    },
+    rivalMatches: {
+        fontSize: 10,
+        color: colors.textSecondary,
+        marginTop: 2,
+    },
+    achievementsList: {
+        gap: spacing.md,
+        marginBottom: spacing.xl,
+    },
+    achievementRowCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: colors.surface,
+        borderRadius: borderRadius.xl,
+        padding: spacing.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+        gap: spacing.md,
+    },
+    achievementMedalImage: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+    },
+    achievementRowInfo: {
+        flex: 1,
+        justifyContent: 'center',
+    },
+    achievementRowTitle: {
+        fontSize: 15,
+        fontWeight: '800',
+        color: colors.text,
+        marginBottom: 2,
+    },
+    achievementRowDesc: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        lineHeight: 16,
     },
 });

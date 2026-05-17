@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Tabs, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/theme';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getCurrentUserAccessContext } from '@/services/accessControl';
 import * as SecureStore from '@/utils/SecureStore';
@@ -169,6 +169,26 @@ export default function TabsLayout() {
                 }}
             />
             <Tabs.Screen
+                name="calendar"
+                options={{
+                    title: 'Mi Calendario',
+                    href: !isAdmin ? ('/(tabs)/calendar' as any) : null,
+                    tabBarLabel: ({ color }) => (
+                        <Text
+                            style={[styles.tabBarLabel, styles.calendarTabLabel, { color }]}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.72}
+                        >
+                            Mi Calendario
+                        </Text>
+                    ),
+                    tabBarIcon: ({ color, focused }) => (
+                        <Ionicons name={focused ? 'calendar' : 'calendar-outline'} size={22} color={color} />
+                    ),
+                }}
+            />
+            <Tabs.Screen
                 name="settings"
                 options={{
                     title: 'Config',
@@ -217,6 +237,11 @@ const getStyles = (colors: any) =>
             fontWeight: '700',
             marginTop: -4,
             color: colors.textTertiary,
+        },
+        calendarTabLabel: {
+            width: 76,
+            textAlign: 'center',
+            fontSize: 8,
         },
         tabBarBadge: {
             backgroundColor: '#EF4444',

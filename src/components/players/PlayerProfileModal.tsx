@@ -14,6 +14,7 @@ interface PlayerProfileModalProps {
   playerId: string | null;
   tournamentOrgId?: string | null;
   tournamentLevel?: string | null;
+  initialPage?: 'profile' | 'headToHead';
   onClose: () => void;
 }
 
@@ -38,6 +39,13 @@ interface PlayerStats {
   gamesLost: number;
 }
 
+interface HeadToHeadStats {
+  totalMatches: number;
+  currentUserWins: number;
+  rivalWins: number;
+  lastMatchLabel: string;
+}
+
 const DEFAULT_STATS: PlayerStats = {
   rank: '-',
   trophies: 0,
@@ -48,6 +56,13 @@ const DEFAULT_STATS: PlayerStats = {
   setsLost: 0,
   gamesWon: 0,
   gamesLost: 0,
+};
+
+const DEFAULT_HEAD_TO_HEAD: HeadToHeadStats = {
+  totalMatches: 0,
+  currentUserWins: 0,
+  rivalWins: 0,
+  lastMatchLabel: 'Sin partidos',
 };
 
 const getScoreText = (scoreValue: any): string => {
@@ -69,11 +84,18 @@ const getScoreText = (scoreValue: any): string => {
   return fallback === '[object Object]' ? '' : fallback;
 };
 
+const getMatchTime = (match: any) => {
+  const value = match?.scheduled_at || match?.created_at;
+  const time = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+};
+
 export const PlayerProfileModal = ({
   visible,
   playerId,
   tournamentOrgId,
   tournamentLevel,
+  initialPage = 'profile',
   onClose,
 }: PlayerProfileModalProps) => {
   const { colors } = useTheme();
@@ -82,20 +104,30 @@ export const PlayerProfileModal = ({
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [stats, setStats] = useState<PlayerStats>(DEFAULT_STATS);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [activePage, setActivePage] = useState<'profile' | 'headToHead'>('profile');
+  const [headToHead, setHeadToHead] = useState<HeadToHeadStats>(DEFAULT_HEAD_TO_HEAD);
 
   useEffect(() => {
     if (visible && playerId) {
+      setActivePage(initialPage);
       loadPlayerData(playerId);
     } else {
       setProfile(null);
       setAvatarUrl(null);
       setStats(DEFAULT_STATS);
+      setCurrentUserId(null);
+      setHeadToHead(DEFAULT_HEAD_TO_HEAD);
     }
-  }, [visible, playerId]);
+  }, [visible, playerId, initialPage]);
 
   const loadPlayerData = async (pid: string) => {
     setLoading(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const viewerId = session?.user?.id || null;
+      setCurrentUserId(viewerId);
+
       // Load profile info (using public_profiles view to bypass RLS restrictions)
       const { data: profileData, error: profileError } = await supabase
         .from('public_profiles')
@@ -125,10 +157,89 @@ export const PlayerProfileModal = ({
 
       // Calculate stats if we have org + level context
       await calculatePlayerStats(pid, playerProfile);
+      if (viewerId && viewerId !== pid) {
+        await calculateHeadToHead(viewerId, pid, playerProfile);
+      } else {
+        setHeadToHead(DEFAULT_HEAD_TO_HEAD);
+      }
     } catch (error) {
       console.error('Error loading player profile:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const calculateHeadToHead = async (viewerId: string, rivalId: string, rivalProfile: PlayerProfile) => {
+    try {
+      const { data: matchRows, error: matchError } = await supabase
+        .from('matches')
+        .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, score, status, scheduled_at, created_at')
+        .or(`player_a_id.eq.${viewerId},player_a2_id.eq.${viewerId},player_b_id.eq.${viewerId},player_b2_id.eq.${viewerId}`)
+        .eq('status', 'finished');
+
+      if (matchError) throw matchError;
+
+      const oppositeSideMatches = (matchRows || []).filter((match: any) => {
+        const viewerOnA = match.player_a_id === viewerId || match.player_a2_id === viewerId;
+        const viewerOnB = match.player_b_id === viewerId || match.player_b2_id === viewerId;
+        const rivalOnA = match.player_a_id === rivalId || match.player_a2_id === rivalId;
+        const rivalOnB = match.player_b_id === rivalId || match.player_b2_id === rivalId;
+        return (viewerOnA && rivalOnB) || (viewerOnB && rivalOnA);
+      });
+
+      if (oppositeSideMatches.length === 0) {
+        setHeadToHead(DEFAULT_HEAD_TO_HEAD);
+        return;
+      }
+
+      const tournamentIds = [...new Set(oppositeSideMatches.map((match: any) => match.tournament_id).filter(Boolean))] as string[];
+      let validTournamentIds = new Set(tournamentIds);
+      if ((tournamentOrgId || tournamentLevel) && tournamentIds.length > 0) {
+        let query = supabase
+          .from('tournaments')
+          .select('id')
+          .in('id', tournamentIds);
+
+        if (tournamentOrgId) query = query.eq('organization_id', tournamentOrgId);
+        if (tournamentLevel) query = query.eq('level', tournamentLevel);
+
+        const { data: tournamentRows, error: tournamentError } = await query;
+        if (tournamentError) throw tournamentError;
+        validTournamentIds = new Set((tournamentRows || []).map((tournament: any) => tournament.id));
+      }
+
+      const filteredMatches = oppositeSideMatches
+        .filter((match: any) => validTournamentIds.has(match.tournament_id))
+        .sort((a: any, b: any) => getMatchTime(b) - getMatchTime(a));
+
+      let currentUserWins = 0;
+      let rivalWins = 0;
+      filteredMatches.forEach((match: any) => {
+        const winnerIds = [match.winner_id, match.winner_2_id].filter(Boolean);
+        if (winnerIds.includes(viewerId)) currentUserWins += 1;
+        if (winnerIds.includes(rivalId)) rivalWins += 1;
+      });
+
+      const lastMatch = filteredMatches[0];
+      const lastScore = getScoreText(lastMatch?.score);
+      const winnerName = [lastMatch?.winner_id, lastMatch?.winner_2_id].includes(viewerId)
+        ? 'T\u00FA'
+        : [lastMatch?.winner_id, lastMatch?.winner_2_id].includes(rivalId)
+          ? rivalProfile.name
+          : 'Sin ganador';
+      const lastMatchLabel = lastMatch
+        ? `${winnerName}${lastScore ? ` · ${lastScore}` : ''}`
+        : 'Sin partidos';
+
+      setHeadToHead({
+        totalMatches: filteredMatches.length,
+        currentUserWins,
+        rivalWins,
+        lastMatchLabel,
+      });
+    } catch (error) {
+      console.error('Error calculating head to head stats:', error);
+      setHeadToHead(DEFAULT_HEAD_TO_HEAD);
     }
   };
 
@@ -348,7 +459,49 @@ export const PlayerProfileModal = ({
                 </View>
               </View>
 
-              {/* Stats Grid */}
+              {currentUserId && currentUserId !== profile.id ? (
+                <View style={styles.pageSelector}>
+                  <TouchableOpacity
+                    style={[styles.pageSelectorButton, activePage === 'profile' && styles.pageSelectorButtonActive]}
+                    onPress={() => setActivePage('profile')}
+                  >
+                    <Text style={[styles.pageSelectorText, activePage === 'profile' && styles.pageSelectorTextActive]}>Perfil</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.pageSelectorButton, activePage === 'headToHead' && styles.pageSelectorButtonActive]}
+                    onPress={() => setActivePage('headToHead')}
+                  >
+                    <Text style={[styles.pageSelectorText, activePage === 'headToHead' && styles.pageSelectorTextActive]}>Enfrentamientos</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+
+              {activePage === 'headToHead' && currentUserId && currentUserId !== profile.id ? (
+                <View style={styles.statsSection}>
+                  <Text style={styles.statsTitle}>Enfrentamientos</Text>
+                  <View style={styles.headToHeadGrid}>
+                    <View style={styles.headToHeadCard}>
+                      <Ionicons name="tennisball" size={22} color={colors.primary[500]} />
+                      <Text style={styles.headToHeadValue}>{headToHead.totalMatches}</Text>
+                      <Text style={styles.headToHeadLabel}>PARTIDOS JUGADOS</Text>
+                    </View>
+                    <View style={styles.headToHeadCard}>
+                      <Ionicons name="person-circle-outline" size={22} color={colors.primary[500]} />
+                      <Text style={styles.headToHeadValue}>{headToHead.currentUserWins}</Text>
+                      <Text style={styles.headToHeadLabel}>TU GANASTE</Text>
+                    </View>
+                    <View style={styles.headToHeadCard}>
+                      <Ionicons name="person-circle-outline" size={22} color={colors.textSecondary} />
+                      <Text style={styles.headToHeadValue}>{headToHead.rivalWins}</Text>
+                      <Text style={styles.headToHeadLabel} numberOfLines={1}>{profile.name.toUpperCase()}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.lastMatchCard}>
+                    <Text style={styles.lastMatchLabel}>ULTIMO PARTIDO</Text>
+                    <Text style={styles.lastMatchValue}>{headToHead.lastMatchLabel}</Text>
+                  </View>
+                </View>
+              ) : (
               <View style={styles.statsSection}>
                 <Text style={styles.statsTitle}>Estadísticas</Text>
 
@@ -413,6 +566,7 @@ export const PlayerProfileModal = ({
                   </View>
                 </View>
               </View>
+              )}
             </ScrollView>
           ) : (
             <View style={styles.loadingContainer}>
@@ -541,6 +695,29 @@ const getStyles = (colors: any) => StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  pageSelector: {
+    flexDirection: 'row',
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.lg,
+    padding: 4,
+  },
+  pageSelectorButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderRadius: borderRadius.md,
+  },
+  pageSelectorButtonActive: {
+    backgroundColor: colors.surface,
+  },
+  pageSelectorText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  pageSelectorTextActive: {
+    color: colors.primary[500],
+  },
   statsSection: {
     gap: spacing.md,
   },
@@ -619,5 +796,47 @@ const getStyles = (colors: any) => StyleSheet.create({
   setDivider: {
     width: 1,
     backgroundColor: colors.border,
+  },
+  headToHeadGrid: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  headToHeadCard: {
+    flex: 1,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 96,
+  },
+  headToHeadValue: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  headToHeadLabel: {
+    color: colors.textTertiary,
+    fontSize: 8,
+    fontWeight: '900',
+    textAlign: 'center',
+    letterSpacing: 0.3,
+  },
+  lastMatchCard: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    gap: 4,
+  },
+  lastMatchLabel: {
+    color: colors.textTertiary,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  lastMatchValue: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '800',
   },
 });
