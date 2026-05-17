@@ -72,6 +72,7 @@ const DEFAULT_HEAD_TO_HEAD: HeadToHeadStats = {
 };
 
 const HEAD_TO_HEAD_SHARE_BG = require('../../../assets/RRSS/FrenteAFrente.png');
+const SWEETSPOT_LOGO = require('../../../assets/LogoSweetSpot512x512.png');
 
 const getScoreText = (scoreValue: any): string => {
   if (!scoreValue) return '';
@@ -505,10 +506,11 @@ export const PlayerProfileModal = ({
   const rivalShareName = profile?.name || 'Rival';
   const currentShareName = currentUserName || 'Tú';
   const rivalWinsLabel = `${rivalShareName.toUpperCase()} GANÓ`;
+  const currentWinsLabel = `${currentShareName.toUpperCase()} GANÓ`;
   const lastWinnerLabel = headToHead.lastMatchWinnerLabel === 'Sin ganador'
     ? 'SIN GANADOR'
     : headToHead.lastMatchWinnerLabel === 'Tú'
-    ? 'TÚ GANÓ'
+    ? currentWinsLabel
     : `${String(headToHead.lastMatchWinnerLabel || 'Sin ganador').toUpperCase()} GANÓ`;
 
   return (
@@ -711,6 +713,10 @@ export const PlayerProfileModal = ({
               <ImageBackground source={HEAD_TO_HEAD_SHARE_BG} resizeMode="cover" style={styles.sharePoster}>
                 <View style={styles.sharePosterOverlay} />
                 <View style={styles.sharePosterInner}>
+                  <View style={styles.shareBrandBlock}>
+                    <Image source={SWEETSPOT_LOGO} style={styles.shareBrandLogo} resizeMode="contain" />
+                    <Text style={styles.shareBrandText}>SweetSpot</Text>
+                  </View>
                   <Text style={styles.sharePosterTitle}>FRENTE-A-FRENTE</Text>
 
                   <View style={styles.sharePlayersRow}>
@@ -743,16 +749,18 @@ export const PlayerProfileModal = ({
                           </View>
                         )}
                       </View>
-                      <Text style={styles.sharePlayerName}>TÚ</Text>
+                      <Text style={styles.sharePlayerName}>{currentShareName.toUpperCase()}</Text>
                     </View>
                   </View>
 
-                  <View style={styles.shareStatSeparator}>
-                    <View style={styles.shareStatLine} />
-                    <Text style={styles.shareStatHeading}>PARTIDOS TOTALES</Text>
-                    <View style={styles.shareStatLine} />
+                  <View style={styles.shareTotalsSection}>
+                    <View style={styles.shareStatSeparator}>
+                      <View style={styles.shareStatLine} />
+                      <Text style={styles.shareStatHeading}>PARTIDOS TOTALES</Text>
+                      <View style={styles.shareStatLine} />
+                    </View>
+                    <Text style={styles.shareTotalMatches}>{headToHead.totalMatches}</Text>
                   </View>
-                  <Text style={styles.shareTotalMatches}>{headToHead.totalMatches}</Text>
 
                   <View style={styles.sharePanel}>
                     <View style={styles.shareStatSeparator}>
@@ -769,7 +777,7 @@ export const PlayerProfileModal = ({
                       <View style={styles.shareWinsDivider} />
                       <View style={styles.shareWinsBlock}>
                         <Text style={styles.shareWinsValue}>{headToHead.currentUserWins}</Text>
-                        <Text style={styles.shareWinsLabel}>TÚ GANASTE</Text>
+                        <Text style={styles.shareWinsLabel}>{currentWinsLabel}</Text>
                       </View>
                     </View>
 
@@ -1097,9 +1105,31 @@ const getStyles = (colors: any) => StyleSheet.create({
   sharePosterInner: {
     flex: 1,
     paddingHorizontal: 92,
-    paddingTop: 188,
+    paddingTop: 128,
     paddingBottom: 118,
     alignItems: 'center',
+  },
+  shareBrandBlock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 18,
+    marginBottom: 32,
+  },
+  shareBrandLogo: {
+    width: 72,
+    height: 72,
+  },
+  shareBrandText: {
+    color: '#ffffff',
+    fontSize: 54,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    letterSpacing: 0.4,
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 4 },
+    textShadowRadius: 10,
   },
   sharePosterTitle: {
     color: '#ffffff',
@@ -1118,6 +1148,11 @@ const getStyles = (colors: any) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: 132,
+  },
+  shareTotalsSection: {
+    width: '100%',
+    marginTop: 92,
+    alignItems: 'center',
   },
   sharePlayerBlock: {
     width: 300,
@@ -1222,7 +1257,7 @@ const getStyles = (colors: any) => StyleSheet.create({
   },
   sharePanel: {
     width: '100%',
-    marginTop: 120,
+    marginTop: 56,
     paddingHorizontal: 48,
     paddingTop: 52,
     paddingBottom: 56,
