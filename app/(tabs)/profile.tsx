@@ -1216,131 +1216,135 @@ export default function ProfileScreen() {
 
                 {/* Stats Bento */}
                 <View style={styles.bentoContainer}>
-                    {/* Fila 1: Ranking General & Rango Ranking */}
-                    <View style={styles.bentoRow}>
+                    {/* Top Section: Left Main Rank Card + Right Column */}
+                    <View style={styles.bentoTopSection}>
+                        {/* Left Column: Huge Main Rank Card */}
                         <View style={styles.mainRankCard}>
-                            <Text style={styles.statLabel} numberOfLines={1}>{'POSICIÓN RANKING'}</Text>
-                            <View>
+                            {/* Glowing green indicator bar on the left edge inside the card */}
+                            <View style={styles.rankLeftIndicator} />
+                            <View style={styles.rankCardContent}>
+                                <Text style={styles.statLabel}>POSICIÓN RANKING</Text>
                                 <Text style={styles.rankValue}>{stats.rank}</Text>
-                                <View style={styles.rankStatus}>
-                                    <Text style={styles.rankStatusText}>{selectedContext?.level.toUpperCase() || 'GENERAL'}</Text>
-                                </View>
+                                <Text style={styles.rankStatusText}>
+                                    {selectedContext ? `${selectedContext.level.toUpperCase()} \u2022 ${selectedYear || '2026'}` : `GENERAL \u2022 ${selectedYear || '2026'}`}
+                                </Text>
                             </View>
                         </View>
                         
+                        {/* Right Column */}
                         <View style={styles.bentoRightColumn}>
-                            <View style={styles.statsMiniRow}>
+                            {/* Row 1: Trofeos & Victorias */}
+                            <View style={styles.miniStatsRow}>
                                 <View style={styles.miniStatCard}>
-                                    <Ionicons name="trending-up" size={20} color={colors.success} />
-                                    <Text style={styles.miniStatValue}>{stats.bestRanking}</Text>
-                                    <Text style={styles.miniStatLabel} numberOfLines={1}>MEJOR RANKING</Text>
+                                    <Ionicons name="trophy" size={20} color="#10b981" />
+                                    <Text style={styles.miniStatValue}>{stats.trophies}</Text>
+                                    <Text style={styles.miniStatLabel}>TROFEOS</Text>
                                 </View>
                                 <View style={styles.miniStatCard}>
-                                    <Ionicons name="trending-down" size={20} color={colors.error} />
-                                    <Text style={styles.miniStatValue}>{stats.worstRanking}</Text>
-                                    <Text style={styles.miniStatLabel} numberOfLines={1}>PEOR RANKING</Text>
-                                </View>
-                            </View>
-                            <View style={styles.statsMiniRow}>
-                                <View style={styles.miniStatCard}>
-                                    <Ionicons name="calendar-outline" size={20} color={colors.primary[500]} />
-                                    <Text style={styles.miniStatValue}>{stats.debutYear}</Text>
-                                    <Text style={styles.miniStatLabel} numberOfLines={1}>DEBUT</Text>
-                                </View>
-                                <View style={styles.miniStatCard}>
-                                    <Ionicons name="ribbon-outline" size={20} color={colors.textSecondary} />
-                                    <Text style={styles.miniStatValue}>{stats.finalsPlayed}</Text>
-                                    <Text style={styles.miniStatLabel} numberOfLines={1}>FINALES</Text>
+                                    <Ionicons name="ribbon" size={20} color={colors.textSecondary} />
+                                    <Text style={styles.miniStatValue}>{stats.wins}</Text>
+                                    <Text style={styles.miniStatLabel}>VICTORIAS</Text>
                                 </View>
                             </View>
+
+                            {/* Row 2: Win Rate & Partidos */}
+                            <View style={styles.miniStatsRow}>
+                                <View style={styles.miniStatCard}>
+                                    <Ionicons name="analytics" size={20} color={colors.primary[500]} />
+                                    <Text style={styles.miniStatValue}>{stats.winRate}</Text>
+                                    <Text style={styles.miniStatLabel}>WIN RATE</Text>
+                                </View>
+                                <View style={styles.miniStatCard}>
+                                    <Ionicons name="tennisball" size={20} color={colors.textSecondary} />
+                                    <Text style={styles.miniStatValue}>{stats.totalMatches}</Text>
+                                    <Text style={styles.miniStatLabel}>PARTIDOS</Text>
+                                </View>
+                            </View>
+
+                            {/* Row 3: Total Sets */}
+                            <View style={styles.splitStatCard}>
+                                <View style={styles.splitStatItem}>
+                                    <Text style={[styles.splitStatValue, { color: colors.success }]}>{stats.setsWon}</Text>
+                                    <Text style={styles.splitStatLabel}>TOTAL SETS GANADOS</Text>
+                                </View>
+                                <View style={styles.splitStatDivider} />
+                                <View style={styles.splitStatItem}>
+                                    <Text style={[styles.splitStatValue, { color: colors.error }]}>{stats.setsLost}</Text>
+                                    <Text style={styles.splitStatLabel}>TOTAL SETS PERDIDOS</Text>
+                                </View>
+                            </View>
+
+                            {/* Row 4: Total Games */}
+                            <View style={styles.splitStatCard}>
+                                <View style={styles.splitStatItem}>
+                                    <Text style={[styles.splitStatValue, { color: colors.success }]}>{stats.gamesWon}</Text>
+                                    <Text style={styles.splitStatLabel}>TOTAL GAMES GANADOS</Text>
+                                </View>
+                                <View style={styles.splitStatDivider} />
+                                <View style={styles.splitStatItem}>
+                                    <Text style={[styles.splitStatValue, { color: colors.error }]}>{stats.gamesLost}</Text>
+                                    <Text style={styles.splitStatLabel}>TOTAL GAMES PERDIDOS</Text>
+                                </View>
+                            </View>
                         </View>
                     </View>
 
-                    {/* Fila 2: Trofeos, Victorias, Win Rate, Partidos */}
-                    <View style={styles.bentoRow}>
-                        <View style={styles.miniStatCard}>
-                            <Ionicons name="trophy" size={22} color={colors.primary[500]} />
-                            <Text style={styles.miniStatValue}>{stats.trophies}</Text>
-                            <Text style={styles.miniStatLabel} numberOfLines={1}>TROFEOS</Text>
+                    {/* Bottom Section: Rows of 2 columns spanning full screen width */}
+                    <View style={styles.bentoBottomSection}>
+                        {/* Row 1: Finales Jugadas & Racha Actual */}
+                        <View style={styles.bottomRow}>
+                            <View style={styles.bottomHalfCard}>
+                                <Ionicons name="flag" size={20} color="#10b981" />
+                                <Text style={styles.bottomCardValue}>{stats.finalsPlayed}</Text>
+                                <Text style={styles.bottomCardLabel}>FINALES JUGADAS</Text>
+                            </View>
+                            <View style={styles.bottomHalfCard}>
+                                <Ionicons name="flame" size={20} color="#f97316" />
+                                <Text style={styles.bottomCardValue}>{stats.currentStreak}</Text>
+                                <Text style={styles.bottomCardLabel}>RACHA ACTUAL</Text>
+                            </View>
                         </View>
-                        <View style={styles.miniStatCard}>
-                            <Ionicons name="medal" size={22} color={colors.textSecondary} />
-                            <Text style={styles.miniStatValue}>{stats.wins}</Text>
-                            <Text style={styles.miniStatLabel} numberOfLines={1}>VICTORIAS</Text>
-                        </View>
-                        <View style={styles.miniStatCard}>
-                            <Ionicons name="analytics" size={22} color={colors.textSecondary} />
-                            <Text style={stats.winRate === '0%' ? styles.miniStatValueDim : styles.miniStatValue}>
-                                {stats.winRate}
-                            </Text>
-                            <Text style={styles.miniStatLabel} numberOfLines={1}>WIN RATE</Text>
-                        </View>
-                        <View style={styles.miniStatCard}>
-                            <Ionicons name="tennisball" size={22} color={colors.textSecondary} />
-                            <Text style={styles.miniStatValue}>{stats.totalMatches}</Text>
-                            <Text style={styles.miniStatLabel} numberOfLines={1}>PARTIDOS</Text>
-                        </View>
-                    </View>
 
-                    {/* Fila 3: Racha (Full Width) */}
-                    <View style={styles.bentoRow}>
-                        <View style={styles.setsFullCard}>
-                             <View style={styles.setStatItem}>
-                                <Ionicons name="flame" size={24} color="#f97316" style={{ marginBottom: 4 }} />
-                                <Text style={styles.setStatValue}>{stats.currentStreak}</Text>
-                                <Text style={styles.setStatLabel}>RACHA ACTUAL</Text>
-                             </View>
-                             <View style={styles.setStatDivider} />
-                             <View style={styles.setStatItem}>
-                                <Ionicons name="trophy-outline" size={24} color={colors.primary[500]} style={{ marginBottom: 4 }} />
-                                <Text style={styles.setStatValue}>{stats.bestStreak}</Text>
-                                <Text style={styles.setStatLabel}>MEJOR RACHA</Text>
-                             </View>
+                        {/* Row 2: Mejor Racha & Año Debut */}
+                        <View style={styles.bottomRow}>
+                            <View style={styles.bottomHalfCard}>
+                                <Ionicons name="trending-up" size={20} color="#10b981" />
+                                <Text style={styles.bottomCardValue}>{stats.bestStreak}</Text>
+                                <Text style={styles.bottomCardLabel}>MEJOR RACHA</Text>
+                            </View>
+                            <View style={styles.bottomHalfCard}>
+                                <Ionicons name="calendar" size={20} color="#3b82f6" />
+                                <Text style={styles.bottomCardValue}>{stats.debutYear}</Text>
+                                <Text style={styles.bottomCardLabel}>AÑO DEBUT</Text>
+                            </View>
                         </View>
-                    </View>
 
-                    {/* Fila 4: Sets & Games (Full Width Cards) */}
-                    <View style={styles.bentoRow}>
-                        <View style={styles.setsFullCard}>
-                             <View style={styles.setStatItem}>
-                                <Text style={[styles.setStatValue, { color: colors.success }]}>{stats.setsWon}</Text>
-                                <Text style={styles.setStatLabel}>SETS GANADOS</Text>
-                             </View>
-                             <View style={styles.setStatDivider} />
-                             <View style={styles.setStatItem}>
-                                <Text style={[styles.setStatValue, { color: colors.error }]}>{stats.setsLost}</Text>
-                                <Text style={styles.setStatLabel}>SETS PERDIDOS</Text>
-                             </View>
+                        {/* Row 3: Mejor Ranking & Peor Ranking */}
+                        <View style={styles.bottomRow}>
+                            <View style={styles.bottomHalfCard}>
+                                <Ionicons name="bar-chart" size={20} color="#10b981" />
+                                <Text style={styles.bottomCardValue}>{stats.bestRanking}</Text>
+                                <Text style={styles.bottomCardLabel}>MEJOR RANKING</Text>
+                            </View>
+                            <View style={styles.bottomHalfCard}>
+                                <Ionicons name="trending-down" size={20} color={colors.error} />
+                                <Text style={styles.bottomCardValue}>{stats.worstRanking}</Text>
+                                <Text style={styles.bottomCardLabel}>PEOR RANKING</Text>
+                            </View>
                         </View>
-                    </View>
 
-                    <View style={[styles.bentoRow, { marginTop: -spacing.sm }]}>
-                        <View style={styles.setsFullCard}>
-                             <View style={styles.setStatItem}>
-                                <Text style={[styles.setStatValue, { color: colors.success }]}>{stats.gamesWon}</Text>
-                                <Text style={styles.setStatLabel}>GAMES GANADOS</Text>
-                             </View>
-                             <View style={styles.setStatDivider} />
-                             <View style={styles.setStatItem}>
-                                <Text style={[styles.setStatValue, { color: colors.error }]}>{stats.gamesLost}</Text>
-                                <Text style={styles.setStatLabel}>GAMES PERDIDOS</Text>
-                             </View>
-                        </View>
-                    </View>
-
-                    {/* Fila 5: Rival más enfrentado (Full Width Card) */}
-                    <View style={styles.bentoRow}>
-                        <View style={styles.setsFullCard}>
-                             <View style={styles.setStatItem}>
-                                <Ionicons name="people" size={24} color={colors.primary[500]} style={{ marginBottom: 4 }} />
-                                <Text style={[styles.setStatValue, { fontSize: 16 }]} numberOfLines={1}>
-                                    {stats.mostFacedRivalName}
+                        {/* Row 4: Rival más enfrentado (Full Width) */}
+                        <View style={styles.bottomFullCard}>
+                            <Ionicons name="people" size={20} color={colors.primary[500]} />
+                            <View style={styles.rivalInfoContainer}>
+                                <Text style={styles.rivalNameText} numberOfLines={1}>
+                                    {stats.mostFacedRivalName || '-'}
                                 </Text>
-                                <Text style={styles.setStatLabel}>
-                                    {stats.mostFacedRivalMatches > 0 ? `${stats.mostFacedRivalMatches} partidos` : 'Sin enfrentamientos'}
+                                <Text style={styles.rivalDetailText}>
+                                    {stats.mostFacedRivalMatches > 0 ? `${stats.mostFacedRivalMatches} partidos` : 'Sin partidos registrados'}
                                 </Text>
-                                <Text style={[styles.setStatLabel, { color: colors.textTertiary, marginTop: 2, fontSize: 8 }]}>RIVAL MÁS ENFRENTADO</Text>
-                             </View>
+                            </View>
+                            <Text style={styles.rivalLabel}>RIVAL MÁS ENFRENTADO</Text>
                         </View>
                     </View>
                 </View>
@@ -1909,80 +1913,189 @@ const getStyles = (colors: any) => StyleSheet.create({
         fontSize: 12,
         fontWeight: '700',
     },
-    statsGrid: {
+    bentoContainer: {
+        gap: spacing.md,
+        width: '100%',
+        marginTop: spacing.md,
+    },
+    bentoTopSection: {
         flexDirection: 'row',
         gap: spacing.md,
+        width: '100%',
     },
     mainRankCard: {
-        flex: 1,
+        flex: 1, // left side
         backgroundColor: colors.surface,
-        borderRadius: borderRadius['3xl'],
-        padding: spacing.lg,
-        borderLeftWidth: 8,
-        borderLeftColor: colors.primary[500],
+        borderRadius: 24,
+        borderWidth: 1,
+        borderColor: colors.border,
+        overflow: 'hidden',
+        position: 'relative',
         justifyContent: 'center',
-        minHeight: 140,
+        paddingVertical: spacing.lg,
+    },
+    rankLeftIndicator: {
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: 6,
+        backgroundColor: '#10b981', // bright neon green accent
+    },
+    rankCardContent: {
+        paddingHorizontal: spacing.lg,
+        alignItems: 'flex-start',
     },
     statLabel: {
-        fontSize: 8,
-        fontWeight: '800',
+        fontSize: 9,
+        fontWeight: '900',
         color: colors.textTertiary,
-        letterSpacing: 1,
-        marginBottom: 8,
+        letterSpacing: 0.5,
+        textTransform: 'uppercase',
     },
     rankValue: {
-        fontSize: 48,
+        fontSize: 54,
         fontWeight: '900',
         color: colors.text,
         fontStyle: 'italic',
-        lineHeight: 48,
-    },
-    rankStatus: {
-        marginTop: 4,
+        marginVertical: spacing.xs,
+        lineHeight: 58,
     },
     rankStatusText: {
-        color: colors.primary[300],
-        fontSize: 10,
-        fontWeight: '700',
+        fontSize: 11,
+        fontWeight: '900',
+        color: '#10b981',
     },
-    statsRightColumn: {
-        flex: 1.5,
-        gap: spacing.lg,
+    bentoRightColumn: {
+        flex: 1.3, // right side is wider to accommodate two columns of mini cards comfortably
+        gap: spacing.md,
     },
-    statsMiniRow: {
+    miniStatsRow: {
         flexDirection: 'row',
         gap: spacing.md,
-        flex: 1,
     },
     miniStatCard: {
         flex: 1,
-        backgroundColor: colors.surfaceSecondary + '1A',
-        borderRadius: borderRadius['2xl'],
-        padding: spacing.sm,
-        alignItems: 'center',
-        justifyContent: 'center',
+        backgroundColor: colors.surface,
+        borderRadius: 16,
         borderWidth: 1,
         borderColor: colors.border,
+        paddingVertical: spacing.md,
+        paddingHorizontal: spacing.sm,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     miniStatValue: {
-        fontSize: 20,
+        fontSize: 18,
         fontWeight: '900',
         color: colors.text,
-        marginTop: 6,
-    },
-    miniStatValueDim: {
-        fontSize: 20,
-        fontWeight: '900',
-        color: colors.textTertiary,
-        marginTop: 6,
+        marginTop: 4,
     },
     miniStatLabel: {
         fontSize: 8,
         fontWeight: '800',
         color: colors.textTertiary,
-        marginTop: 4,
+        marginTop: 2,
         letterSpacing: 0.2,
         textAlign: 'center',
+    },
+    splitStatCard: {
+        backgroundColor: colors.surface,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+        paddingVertical: spacing.md,
+        paddingHorizontal: spacing.sm,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-around',
+    },
+    splitStatItem: {
+        flex: 1,
+        alignItems: 'center',
+    },
+    splitStatValue: {
+        fontSize: 18,
+        fontWeight: '900',
+    },
+    splitStatLabel: {
+        fontSize: 7.5,
+        fontWeight: '800',
+        color: colors.textTertiary,
+        marginTop: 2,
+        textAlign: 'center',
+    },
+    splitStatDivider: {
+        width: 1,
+        height: '60%',
+        backgroundColor: colors.border,
+    },
+    bentoBottomSection: {
+        gap: spacing.md,
+        width: '100%',
+    },
+    bottomRow: {
+        flexDirection: 'row',
+        gap: spacing.md,
+        width: '100%',
+    },
+    bottomHalfCard: {
+        flex: 1,
+        backgroundColor: colors.surface,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+        paddingVertical: spacing.md,
+        paddingHorizontal: spacing.sm,
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: 80,
+    },
+    bottomCardValue: {
+        fontSize: 18,
+        fontWeight: '900',
+        color: colors.text,
+        marginTop: 4,
+    },
+    bottomCardLabel: {
+        fontSize: 8,
+        fontWeight: '800',
+        color: colors.textTertiary,
+        marginTop: 2,
+        letterSpacing: 0.2,
+        textAlign: 'center',
+    },
+    bottomFullCard: {
+        width: '100%',
+        backgroundColor: colors.surface,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        minHeight: 64,
+    },
+    rivalInfoContainer: {
+        flex: 1,
+        marginHorizontal: spacing.md,
+    },
+    rivalNameText: {
+        fontSize: 15,
+        fontWeight: '800',
+        color: colors.text,
+    },
+    rivalDetailText: {
+        fontSize: 11,
+        color: colors.textSecondary,
+        marginTop: 2,
+    },
+    rivalLabel: {
+        fontSize: 8,
+        fontWeight: '900',
+        color: colors.textTertiary,
+        textTransform: 'uppercase',
     },
     sectionHeader: {
         marginBottom: spacing.md,
@@ -2056,38 +2169,7 @@ const getStyles = (colors: any) => StyleSheet.create({
         color: colors.textTertiary,
         marginTop: 4,
     },
-    setsFullCard: {
-        backgroundColor: colors.surface,
-        borderRadius: borderRadius['2xl'],
-        padding: spacing.lg,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-around',
-        borderWidth: 1,
-        borderColor: colors.border,
-        minHeight: 80,
-    },
-    setStatItem: {
-        alignItems: 'center',
-        flex: 1,
-        paddingHorizontal: spacing.xs,
-    },
-    setStatValue: {
-        fontSize: 22,
-        fontWeight: '900',
-    },
-    setStatLabel: {
-        fontSize: 9,
-        fontWeight: '800',
-        color: colors.textTertiary,
-        marginTop: 4,
-        textAlign: 'center',
-    },
-    setStatDivider: {
-        width: 1,
-        height: '60%',
-        backgroundColor: colors.border,
-    },
+
     emptyCard: {
         backgroundColor: colors.surface,
         borderRadius: borderRadius.xl,
@@ -2650,18 +2732,6 @@ const getStyles = (colors: any) => StyleSheet.create({
         color: '#fff',
         fontWeight: '700',
         fontSize: 16,
-    },
-    bentoContainer: {
-        gap: spacing.md,
-        width: '100%',
-    },
-    bentoRow: {
-        flexDirection: 'row',
-        gap: spacing.md,
-    },
-    bentoRightColumn: {
-        flex: 1.5,
-        gap: spacing.md,
     },
     streakValue: {
         fontSize: 18,
