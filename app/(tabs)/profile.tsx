@@ -13,6 +13,7 @@ import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
 import { getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { PlayerAchievement, loadPlayerAchievements, loadProfileStatsBundle } from '@/services/playerProfileStats';
+import { PlayerProfileModal } from '@/components/players/PlayerProfileModal';
 
 const { width } = Dimensions.get('window');
 
@@ -48,16 +49,10 @@ function RankingEvolutionChart({
     rankingHistory,
     modality,
     colors,
-    selectedYear,
-    availableYears,
-    onSelectYear,
 }: {
     rankingHistory: any[];
     modality: 'singles' | 'dobles';
     colors: any;
-    selectedYear: number | null;
-    availableYears: number[];
-    onSelectYear: (year: number) => void;
 }) {
     const validPoints = (rankingHistory || [])
         .map((p) => {
@@ -91,32 +86,7 @@ function RankingEvolutionChart({
                     Evolución de Ranking
                 </Text>
                 
-                {availableYears.length > 1 && (
-                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 12, marginBottom: 4, flexWrap: 'wrap', justifyContent: 'center' }}>
-                        {availableYears.map((year) => (
-                            <TouchableOpacity
-                                key={year}
-                                style={{
-                                    paddingHorizontal: 12,
-                                    paddingVertical: 6,
-                                    borderRadius: 12,
-                                    backgroundColor: selectedYear === year ? colors.primary[500] : colors.surfaceSecondary + '1A',
-                                    borderWidth: 1,
-                                    borderColor: selectedYear === year ? colors.primary[500] : colors.border,
-                                }}
-                                onPress={() => onSelectYear(year)}
-                            >
-                                <Text style={{
-                                    fontSize: 10,
-                                    fontWeight: '700',
-                                    color: selectedYear === year ? '#fff' : colors.textSecondary,
-                                }}>
-                                    {year}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
-                )}
+
 
                 <Text style={{
                     color: colors.textTertiary,
@@ -180,32 +150,7 @@ function RankingEvolutionChart({
                 </Text>
             </View>
 
-            {availableYears.length > 1 && (
-                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-                    {availableYears.map((year) => (
-                        <TouchableOpacity
-                            key={year}
-                            style={{
-                                paddingHorizontal: 12,
-                                paddingVertical: 6,
-                                borderRadius: 12,
-                                backgroundColor: selectedYear === year ? colors.primary[500] : colors.surfaceSecondary + '1A',
-                                borderWidth: 1,
-                                borderColor: selectedYear === year ? colors.primary[500] : colors.border,
-                            }}
-                            onPress={() => onSelectYear(year)}
-                        >
-                            <Text style={{
-                                fontSize: 10,
-                                fontWeight: '700',
-                                color: selectedYear === year ? '#fff' : colors.textSecondary,
-                            }}>
-                                {year}
-                            </Text>
-                        </TouchableOpacity>
-                    ))}
-                </View>
-            )}
+
 
             <View style={{ height: chartHeight, width: '100%', position: 'relative' }}>
                 {/* Grid Lines & Y Axis Labels */}
@@ -396,6 +341,7 @@ export default function ProfileScreen() {
         worstRanking: '-',
         mostFacedRivalName: '-',
         mostFacedRivalMatches: 0,
+        mostFacedRivalId: null as string | null,
     });
     const [modality, setModality] = useState<'singles' | 'dobles'>('singles');
     const [recentTournaments, setRecentTournaments] = useState<any[]>([]);
@@ -404,6 +350,7 @@ export default function ProfileScreen() {
     const [rankingHistory, setRankingHistory] = useState<any[]>([]);
     const [availableYears, setAvailableYears] = useState<number[]>([]);
     const [selectedYear, setSelectedYear] = useState<number | null>(null);
+    const [showRivalProfile, setShowRivalProfile] = useState(false);
 
     // Profile Fields
     const [isEditingBackhand, setIsEditingBackhand] = useState(false);
@@ -437,6 +384,10 @@ export default function ProfileScreen() {
                 setDeleteAccountPassword('');
                 return true;
             }
+            if (showRivalProfile) {
+                setShowRivalProfile(false);
+                return true;
+            }
             if (selectedAchievement) {
                 setSelectedAchievement(null);
                 return true;
@@ -462,7 +413,7 @@ export default function ProfileScreen() {
         );
 
         return () => backHandler.remove();
-    }, [showContextModal, showOrgSearchModal, showPrivacyModal, showDeleteConfirmModal, deletingAccount]);
+    }, [showContextModal, showOrgSearchModal, showPrivacyModal, showDeleteConfirmModal, deletingAccount, showRivalProfile]);
 
     useEffect(() => {
         loadProfileData();
@@ -681,6 +632,7 @@ export default function ProfileScreen() {
                 worstRanking: bundle.stats.worstRanking,
                 mostFacedRivalName: bundle.stats.mostFacedRivalName,
                 mostFacedRivalMatches: bundle.stats.mostFacedRivalMatches,
+                mostFacedRivalId: bundle.stats.mostFacedRivalId,
             });
 
             setRankingHistory(bundle.rankingHistory || []);
@@ -708,6 +660,7 @@ export default function ProfileScreen() {
                 worstRanking: '-',
                 mostFacedRivalName: '-',
                 mostFacedRivalMatches: 0,
+                mostFacedRivalId: null,
             });
         }
     };
@@ -1181,41 +1134,72 @@ export default function ProfileScreen() {
                         </View>
                     </View>
 
-                    {/* Context Selector */}
-                    {(userContexts.length > 0 || isGlobalAdmin) && (
-                        <TouchableOpacity
-                            style={styles.contextSelector}
-                            onPress={() => (isGlobalAdmin && viewMode === 'admin') ? setShowOrgSearchModal(true) : setShowContextModal(true)}
-                        >
-                            <View style={styles.contextInfo}>
-                                <Ionicons name="filter-outline" size={16} color={colors.primary[500]} />
-                                <Text style={styles.contextText}>
-                                    {selectedContext ? `${selectedContext.org_name} \u00b7 ${selectedContext.level}` : 'Filtrar por Organizaci\u00f3n/Nivel'}
-                                </Text>
-                            </View>
-                            <Ionicons name="chevron-forward" size={16} color={colors.primary[500]} />
-                        </TouchableOpacity>
-                    )}
+                    {/* Wrapper para agrupar los filtros y reducir el espaciado */}
+                    <View style={{ gap: 12 }}>
+                        {/* Context Selector */}
+                        {(userContexts.length > 0 || isGlobalAdmin) && (
+                            <TouchableOpacity
+                                style={styles.contextSelector}
+                                onPress={() => (isGlobalAdmin && viewMode === 'admin') ? setShowOrgSearchModal(true) : setShowContextModal(true)}
+                            >
+                                <View style={styles.contextInfo}>
+                                    <Ionicons name="filter-outline" size={16} color={colors.primary[500]} />
+                                    <Text style={styles.contextText}>
+                                        {selectedContext ? `${selectedContext.org_name} \u00b7 ${selectedContext.level}` : 'Filtrar por Organizaci\u00f3n/Nivel'}
+                                    </Text>
+                                </View>
+                                <Ionicons name="chevron-forward" size={16} color={colors.primary[500]} />
+                            </TouchableOpacity>
+                        )}
 
-                    {/* Modality Selector */}
-                    <View style={styles.modalitySelector}>
-                        <TouchableOpacity 
-                            style={[styles.modalityBtn, modality === 'singles' && styles.modalityBtnActive]}
-                            onPress={() => setModality('singles')}
-                        >
-                            <Text style={[styles.modalityBtnText, modality === 'singles' && styles.modalityBtnTextActive]}>Singles</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={[styles.modalityBtn, modality === 'dobles' && styles.modalityBtnActive]}
-                            onPress={() => setModality('dobles')}
-                        >
-                            <Text style={[styles.modalityBtnText, modality === 'dobles' && styles.modalityBtnTextActive]}>Dobles</Text>
-                        </TouchableOpacity>
+                        {/* Year Filter Global (Aplica a todas las estadísticas) */}
+                        {availableYears.length > 0 && (
+                            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center', paddingHorizontal: 24 }}>
+                                {availableYears.map((year) => (
+                                    <TouchableOpacity
+                                        key={year}
+                                        style={{
+                                            paddingHorizontal: 16,
+                                            paddingVertical: 8,
+                                            borderRadius: 20,
+                                            backgroundColor: selectedYear === year ? colors.primary[500] : colors.surfaceSecondary + '1A',
+                                            borderWidth: 1,
+                                            borderColor: selectedYear === year ? colors.primary[500] : colors.border,
+                                        }}
+                                        onPress={() => setSelectedYear(year)}
+                                    >
+                                        <Text style={{
+                                            fontSize: 12,
+                                            fontWeight: '700',
+                                            color: selectedYear === year ? '#fff' : colors.textSecondary,
+                                        }}>
+                                            {year}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        )}
+
+                        {/* Modality Selector */}
+                        <View style={[styles.modalitySelector, { marginTop: 0 }]}>
+                            <TouchableOpacity 
+                                style={[styles.modalityBtn, modality === 'singles' && styles.modalityBtnActive]}
+                                onPress={() => setModality('singles')}
+                            >
+                                <Text style={[styles.modalityBtnText, modality === 'singles' && styles.modalityBtnTextActive]}>Singles</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={[styles.modalityBtn, modality === 'dobles' && styles.modalityBtnActive]}
+                                onPress={() => setModality('dobles')}
+                            >
+                                <Text style={[styles.modalityBtnText, modality === 'dobles' && styles.modalityBtnTextActive]}>Dobles</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 </View>
 
                 {/* Stats Bento */}
-                <View style={styles.bentoContainer}>
+                <View style={[styles.bentoContainer, { marginTop: -20 }]}>
                     {/* Top Section: Left Main Rank Card + Right Column */}
                     <View style={styles.bentoTopSection}>
                         {/* Left Column: Huge Main Rank Card */}
@@ -1334,7 +1318,15 @@ export default function ProfileScreen() {
                         </View>
 
                         {/* Row 4: Rival más enfrentado (Full Width) */}
-                        <View style={styles.bottomFullCard}>
+                        <TouchableOpacity
+                            style={styles.bottomFullCard}
+                            activeOpacity={stats.mostFacedRivalId && stats.mostFacedRivalMatches > 0 ? 0.7 : 1}
+                            onPress={() => {
+                                if (stats.mostFacedRivalId && stats.mostFacedRivalMatches > 0) {
+                                    setShowRivalProfile(true);
+                                }
+                            }}
+                        >
                             <Ionicons name="people" size={20} color={colors.primary[500]} />
                             <View style={styles.rivalInfoContainer}>
                                 <Text style={styles.rivalNameText} numberOfLines={1}>
@@ -1345,7 +1337,7 @@ export default function ProfileScreen() {
                                 </Text>
                             </View>
                             <Text style={styles.rivalLabel}>RIVAL MÁS ENFRENTADO</Text>
-                        </View>
+                        </TouchableOpacity>
                     </View>
                 </View>
 
@@ -1354,9 +1346,6 @@ export default function ProfileScreen() {
                     rankingHistory={rankingHistory}
                     modality={modality}
                     colors={colors}
-                    selectedYear={selectedYear}
-                    availableYears={availableYears}
-                    onSelectYear={(year) => setSelectedYear(year)}
                 />
 
                 {/* Achievements section */}
@@ -1729,6 +1718,16 @@ export default function ProfileScreen() {
                     </View>
                 </View>
             </Modal>
+
+            {/* Player Profile Modal for Most Faced Rival */}
+            <PlayerProfileModal
+                visible={showRivalProfile}
+                playerId={stats.mostFacedRivalId}
+                tournamentOrgId={selectedContext?.org_id}
+                tournamentLevel={selectedContext?.level}
+                initialPage="headToHead"
+                onClose={() => setShowRivalProfile(false)}
+            />
         </View>
     );
 }
