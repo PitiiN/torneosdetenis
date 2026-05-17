@@ -4,7 +4,7 @@
     "slug": "torneosdetenis",
     "version": "3.1.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/Logos/LogoEscritorio.png",
     "userInterfaceStyle": "light",
     "scheme": "torneosdetenis",
     "splash": {
@@ -24,7 +24,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/Logos/LogoEscritorio.png",
         "backgroundColor": "#000000"
       },
       "package": "com.pitin.torneosdetenis",
