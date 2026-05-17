@@ -803,6 +803,7 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
   const topTenLevels = new Set<string>();
   const topFiveLevels = new Set<string>();
   const topOneLevels = new Set<string>();
+  let rankingPoolTournaments: any[] = [];
 
   if (contextKeys.length && orgIds.length && levels.length) {
     const { data: rankingPoolTournamentsRows } = await supabase
@@ -812,7 +813,7 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
       .in('level', levels)
       .in('status', Array.from(COMPLETED_STATUSES));
 
-    const rankingPoolTournaments = (rankingPoolTournamentsRows || []).filter((tournament: any) =>
+    rankingPoolTournaments = (rankingPoolTournamentsRows || []).filter((tournament: any) =>
       contextKeys.includes(getContextKey(tournament))
     );
 
