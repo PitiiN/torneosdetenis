@@ -60,21 +60,7 @@ export default function InicioScreen() {
 
     useFocusEffect(
         useCallback(() => {
-            let active = true;
-
-            (async () => {
-                const updatedAt = await SecureStore.getItemAsync(ORGANIZATIONS_UPDATED_AT_KEY);
-                if (!active) return;
-
-                if (updatedAt && updatedAt !== lastSeenOrganizationsUpdatedAtRef.current) {
-                    lastSeenOrganizationsUpdatedAtRef.current = updatedAt;
-                    await loadOrganizationsSource(true);
-                }
-            })();
-
-            return () => {
-                active = false;
-            };
+            loadOrganizationsSource(true);
         }, [])
     );
 
@@ -167,14 +153,30 @@ export default function InicioScreen() {
         try {
             let cachedPayload = getCachedValue<HomeCachePayload>(HOME_RUNTIME_CACHE_KEY);
 
-            if (cachedPayload) {
+            if (cachedPayload && !forceRefresh) {
                 setSourceOrganizations(cachedPayload.organizations);
                 setOpenTournaments(cachedPayload.openTournaments);
                 hydratedFromCache = true;
                 setLoading(false);
                 const isCacheFresh = Date.now() - cachedPayload.savedAt < HOME_CACHE_TTL_MS;
-                if (isCacheFresh && !forceRefresh) {
+                if (isCacheFresh) {
                     return;
+                }
+            }
+
+            // Retrieve current user and followed organizations
+            const { data: { session } } = await supabase.auth.getSession();
+            const currentUserId = session?.user?.id || null;
+
+            let followedOrgIds = new Set<string>();
+            if (currentUserId) {
+                const { data: followData } = await supabase
+                    .from('organization_followers')
+                    .select('organization_id')
+                    .eq('user_id', currentUserId);
+
+                if (followData) {
+                    followedOrgIds = new Set(followData.map(f => f.organization_id));
                 }
             }
 
@@ -198,6 +200,25 @@ export default function InicioScreen() {
                     ...organization,
                     logo_signed_url: externalLogoUrl,
                 };
+            });
+
+            // Sort logic: 
+            // 1st criterion: followed by user (alphabetically by name if multiple)
+            // 2nd criterion: not followed (by creation date ascending - oldest first)
+            baseOrganizations.sort((a, b) => {
+                const aFollowed = followedOrgIds.has(a.id);
+                const bFollowed = followedOrgIds.has(b.id);
+
+                if (aFollowed && !bFollowed) return -1;
+                if (!aFollowed && bFollowed) return 1;
+
+                if (aFollowed && bFollowed) {
+                    return a.name.localeCompare(b.name, 'es', { sensitivity: 'base' });
+                }
+
+                const dateA = new Date(a.created_at || 0).getTime();
+                const dateB = new Date(b.created_at || 0).getTime();
+                return dateA - dateB;
             });
 
             const nextPayload: HomeCachePayload = {
