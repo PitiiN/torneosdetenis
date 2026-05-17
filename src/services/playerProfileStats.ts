@@ -43,6 +43,7 @@ export type PlayerAchievement = {
   icon: string;
   tone: 'gold' | 'silver' | 'bronze' | 'green' | 'blue' | 'purple';
   imageSource?: any;
+  dateEarned?: string;
 };
 
 type RankingAccumulator = {
@@ -772,6 +773,7 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
       icon: 'tennisball',
       tone: 'silver',
       imageSource: require('../../assets/Medallas/PrimerTorneoJugado.png'),
+      dateEarned: playedTournaments[0].start_date || playedTournaments[0].created_at || new Date().toISOString(),
     });
   }
 
@@ -791,6 +793,7 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
       icon: 'tennisball',
       tone: 'gold',
       imageSource: require('../../assets/Medallas/PrimerTriunfo.png'),
+      dateEarned: firstWin.scheduled_at || firstWin.created_at || new Date().toISOString(),
     });
   }
 
@@ -873,6 +876,7 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
       case 'CampeónEscalafón.png': return require('../../assets/Medallas/CampeónEscalafón.png');
       case 'CampeónHonor.png': return require('../../assets/Medallas/CampeónHonor.png');
       case 'CampeónInicial.png': return require('../../assets/Medallas/CampeónInicial.png');
+      case 'CampeónInvicto.png': return require('../../assets/Medallas/CampeónInvicta.png'); // fallback
       case 'CampeónInvicto.png': return require('../../assets/Medallas/CampeónInvicto.png');
       case 'CampeónPrimera.png': return require('../../assets/Medallas/CampeónPrimera.png');
       case 'CampeónQuinta.png': return require('../../assets/Medallas/CampeónQuinta.png');
@@ -925,6 +929,11 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
     .sort((left, right) => left.localeCompare(right))
     .forEach((level) => {
       const normalizedLevel = normalizeKey(level) || 'categoria';
+      const key = contextKeys.find(ck => ck.includes(level)) || '';
+      const groupTournaments = rankingPoolTournaments.filter(t => getContextKey(t) === key);
+      const latestTourney = [...groupTournaments].sort((a, b) => getTournamentTime(b) - getTournamentTime(a))[0];
+      const dateEarned = latestTourney?.start_date || latestTourney?.created_at || new Date().toISOString();
+
       achievements.push({
         id: `top-one-${normalizedLevel}`,
         title: `Top 1 de ranking ${level}`,
@@ -932,6 +941,7 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
         icon: 'podium',
         tone: 'gold',
         imageSource: getMedalSource(getLevelImageName('Top1Ranking', level)),
+        dateEarned,
       });
     });
 
@@ -939,6 +949,11 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
     .sort((left, right) => left.localeCompare(right))
     .forEach((level) => {
       const normalizedLevel = normalizeKey(level) || 'categoria';
+      const key = contextKeys.find(ck => ck.includes(level)) || '';
+      const groupTournaments = rankingPoolTournaments.filter(t => getContextKey(t) === key);
+      const latestTourney = [...groupTournaments].sort((a, b) => getTournamentTime(b) - getTournamentTime(a))[0];
+      const dateEarned = latestTourney?.start_date || latestTourney?.created_at || new Date().toISOString();
+
       achievements.push({
         id: `top-five-${normalizedLevel}`,
         title: `Top 5 de ranking ${level}`,
@@ -946,6 +961,7 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
         icon: 'tennisball',
         tone: 'silver',
         imageSource: getMedalSource(getLevelImageName('Top5Ranking', level)),
+        dateEarned,
       });
     });
 
@@ -953,6 +969,11 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
     .sort((left, right) => left.localeCompare(right))
     .forEach((level) => {
       const normalizedLevel = normalizeKey(level) || 'categoria';
+      const key = contextKeys.find(ck => ck.includes(level)) || '';
+      const groupTournaments = rankingPoolTournaments.filter(t => getContextKey(t) === key);
+      const latestTourney = [...groupTournaments].sort((a, b) => getTournamentTime(b) - getTournamentTime(a))[0];
+      const dateEarned = latestTourney?.start_date || latestTourney?.created_at || new Date().toISOString();
+
       achievements.push({
         id: `top-ten-${normalizedLevel}`,
         title: `Top 10 de ranking ${level}`,
@@ -960,6 +981,7 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
         icon: 'tennisball',
         tone: 'bronze',
         imageSource: getMedalSource(getLevelImageName('Top10Ranking', level)),
+        dateEarned,
       });
     });
 
@@ -969,6 +991,12 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
 
   [10, 25, 50, 100, 150, 200, 250].forEach((threshold) => {
     if (totalWins >= threshold) {
+      const playerWinsMatches = finishedPlayerMatches.filter((match: any) =>
+        isPlayerWinner(match, playerId, matchesByPlayerTournament[match.tournament_id] || [])
+      );
+      const triggeringMatch = playerWinsMatches[threshold - 1];
+      const dateEarned = triggeringMatch?.scheduled_at || triggeringMatch?.created_at || new Date().toISOString();
+
       achievements.push({
         id: `wins-${threshold}`,
         title: `${threshold} Triunfos`,
@@ -976,6 +1004,7 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
         icon: 'tennisball',
         tone: threshold >= 100 ? 'gold' : 'silver',
         imageSource: getMedalSource(`${threshold}Triunfos.png`),
+        dateEarned,
       });
     }
   });
@@ -997,6 +1026,7 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
       icon: 'trophy',
       tone: 'gold',
       imageSource: getMedalSource(getLevelImageName('Campeón', level)),
+      dateEarned: tournament?.start_date || tournament?.created_at || new Date().toISOString(),
     });
   });
 
@@ -1011,12 +1041,17 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
     .forEach(([level, count]) => {
       [5, 10, 15, 20].forEach((threshold) => {
         if (count < threshold) return;
+        const levelEntries = championEntries.filter(({ tournament }) => String(tournament?.level).trim() === level);
+        const triggeringEntry = levelEntries[threshold - 1];
+        const dateEarned = triggeringEntry?.tournament.start_date || triggeringEntry?.tournament.created_at || new Date().toISOString();
+
         achievements.push({
           id: `championships-${threshold}-${normalizeKey(level) || 'categoria'}`,
           title: `${threshold} Campeonatos Logrados ${level}`,
           detail: `${count} campeonatos ganados en ${level}`,
           icon: threshold >= 15 ? 'trophy' : 'medal',
           tone: threshold >= 10 ? 'gold' : 'silver',
+          dateEarned,
         });
       });
     });
@@ -1024,6 +1059,20 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
   const allStreaks = calculateStreaks(finishedPlayerMatches, playerId, playerTournamentById, matchesByPlayerTournament);
   [5, 10, 15, 20, 30, 40, 50, 60, 70, 80, 90, 100].forEach((threshold) => {
     if (allStreaks.best >= threshold) {
+      let streakCount = 0;
+      let streakTriggerMatch: any = null;
+      for (const match of finishedPlayerMatches) {
+        if (isPlayerWinner(match, playerId, matchesByPlayerTournament[match.tournament_id] || [])) {
+          streakCount++;
+          if (streakCount === threshold) {
+            streakTriggerMatch = match;
+          }
+        } else {
+          streakCount = 0;
+        }
+      }
+      const dateEarned = streakTriggerMatch?.scheduled_at || streakTriggerMatch?.created_at || new Date().toISOString();
+
       achievements.push({
         id: `streak-${threshold}`,
         title: `Racha de ${threshold} victorias`,
@@ -1031,6 +1080,7 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
         icon: 'tennisball',
         tone: threshold >= 30 ? 'gold' : threshold >= 15 ? 'silver' : 'bronze',
         imageSource: getMedalSource(`Racha${threshold}Victorias.png`),
+        dateEarned,
       });
     }
   });
@@ -1042,6 +1092,23 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
       tournamentMatches.every((match) => isPlayerWinner(match, playerId, matchesByPlayerTournament[tournament.id] || []));
   });
 
+  const hasNoSetLostChampion = championEntries.some(({ tournament }) => {
+    const tournamentMatches = (matchesByPlayerTournament[tournament.id] || [])
+      .filter((match) => isFinishedMatch(match) && isPlayerInMatch(match, playerId));
+    return tournamentMatches.length > 0 &&
+      tournamentMatches.every((match) => hasRecordedScore(match) && getPlayerMatchStats(match, playerId).setsLost === 0);
+  });
+
+  const hasNoGameLostChampion = championEntries.some(({ tournament }) => {
+    const tournamentMatches = (matchesByPlayerTournament[tournament.id] || [])
+      .filter((match) => isFinishedMatch(match) && isPlayerInMatch(match, playerId));
+    return tournamentMatches.length > 0 &&
+      tournamentMatches.every((match) => hasRecordedScore(match) && getPlayerMatchStats(match, playerId).gamesLost === 0);
+  });
+
+  const latestChampionTourney = championEntries[championEntries.length - 1]?.tournament;
+  const undefeatedDateEarned = latestChampionTourney?.start_date || latestChampionTourney?.created_at || new Date().toISOString();
+
   if (hasUndefeatedChampion) {
     achievements.push({
       id: 'undefeated-champion',
@@ -1050,15 +1117,9 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
       icon: 'trophy',
       tone: 'gold',
       imageSource: getMedalSource('CampeónInvicto.png'),
+      dateEarned: undefeatedDateEarned,
     });
   }
-
-  const hasNoSetLostChampion = championEntries.some(({ tournament }) => {
-    const tournamentMatches = (matchesByPlayerTournament[tournament.id] || [])
-      .filter((match) => isFinishedMatch(match) && isPlayerInMatch(match, playerId));
-    return tournamentMatches.length > 0 &&
-      tournamentMatches.every((match) => hasRecordedScore(match) && getPlayerMatchStats(match, playerId).setsLost === 0);
-  });
 
   if (hasNoSetLostChampion) {
     achievements.push({
@@ -1068,15 +1129,9 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
       icon: 'ribbon',
       tone: 'silver',
       imageSource: getMedalSource('CampeónSinCederSets.png'),
+      dateEarned: undefeatedDateEarned,
     });
   }
-
-  const hasNoGameLostChampion = championEntries.some(({ tournament }) => {
-    const tournamentMatches = (matchesByPlayerTournament[tournament.id] || [])
-      .filter((match) => isFinishedMatch(match) && isPlayerInMatch(match, playerId));
-    return tournamentMatches.length > 0 &&
-      tournamentMatches.every((match) => hasRecordedScore(match) && getPlayerMatchStats(match, playerId).gamesLost === 0);
-  });
 
   if (hasNoGameLostChampion) {
     achievements.push({
@@ -1086,6 +1141,7 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
       icon: 'medal',
       tone: 'gold',
       imageSource: getMedalSource('CampeónSinCederGames.png'),
+      dateEarned: undefeatedDateEarned,
     });
   }
 
@@ -1097,6 +1153,7 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
       icon: 'star',
       tone: 'gold',
       imageSource: getMedalSource('DiosDelTenis.png'),
+      dateEarned: undefeatedDateEarned,
     });
   }
 

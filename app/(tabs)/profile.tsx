@@ -18,11 +18,28 @@ const { width } = Dimensions.get('window');
 
 const formatDate = (dateString?: string) => {
     if (!dateString) return 'Fecha no disponible';
-    const d = new Date(dateString);
-    if (isNaN(d.getTime())) {
-        return dateString;
+    try {
+        const cleanDate = dateString.split('T')[0];
+        const parts = cleanDate.split('-');
+        if (parts.length === 3) {
+            const year = parts[0];
+            const month = parts[1];
+            const day = parts[2];
+            return `${day}/${month}/${year}`;
+        }
+        
+        const d = new Date(dateString);
+        if (isNaN(d.getTime())) {
+            return dateString;
+        }
+        
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        return `${day}/${month}/${year}`;
+    } catch (e) {
+        return dateString || 'Fecha no disponible';
     }
-    return d.toLocaleDateString();
 };
 
 const MONTH_NAMES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -159,7 +176,7 @@ function RankingEvolutionChart({
                     fontSize: 16,
                     fontWeight: '800',
                 }}>
-                    Evolución de Ranking
+                    {`Evolución de Ranking (${modality === 'singles' ? 'Singles' : 'Dobles'})`}
                 </Text>
             </View>
 
@@ -290,24 +307,27 @@ function RankingEvolutionChart({
                     </View>
                 ))}
 
-                {/* X Axis Labels */}
-                {coords.map((pt, idx) => (
-                    <Text
-                        key={`label-${idx}`}
-                        style={{
-                            position: 'absolute',
-                            left: pt.x - 15,
-                            width: 30,
-                            top: chartHeight - 20,
-                            textAlign: 'center',
-                            fontSize: 9,
-                            fontWeight: '700',
-                            color: colors.textSecondary,
-                        }}
-                    >
-                        {MONTH_NAMES[pt.month]}
-                    </Text>
-                ))}
+                {/* X Axis Labels (Ene - Dic) */}
+                {MONTH_NAMES.map((name, index) => {
+                    const x = paddingLeft + (index / 11) * (containerWidth - paddingLeft - paddingRight);
+                    return (
+                        <Text
+                            key={`month-label-${index}`}
+                            style={{
+                                position: 'absolute',
+                                left: x - 15,
+                                width: 30,
+                                top: chartHeight - 20,
+                                textAlign: 'center',
+                                fontSize: 9,
+                                fontWeight: '700',
+                                color: colors.textSecondary,
+                            }}
+                        >
+                            {name}
+                        </Text>
+                    );
+                })}
             </View>
         </View>
     );
@@ -1262,39 +1282,24 @@ export default function ProfileScreen() {
                         </View>
                     </View>
 
-                    {/* Fila 3: Racha & Rival */}
+                    {/* Fila 3: Racha (Full Width) */}
                     <View style={styles.bentoRow}>
-                        {/* Racha */}
-                        <View style={[styles.miniStatCard, { flex: 1, paddingVertical: spacing.md }]}>
-                            <Ionicons name="flame" size={24} color="#f97316" />
-                            <View style={{ flexDirection: 'row', gap: spacing.lg, marginTop: 6, alignItems: 'center' }}>
-                                <View style={{ alignItems: 'center' }}>
-                                    <Text style={styles.streakValue}>{stats.currentStreak}</Text>
-                                    <Text style={styles.streakLabel}>ACTUAL</Text>
-                                </View>
-                                <View style={{ width: 1, height: 24, backgroundColor: colors.border }} />
-                                <View style={{ alignItems: 'center' }}>
-                                    <Text style={styles.streakValue}>{stats.bestStreak}</Text>
-                                    <Text style={styles.streakLabel}>MEJOR</Text>
-                                </View>
-                            </View>
-                            <Text style={styles.miniStatLabel} numberOfLines={1}>RACHA VICTORIAS</Text>
-                        </View>
-
-                        {/* Rival */}
-                        <View style={[styles.miniStatCard, { flex: 1, paddingVertical: spacing.md }]}>
-                            <Ionicons name="people" size={24} color={colors.primary[500]} />
-                            <Text style={styles.rivalName} numberOfLines={1}>
-                                {stats.mostFacedRivalName}
-                            </Text>
-                            <Text style={styles.rivalMatches}>
-                                {stats.mostFacedRivalMatches > 0 ? `${stats.mostFacedRivalMatches} partidos` : 'Sin enfrentamientos'}
-                            </Text>
-                            <Text style={styles.miniStatLabel} numberOfLines={1}>RIVAL MÁS ENFRENTADO</Text>
+                        <View style={styles.setsFullCard}>
+                             <View style={styles.setStatItem}>
+                                <Ionicons name="flame" size={24} color="#f97316" style={{ marginBottom: 4 }} />
+                                <Text style={styles.setStatValue}>{stats.currentStreak}</Text>
+                                <Text style={styles.setStatLabel}>RACHA ACTUAL</Text>
+                             </View>
+                             <View style={styles.setStatDivider} />
+                             <View style={styles.setStatItem}>
+                                <Ionicons name="trophy-outline" size={24} color={colors.primary[500]} style={{ marginBottom: 4 }} />
+                                <Text style={styles.setStatValue}>{stats.bestStreak}</Text>
+                                <Text style={styles.setStatLabel}>MEJOR RACHA</Text>
+                             </View>
                         </View>
                     </View>
 
-                    {/* Fila 4: Sets & Games */}
+                    {/* Fila 4: Sets & Games (Full Width Cards) */}
                     <View style={styles.bentoRow}>
                         <View style={styles.setsFullCard}>
                              <View style={styles.setStatItem}>
@@ -1322,6 +1327,22 @@ export default function ProfileScreen() {
                              </View>
                         </View>
                     </View>
+
+                    {/* Fila 5: Rival más enfrentado (Full Width Card) */}
+                    <View style={styles.bentoRow}>
+                        <View style={styles.setsFullCard}>
+                             <View style={styles.setStatItem}>
+                                <Ionicons name="people" size={24} color={colors.primary[500]} style={{ marginBottom: 4 }} />
+                                <Text style={[styles.setStatValue, { fontSize: 16 }]} numberOfLines={1}>
+                                    {stats.mostFacedRivalName}
+                                </Text>
+                                <Text style={styles.setStatLabel}>
+                                    {stats.mostFacedRivalMatches > 0 ? `${stats.mostFacedRivalMatches} partidos` : 'Sin enfrentamientos'}
+                                </Text>
+                                <Text style={[styles.setStatLabel, { color: colors.textTertiary, marginTop: 2, fontSize: 8 }]}>RIVAL MÁS ENFRENTADO</Text>
+                             </View>
+                        </View>
+                    </View>
                 </View>
 
                 {/* Evolution Chart */}
@@ -1346,7 +1367,7 @@ export default function ProfileScreen() {
                                 return (
                                     <TouchableOpacity
                                         key={achievement.id}
-                                        style={styles.achievementRowCard}
+                                        style={styles.achievementMedalButton}
                                         activeOpacity={0.82}
                                         onPress={() => setSelectedAchievement(achievement)}
                                     >
@@ -1365,11 +1386,6 @@ export default function ProfileScreen() {
                                                 <Ionicons name={achievement.icon as any} size={28} color={achievementColor} />
                                             )}
                                         </View>
-                                        <View style={styles.achievementRowInfo}>
-                                            <Text style={styles.achievementRowTitle}>{achievement.title}</Text>
-                                            <Text style={styles.achievementRowDesc} numberOfLines={2}>{achievement.detail}</Text>
-                                        </View>
-                                        <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
                                     </TouchableOpacity>
                                 );
                             })}
@@ -2866,7 +2882,10 @@ const getStyles = (colors: any) => StyleSheet.create({
         marginTop: 2,
     },
     achievementsList: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
         gap: spacing.md,
+        justifyContent: 'flex-start',
         marginBottom: spacing.xl,
     },
     achievementRowCard: {
