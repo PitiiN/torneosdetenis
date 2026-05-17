@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, Image, ScrollView, Alert } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, Image, ScrollView, Alert, ImageBackground } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
 import { getTournamentPlacements } from '@/services/ranking';
 import { TennisSpinner } from '@/components/TennisSpinner';
+import * as Sharing from 'expo-sharing';
+import ViewShot from 'react-native-view-shot';
 
 const BACKHAND_FIELD = 'rev\u00E9s';
 
@@ -44,6 +46,8 @@ interface HeadToHeadStats {
   currentUserWins: number;
   rivalWins: number;
   lastMatchLabel: string;
+  lastMatchScore: string;
+  lastMatchWinnerLabel: string;
 }
 
 const DEFAULT_STATS: PlayerStats = {
@@ -63,7 +67,11 @@ const DEFAULT_HEAD_TO_HEAD: HeadToHeadStats = {
   currentUserWins: 0,
   rivalWins: 0,
   lastMatchLabel: 'Sin partidos',
+  lastMatchScore: '-',
+  lastMatchWinnerLabel: 'Sin ganador',
 };
+
+const HEAD_TO_HEAD_SHARE_BG = require('../../../assets/RRSS/FrenteAFrente.png');
 
 const getScoreText = (scoreValue: any): string => {
   if (!scoreValue) return '';
@@ -105,8 +113,12 @@ export const PlayerProfileModal = ({
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [stats, setStats] = useState<PlayerStats>(DEFAULT_STATS);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserName, setCurrentUserName] = useState('Tú');
+  const [currentUserAvatarUrl, setCurrentUserAvatarUrl] = useState<string | null>(null);
   const [activePage, setActivePage] = useState<'profile' | 'headToHead'>('profile');
   const [headToHead, setHeadToHead] = useState<HeadToHeadStats>(DEFAULT_HEAD_TO_HEAD);
+  const [sharingHeadToHead, setSharingHeadToHead] = useState(false);
+  const shareCardRef = useRef<any>(null);
 
   useEffect(() => {
     if (visible && playerId) {
@@ -117,9 +129,55 @@ export const PlayerProfileModal = ({
       setAvatarUrl(null);
       setStats(DEFAULT_STATS);
       setCurrentUserId(null);
+      setCurrentUserName('Tú');
+      setCurrentUserAvatarUrl(null);
       setHeadToHead(DEFAULT_HEAD_TO_HEAD);
     }
   }, [visible, playerId, initialPage]);
+
+  const getSessionDisplayName = (session: any) => {
+    const metadata = (session?.user?.user_metadata || {}) as Record<string, unknown>;
+    const firstLast = [metadata.first_name, metadata.last_name]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+      .join(' ');
+
+    return [
+      metadata.name,
+      metadata.full_name,
+      metadata.display_name,
+      firstLast,
+      session?.user?.email ? String(session.user.email).split('@')[0] : '',
+      'Tú',
+    ]
+      .map((value) => String(value || '').trim())
+      .find(Boolean) || 'Tú';
+  };
+
+  const loadCurrentUserProfile = async (viewerId: string, session: any) => {
+    setCurrentUserName(getSessionDisplayName(session));
+    setCurrentUserAvatarUrl(null);
+
+    try {
+      const { data: viewerProfile, error } = await supabase
+        .from('public_profiles')
+        .select('id, name, avatar_url')
+        .eq('id', viewerId)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      const resolvedName = String(viewerProfile?.name || '').trim() || getSessionDisplayName(session);
+      setCurrentUserName(resolvedName);
+
+      if (viewerProfile?.avatar_url) {
+        const signed = await resolveStorageAssetUrlWithRetry(viewerProfile.avatar_url, { attempts: 3, baseDelayMs: 300 });
+        setCurrentUserAvatarUrl(signed || null);
+      }
+    } catch (error) {
+      console.error('Error loading current user profile:', error);
+    }
+  };
 
   const loadPlayerData = async (pid: string) => {
     setLoading(true);
@@ -127,6 +185,9 @@ export const PlayerProfileModal = ({
       const { data: { session } } = await supabase.auth.getSession();
       const viewerId = session?.user?.id || null;
       setCurrentUserId(viewerId);
+      if (viewerId) {
+        await loadCurrentUserProfile(viewerId, session);
+      }
 
       // Load profile info (using public_profiles view to bypass RLS restrictions)
       const { data: profileData, error: profileError } = await supabase
@@ -242,6 +303,8 @@ export const PlayerProfileModal = ({
         currentUserWins,
         rivalWins,
         lastMatchLabel,
+        lastMatchScore: lastScore || '-',
+        lastMatchWinnerLabel: winnerName,
       });
     } catch (error) {
       console.error('Error calculating head to head stats:', error);
@@ -409,6 +472,45 @@ export const PlayerProfileModal = ({
     return `${chunks[0][0] || ''}${chunks[1][0] || ''}`.toUpperCase();
   };
 
+  const handleShareHeadToHead = async () => {
+    if (!profile || !currentUserId || currentUserId === profile.id || sharingHeadToHead) return;
+
+    setSharingHeadToHead(true);
+    try {
+      const sharingAvailable = await Sharing.isAvailableAsync();
+      if (!sharingAvailable) {
+        Alert.alert('No disponible', 'Tu dispositivo no permite compartir imágenes desde esta vista.');
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      const uri = await shareCardRef.current?.capture?.();
+      if (!uri) {
+        throw new Error('No se pudo generar la imagen');
+      }
+
+      await Sharing.shareAsync(uri, {
+        mimeType: 'image/png',
+        dialogTitle: 'Compartir frente a frente',
+        UTI: 'public.png',
+      });
+    } catch (error) {
+      console.error('Error sharing head to head image:', error);
+      Alert.alert('Error', 'No se pudo generar la imagen del enfrentamiento.');
+    } finally {
+      setSharingHeadToHead(false);
+    }
+  };
+
+  const rivalShareName = profile?.name || 'Rival';
+  const currentShareName = currentUserName || 'Tú';
+  const rivalWinsLabel = `${rivalShareName.toUpperCase()} GANÓ`;
+  const lastWinnerLabel = headToHead.lastMatchWinnerLabel === 'Sin ganador'
+    ? 'SIN GANADOR'
+    : headToHead.lastMatchWinnerLabel === 'Tú'
+    ? 'TÚ GANÓ'
+    : `${String(headToHead.lastMatchWinnerLabel || 'Sin ganador').toUpperCase()} GANÓ`;
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
@@ -484,7 +586,17 @@ export const PlayerProfileModal = ({
 
               {activePage === 'headToHead' && currentUserId && currentUserId !== profile.id ? (
                 <View style={styles.statsSection}>
-                  <Text style={styles.statsTitle}>Enfrentamientos</Text>
+                  <View style={styles.headToHeadHeaderRow}>
+                    <Text style={styles.statsTitle}>Enfrentamientos</Text>
+                    <TouchableOpacity
+                      style={[styles.shareButton, sharingHeadToHead && styles.shareButtonDisabled]}
+                      onPress={handleShareHeadToHead}
+                      disabled={sharingHeadToHead}
+                    >
+                      <Ionicons name="share-social-outline" size={16} color="#fff" />
+                      <Text style={styles.shareButtonText}>{sharingHeadToHead ? 'Generando...' : 'Compartir'}</Text>
+                    </TouchableOpacity>
+                  </View>
                   <View style={styles.headToHeadGrid}>
                     <View style={styles.headToHeadCard}>
                       <Ionicons name="tennisball" size={22} color={colors.primary[500]} />
@@ -580,7 +692,102 @@ export const PlayerProfileModal = ({
               <Text style={styles.loadingText}>No se pudo cargar el perfil</Text>
             </View>
           )}
+
         </View>
+
+        {profile && currentUserId && currentUserId !== profile.id ? (
+          <View style={styles.hiddenShareCanvas} pointerEvents="none">
+            <ViewShot
+              ref={shareCardRef}
+              style={styles.shareShot}
+              options={{
+                format: 'png',
+                quality: 1,
+                result: 'tmpfile',
+                width: 1080,
+                height: 1920,
+              }}
+            >
+              <ImageBackground source={HEAD_TO_HEAD_SHARE_BG} resizeMode="cover" style={styles.sharePoster}>
+                <View style={styles.sharePosterOverlay} />
+                <View style={styles.sharePosterInner}>
+                  <Text style={styles.sharePosterTitle}>FRENTE-A-FRENTE</Text>
+
+                  <View style={styles.sharePlayersRow}>
+                    <View style={styles.sharePlayerBlock}>
+                      <View style={styles.shareAvatarRing}>
+                        {avatarUrl ? (
+                          <Image source={{ uri: avatarUrl, cache: 'force-cache' }} style={styles.shareAvatar} />
+                        ) : (
+                          <View style={[styles.shareAvatar, styles.shareAvatarFallback]}>
+                            <Text style={styles.shareAvatarInitials}>{getInitials(rivalShareName)}</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.sharePlayerName}>{rivalShareName.toUpperCase()}</Text>
+                    </View>
+
+                    <View style={styles.shareVersusWrap}>
+                      <View style={styles.shareVersusBadge}>
+                        <Text style={styles.shareVersusText}>VS</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.sharePlayerBlock}>
+                      <View style={styles.shareAvatarRing}>
+                        {currentUserAvatarUrl ? (
+                          <Image source={{ uri: currentUserAvatarUrl, cache: 'force-cache' }} style={styles.shareAvatar} />
+                        ) : (
+                          <View style={[styles.shareAvatar, styles.shareAvatarFallback]}>
+                            <Text style={styles.shareAvatarInitials}>{getInitials(currentShareName)}</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.sharePlayerName}>TÚ</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.shareStatSeparator}>
+                    <View style={styles.shareStatLine} />
+                    <Text style={styles.shareStatHeading}>PARTIDOS TOTALES</Text>
+                    <View style={styles.shareStatLine} />
+                  </View>
+                  <Text style={styles.shareTotalMatches}>{headToHead.totalMatches}</Text>
+
+                  <View style={styles.sharePanel}>
+                    <View style={styles.shareStatSeparator}>
+                      <View style={styles.shareStatLineShort} />
+                      <Text style={styles.shareStatHeading}>VICTORIAS</Text>
+                      <View style={styles.shareStatLineShort} />
+                    </View>
+
+                    <View style={styles.shareWinsRow}>
+                      <View style={styles.shareWinsBlock}>
+                        <Text style={styles.shareWinsValue}>{headToHead.rivalWins}</Text>
+                        <Text style={styles.shareWinsLabel}>{rivalWinsLabel}</Text>
+                      </View>
+                      <View style={styles.shareWinsDivider} />
+                      <View style={styles.shareWinsBlock}>
+                        <Text style={styles.shareWinsValue}>{headToHead.currentUserWins}</Text>
+                        <Text style={styles.shareWinsLabel}>TÚ GANASTE</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.shareBottomDivider} />
+
+                    <View style={styles.shareStatSeparator}>
+                      <View style={styles.shareStatLineShort} />
+                      <Text style={styles.shareStatHeading}>ÚLTIMO PARTIDO</Text>
+                      <View style={styles.shareStatLineShort} />
+                    </View>
+                    <Text style={styles.shareLastScore}>{headToHead.lastMatchScore}</Text>
+                    <Text style={styles.shareLastWinner}>{lastWinnerLabel}</Text>
+                  </View>
+                </View>
+              </ImageBackground>
+            </ViewShot>
+          </View>
+        ) : null}
       </View>
     </Modal>
   );
@@ -727,10 +934,33 @@ const getStyles = (colors: any) => StyleSheet.create({
   statsSection: {
     gap: spacing.md,
   },
+  headToHeadHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
   statsTitle: {
     color: colors.text,
     fontSize: 16,
     fontWeight: '900',
+  },
+  shareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.primary[500],
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+  },
+  shareButtonDisabled: {
+    opacity: 0.7,
+  },
+  shareButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
   },
   statsGrid: {
     gap: spacing.sm,
@@ -844,5 +1074,220 @@ const getStyles = (colors: any) => StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     fontWeight: '800',
+  },
+  hiddenShareCanvas: {
+    position: 'absolute',
+    left: -9999,
+    top: -9999,
+    opacity: 1,
+  },
+  shareShot: {
+    width: 1080,
+    height: 1920,
+  },
+  sharePoster: {
+    width: 1080,
+    height: 1920,
+    backgroundColor: '#09121a',
+  },
+  sharePosterOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(7, 15, 23, 0.82)',
+  },
+  sharePosterInner: {
+    flex: 1,
+    paddingHorizontal: 92,
+    paddingTop: 188,
+    paddingBottom: 118,
+    alignItems: 'center',
+  },
+  sharePosterTitle: {
+    color: '#ffffff',
+    fontSize: 82,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    letterSpacing: 1,
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 6 },
+    textShadowRadius: 12,
+  },
+  sharePlayersRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 132,
+  },
+  sharePlayerBlock: {
+    width: 300,
+    alignItems: 'center',
+  },
+  shareAvatarRing: {
+    width: 248,
+    height: 248,
+    borderRadius: 124,
+    borderWidth: 10,
+    borderColor: '#38c86b',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#dce4ec',
+    shadowColor: '#38c86b',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+  },
+  shareAvatar: {
+    width: 228,
+    height: 228,
+    borderRadius: 114,
+  },
+  shareAvatarFallback: {
+    backgroundColor: '#1a2630',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareAvatarInitials: {
+    color: '#ffffff',
+    fontSize: 72,
+    fontWeight: '900',
+    fontStyle: 'italic',
+  },
+  sharePlayerName: {
+    marginTop: 26,
+    color: '#ffffff',
+    fontSize: 54,
+    lineHeight: 58,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    textTransform: 'uppercase',
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 4 },
+    textShadowRadius: 8,
+  },
+  shareVersusWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareVersusBadge: {
+    width: 190,
+    height: 190,
+    borderRadius: 95,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareVersusText: {
+    color: '#ffffff',
+    fontSize: 104,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    textShadowColor: 'rgba(34,197,94,0.45)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 18,
+  },
+  shareStatSeparator: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 24,
+  },
+  shareStatLine: {
+    flex: 1,
+    height: 3,
+    backgroundColor: 'rgba(56, 200, 107, 0.7)',
+  },
+  shareStatLineShort: {
+    flex: 1,
+    maxWidth: 220,
+    height: 3,
+    backgroundColor: 'rgba(56, 200, 107, 0.7)',
+  },
+  shareStatHeading: {
+    color: '#ffffff',
+    fontSize: 46,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  shareTotalMatches: {
+    marginTop: 24,
+    color: '#ffffff',
+    fontSize: 96,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 5 },
+    textShadowRadius: 10,
+  },
+  sharePanel: {
+    width: '100%',
+    marginTop: 120,
+    paddingHorizontal: 48,
+    paddingTop: 52,
+    paddingBottom: 56,
+    backgroundColor: 'rgba(7, 19, 28, 0.62)',
+    borderRadius: 36,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 200, 107, 0.18)',
+  },
+  shareWinsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 48,
+  },
+  shareWinsBlock: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 12,
+  },
+  shareWinsDivider: {
+    width: 2,
+    height: 170,
+    backgroundColor: 'rgba(56, 200, 107, 0.4)',
+    marginHorizontal: 24,
+  },
+  shareWinsValue: {
+    color: '#38c86b',
+    fontSize: 88,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 4 },
+    textShadowRadius: 8,
+  },
+  shareWinsLabel: {
+    color: '#ffffff',
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '700',
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  shareBottomDivider: {
+    width: '100%',
+    height: 1,
+    marginVertical: 48,
+    backgroundColor: 'rgba(56, 200, 107, 0.25)',
+  },
+  shareLastScore: {
+    marginTop: 34,
+    color: '#ffffff',
+    fontSize: 92,
+    lineHeight: 102,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 5 },
+    textShadowRadius: 10,
+  },
+  shareLastWinner: {
+    marginTop: 16,
+    color: '#ffffff',
+    fontSize: 34,
+    fontWeight: '700',
+    textAlign: 'center',
+    textTransform: 'uppercase',
   },
 });

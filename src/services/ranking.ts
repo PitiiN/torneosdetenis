@@ -5,6 +5,29 @@ export const DEFAULT_RANKING_POINTS: Record<string, number> = {
   '4': 20,
 };
 
+export type RankingAccumulator = {
+  points: number;
+  manualPoints: number;
+  trophies: number;
+  matchesWon: number;
+  matchesPlayed: number;
+  setsWon: number;
+  gamesWon: number;
+};
+
+export type RankingRow = {
+  playerId: string;
+  name: string;
+  rank: number;
+  points: number;
+  manualPoints: number;
+  trophies: number;
+  matchesWon: number;
+  matchesPlayed: number;
+  setsWon: number;
+  gamesWon: number;
+};
+
 export const parseRankingPoints = (description?: string | null) => {
   const match = (description || '').match(/\[RANKING_POINTS:([^\]]+)\]/);
   if (!match?.[1]) return DEFAULT_RANKING_POINTS;
@@ -368,4 +391,118 @@ export const getTournamentPlacements = (tournament: any, matches: any[]) => {
   }
 
   return placements;
+};
+
+export const createEmptyRankingAccumulator = (): RankingAccumulator => ({
+  points: 0,
+  manualPoints: 0,
+  trophies: 0,
+  matchesWon: 0,
+  matchesPlayed: 0,
+  setsWon: 0,
+  gamesWon: 0,
+});
+
+export const buildRankingRows = (
+  tournaments: any[],
+  matchesByTournament: Record<string, any[]>,
+  registrationsByTournament: Record<string, any[]>,
+  profileNameById: Record<string, string>,
+  manualPointsByPlayer: Record<string, number> = {}
+): RankingRow[] => {
+  const stats: Record<string, RankingAccumulator> = {};
+
+  const ensureStats = (playerId: string) => {
+    if (!stats[playerId]) {
+      stats[playerId] = createEmptyRankingAccumulator();
+    }
+    return stats[playerId];
+  };
+
+  tournaments.forEach((tournament) => {
+    const tournamentMatches = matchesByTournament[tournament.id] || [];
+    const placements = getTournamentPlacements(tournament, tournamentMatches);
+
+    placements.forEach((placement) => {
+      [placement.playerId, placement.playerId2].filter(Boolean).forEach((id) => {
+        const playerStats = ensureStats(String(id));
+        playerStats.points += Number(placement.points) || 0;
+        if (String(placement.place) === '1') playerStats.trophies += 1;
+      });
+    });
+
+    tournamentMatches.forEach((match) => {
+      const winnerSide = resolveMatchWinnerSide(match, tournamentMatches);
+      const scoreText = getScoreText(match.score);
+      const sets = scoreText.split(/\s*,\s*/).map((set) => set.trim()).filter(Boolean);
+
+      (['A', 'B'] as const).forEach((side) => {
+        const sidePlayerIds = side === 'A'
+          ? [match?.player_a_id, match?.player_a2_id]
+          : [match?.player_b_id, match?.player_b2_id];
+
+        sidePlayerIds
+          .map((id) => String(id || '').trim())
+          .filter((id) => id && id !== 'BYE')
+          .forEach((playerId) => {
+            const playerStats = ensureStats(playerId);
+            playerStats.matchesPlayed += 1;
+            if (winnerSide === side) playerStats.matchesWon += 1;
+
+            sets.forEach((setScore) => {
+              const parsed = parseSetScore(setScore);
+              if (!parsed) return;
+              const gamesWon = side === 'A' ? parsed.leftValue : parsed.rightValue;
+              const gamesLost = side === 'A' ? parsed.rightValue : parsed.leftValue;
+              playerStats.gamesWon += gamesWon;
+              if (gamesWon > gamesLost) playerStats.setsWon += 1;
+            });
+          });
+      });
+    });
+
+    (registrationsByTournament[tournament.id] || []).forEach((registration) => {
+      const playerId = String(registration?.player_id || '').trim();
+      if (playerId) ensureStats(playerId);
+    });
+  });
+
+  Object.entries(manualPointsByPlayer).forEach(([playerId, manualPoints]) => {
+    const playerStats = ensureStats(playerId);
+    playerStats.manualPoints += Number(manualPoints) || 0;
+    playerStats.points += Number(manualPoints) || 0;
+  });
+
+  const getWinRate = (row: RankingAccumulator) =>
+    row.matchesPlayed > 0 ? row.matchesWon / row.matchesPlayed : 0;
+
+  const isTie = (left: RankingRow, right: RankingRow) =>
+    left.points === right.points &&
+    left.trophies === right.trophies &&
+    getWinRate(left) === getWinRate(right) &&
+    left.setsWon === right.setsWon &&
+    left.gamesWon === right.gamesWon;
+
+  const rows = Object.entries(stats)
+    .map(([playerId, row]) => ({
+      playerId,
+      name: profileNameById[playerId] || 'Jugador',
+      rank: 0,
+      ...row,
+    }))
+    .sort((left, right) => {
+      if (right.points !== left.points) return right.points - left.points;
+      if (right.trophies !== left.trophies) return right.trophies - left.trophies;
+      const winRateDelta = getWinRate(right) - getWinRate(left);
+      if (winRateDelta !== 0) return winRateDelta;
+      if (right.setsWon !== left.setsWon) return right.setsWon - left.setsWon;
+      if (right.gamesWon !== left.gamesWon) return right.gamesWon - left.gamesWon;
+      return left.name.localeCompare(right.name);
+    });
+
+  rows.forEach((row, index) => {
+    row.rank = index === 0 ? 1 : (isTie(row, rows[index - 1]) ? rows[index - 1].rank : index + 1);
+  });
+
+  return rows;
 };

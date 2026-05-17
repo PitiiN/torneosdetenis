@@ -1,26 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput, Alert, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { TOURNAMENT_CATEGORIES } from '@/constants/tournamentOptions';
-import { getTournamentPlacements, getScoreText, parseSetScore, resolveMatchWinnerSide } from '@/services/ranking';
+import { buildRankingRows, RankingRow } from '@/services/ranking';
 import * as SecureStore from '@/utils/SecureStore';
 import { useFocusEffect } from 'expo-router';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { PlayerProfileModal } from '@/components/players/PlayerProfileModal';
+import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
+import { notifyRankingChangesForManualAdjustment } from '@/services/pushNotifications';
 
-type RankingRow = {
-    playerId: string;
-    name: string;
-    points: number;
-    trophies: number;
-    matchesWon: number;
-    matchesPlayed: number;
-    setsWon: number;
-    gamesWon: number;
-    rank: number;
+type RankingScreenRow = RankingRow & {
     previousRank: number | null;
     isNewEntry: boolean;
 };
@@ -40,15 +33,34 @@ export default function PlayersScreen() {
     const [loading, setLoading] = useState(true);
     const [organizationId, setOrganizationId] = useState<string | null>(null);
     const [organizationName, setOrganizationName] = useState('');
-    const [rankingRows, setRankingRows] = useState<RankingRow[]>([]);
+    const [rankingRows, setRankingRows] = useState<RankingScreenRow[]>([]);
     const [modality, setModality] = useState<'singles' | 'dobles'>('singles');
     const [page, setPage] = useState(0);
     const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
     const [showPlayerProfile, setShowPlayerProfile] = useState(false);
+    const [canEditRanking, setCanEditRanking] = useState(false);
+    const [editingPlayer, setEditingPlayer] = useState<RankingScreenRow | null>(null);
+    const [editingPoints, setEditingPoints] = useState('');
+    const [savingManualPoints, setSavingManualPoints] = useState(false);
 
-    const handlePlayerPress = (playerId: string) => {
+    const handlePlayerLongPress = (playerId: string) => {
         setSelectedPlayerId(playerId);
         setShowPlayerProfile(true);
+    };
+
+    const closeRankingEditor = (force = false) => {
+        if (savingManualPoints && !force) return;
+        setEditingPlayer(null);
+        setEditingPoints('');
+    };
+
+    const openRankingEditor = (row: RankingScreenRow) => {
+        if (!canEditRanking) {
+            handlePlayerLongPress(row.playerId);
+            return;
+        }
+        setEditingPlayer(row);
+        setEditingPoints(String(row.manualPoints || 0));
     };
 
     useEffect(() => {
@@ -77,11 +89,149 @@ export default function PlayersScreen() {
         return tournamentRef?.organization_id || null;
     };
 
+    const fetchManualPointsMap = async (orgId: string, category: string, currentModality: 'singles' | 'dobles') => {
+        const { data, error } = await supabase
+            .from('ranking_manual_adjustments')
+            .select('player_id, points')
+            .eq('organization_id', orgId)
+            .eq('level', category)
+            .eq('modality', currentModality);
+
+        if (error) throw error;
+
+        return (data || []).reduce((acc, row: any) => {
+            const playerId = String(row?.player_id || '').trim();
+            if (!playerId) return acc;
+            acc[playerId] = Number(row?.points) || 0;
+            return acc;
+        }, {} as Record<string, number>);
+    };
+
+    const buildRankingSnapshot = async (orgId: string, category: string, currentModality: 'singles' | 'dobles') => {
+        const { data: tournaments, error: tournamentsError } = await supabase
+            .from('tournaments')
+            .select('id, name, description, format, status, level, end_date, start_date, modality, created_at')
+            .eq('organization_id', orgId)
+            .eq('level', category)
+            .in('status', ['completed', 'finalized', 'finished'])
+            .order('end_date', { ascending: false });
+
+        if (tournamentsError) throw tournamentsError;
+
+        const completedTournaments = (tournaments || [])
+            .filter((tournament: any) => {
+                if (currentModality === 'dobles') return tournament.modality === 'dobles';
+                return !tournament.modality || tournament.modality === 'singles';
+            })
+            .sort((leftTournament: any, rightTournament: any) => {
+                const leftDate = new Date(leftTournament.end_date || leftTournament.start_date || 0).getTime();
+                const rightDate = new Date(rightTournament.end_date || rightTournament.start_date || 0).getTime();
+                if (rightDate !== leftDate) return rightDate - leftDate;
+                const leftCreated = new Date(leftTournament.created_at || 0).getTime();
+                const rightCreated = new Date(rightTournament.created_at || 0).getTime();
+                return rightCreated - leftCreated;
+            });
+
+        const tournamentIds = completedTournaments.map((tournament: any) => tournament.id);
+        const [matchesResult, registrationsResult, manualPointsByPlayer] = await Promise.all([
+            tournamentIds.length
+                ? supabase
+                    .from('matches')
+                    .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, round_number, match_order, score, status')
+                    .in('tournament_id', tournamentIds)
+                : Promise.resolve({ data: [], error: null } as any),
+            tournamentIds.length
+                ? supabase
+                    .from('registrations')
+                    .select('player_id, tournament_id')
+                    .in('tournament_id', tournamentIds)
+                : Promise.resolve({ data: [], error: null } as any),
+            fetchManualPointsMap(orgId, category, currentModality),
+        ]);
+
+        if (matchesResult.error) throw matchesResult.error;
+        if (registrationsResult.error) throw registrationsResult.error;
+
+        const matches = matchesResult.data || [];
+        const registrations = registrationsResult.data || [];
+
+        const matchesByTournament = matches.reduce((acc: Record<string, any[]>, match: any) => {
+            acc[match.tournament_id] = [...(acc[match.tournament_id] || []), match];
+            return acc;
+        }, {} as Record<string, any[]>);
+
+        const registrationsByTournament = registrations.reduce((acc: Record<string, any[]>, registration: any) => {
+            acc[registration.tournament_id] = [...(acc[registration.tournament_id] || []), registration];
+            return acc;
+        }, {} as Record<string, any[]>);
+
+        const playerIds = [...new Set([
+            ...Object.keys(manualPointsByPlayer),
+            ...registrations.map((registration: any) => registration.player_id),
+            ...matches.flatMap((match: any) => [match.player_a_id, match.player_a2_id, match.player_b_id, match.player_b2_id]),
+        ].filter(Boolean))];
+
+        const profilesResult = playerIds.length
+            ? await supabase
+                .from('public_profiles')
+                .select('id, name')
+                .in('id', playerIds)
+            : { data: [], error: null };
+
+        if (profilesResult.error) throw profilesResult.error;
+
+        const profileMap = (profilesResult.data || []).reduce((acc, currentProfile: any) => {
+            acc[currentProfile.id] = currentProfile.name;
+            return acc;
+        }, {} as Record<string, string>);
+
+        const currentRows = buildRankingRows(
+            completedTournaments,
+            matchesByTournament,
+            registrationsByTournament,
+            profileMap,
+            manualPointsByPlayer
+        );
+
+        const previousRowsBase = buildRankingRows(
+            completedTournaments.slice(1),
+            matchesByTournament,
+            registrationsByTournament,
+            profileMap,
+            manualPointsByPlayer
+        );
+
+        const previousRankMap: Record<string, number> = {};
+        previousRowsBase.forEach((row) => {
+            previousRankMap[row.playerId] = row.rank;
+        });
+
+        const hasHistory = completedTournaments.length > 1;
+        const rows = currentRows.map((row) => {
+            const previousRank = hasHistory && Object.prototype.hasOwnProperty.call(previousRankMap, row.playerId)
+                ? previousRankMap[row.playerId]
+                : null;
+            return {
+                ...row,
+                previousRank,
+                isNewEntry: hasHistory && previousRank === null && row.points > 0,
+            } as RankingScreenRow;
+        });
+
+        return {
+            rows,
+            baseRows: currentRows,
+            manualPointsByPlayer,
+            completedTournaments,
+        };
+    };
+
     const loadRanking = async (category: string) => {
         setLoading(true);
         setRankingRows([]);
         try {
-            const { data: { session } } = await supabase.auth.getSession();
+            const accessContext = await getCurrentUserAccessContext();
+            const session = accessContext?.session;
             if (!session?.user?.id) {
                 setRankingRows([]);
                 return;
@@ -103,10 +253,13 @@ export default function PlayersScreen() {
             const orgId = storedOrgId || profile?.org_id || fallbackOrgId || null;
             setOrganizationId(orgId);
             if (!orgId) {
+                setCanEditRanking(false);
                 setOrganizationName(storedOrgName || '');
                 setRankingRows([]);
                 return;
             }
+
+            setCanEditRanking(canManageOrganization(accessContext, orgId));
 
             const { data: organization } = await supabase
                 .from('organizations_public')
@@ -132,209 +285,85 @@ export default function PlayersScreen() {
                     return;
                 }
             }
-
-            const { data: tournaments, error: tournamentsError } = await supabase
-                .from('tournaments')
-                .select('id, name, description, format, status, level, end_date, start_date, modality, created_at')
-                .eq('organization_id', orgId)
-                .eq('level', category)
-                .in('status', ['completed', 'finalized', 'finished'])
-                .order('end_date', { ascending: false });
-
-            if (tournamentsError) throw tournamentsError;
-
-            const completedTournaments = (tournaments || [])
-                .filter((tournament: any) => {
-                    if (modality === 'dobles') return tournament.modality === 'dobles';
-                    return !tournament.modality || tournament.modality === 'singles';
-                })
-                .sort((leftTournament: any, rightTournament: any) => {
-                    const leftDate = new Date(leftTournament.end_date || leftTournament.start_date || 0).getTime();
-                    const rightDate = new Date(rightTournament.end_date || rightTournament.start_date || 0).getTime();
-                    if (rightDate !== leftDate) return rightDate - leftDate;
-                    // When end_dates match, use created_at so the newest tournament is first
-                    const leftCreated = new Date(leftTournament.created_at || 0).getTime();
-                    const rightCreated = new Date(rightTournament.created_at || 0).getTime();
-                    return rightCreated - leftCreated;
-                });
-            if (completedTournaments.length === 0) {
-                setRankingRows([]);
-                return;
-            }
-
-            const tournamentIds = completedTournaments.map(tournament => tournament.id);
-            const { data: matches, error: matchesError } = await supabase
-                .from('matches')
-                .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, round_number, match_order, score, status')
-                .in('tournament_id', tournamentIds);
-
-            if (matchesError) throw matchesError;
-
-            const { data: registrations, error: registrationsError } = await supabase
-                .from('registrations')
-                .select('player_id, tournament_id')
-                .in('tournament_id', tournamentIds);
-
-            if (registrationsError) throw registrationsError;
-
-            const matchesByTournament = (matches || []).reduce((acc, match: any) => {
-                acc[match.tournament_id] = [...(acc[match.tournament_id] || []), match];
-                return acc;
-            }, {} as Record<string, any[]>);
-
-            const buildRankingMap = (sourceTournaments: any[]) => {
-                const stats: Record<string, { points: number, trophies: number, matchesWon: number, matchesPlayed: number, setsWon: number, gamesWon: number }> = {};
-
-                const getInitialStats = () => ({ points: 0, trophies: 0, matchesWon: 0, matchesPlayed: 0, setsWon: 0, gamesWon: 0 });
-
-                sourceTournaments.forEach((tournament: any) => {
-                    const tournamentMatches = matchesByTournament[tournament.id] || [];
-                    const placements = getTournamentPlacements(tournament, tournamentMatches);
-
-                    placements.forEach((placement) => {
-                        const ids = [placement.playerId, placement.playerId2].filter(Boolean) as string[];
-                        ids.forEach(id => {
-                            if (!stats[id]) stats[id] = getInitialStats();
-                            stats[id].points += placement.points;
-                            if (placement.place === '1') {
-                                stats[id].trophies += 1;
-                            }
-                        });
-                    });
-
-                    tournamentMatches.forEach((match: any) => {
-                        const winnerSide = resolveMatchWinnerSide(match, tournamentMatches);
-                        const scoreText = getScoreText(match.score);
-                        const sets = scoreText.split(/\s*,\s*/).map(s => s.trim()).filter(Boolean);
-
-                        const processPlayer = (id: string, isWinner: boolean, side: 'A' | 'B') => {
-                            if (!id || id === 'BYE') return;
-                            if (!stats[id]) stats[id] = getInitialStats();
-
-                            stats[id].matchesPlayed += 1;
-                            if (isWinner) stats[id].matchesWon += 1;
-
-                            sets.forEach(setStr => {
-                                const parsed = parseSetScore(setStr);
-                                if (!parsed) return;
-                                const { leftValue, rightValue } = parsed;
-                                if (side === 'A') {
-                                    if (leftValue > rightValue) stats[id].setsWon += 1;
-                                    stats[id].gamesWon += leftValue;
-                                } else {
-                                    if (rightValue > leftValue) stats[id].setsWon += 1;
-                                    stats[id].gamesWon += rightValue;
-                                }
-                            });
-                        };
-
-                        const sideAIds = [match.player_a_id, match.player_a2_id].filter(Boolean);
-                        const sideBIds = [match.player_b_id, match.player_b2_id].filter(Boolean);
-
-                        sideAIds.forEach(id => processPlayer(id, winnerSide === 'A', 'A'));
-                        sideBIds.forEach(id => processPlayer(id, winnerSide === 'B', 'B'));
-                    });
-                });
-
-                return stats;
-            };
-
-            const currentStats = buildRankingMap(completedTournaments);
-            const previousStats = buildRankingMap(completedTournaments.slice(1));
-            const playerIds = [...new Set([
-                ...Object.keys(currentStats),
-                ...Object.keys(previousStats),
-                ...((registrations || []).map((registration: any) => registration.player_id).filter(Boolean))
-            ])];
-
-            if (playerIds.length === 0) {
-                setRankingRows([]);
-                return;
-            }
-
-            const { data: profiles, error: profilesError } = await supabase
-                .from('public_profiles')
-                .select('id, name')
-                .in('id', playerIds);
-
-            if (profilesError) throw profilesError;
-
-            const profileMap = (profiles || []).reduce((acc, currentProfile: any) => {
-                acc[currentProfile.id] = currentProfile.name;
-                return acc;
-            }, {} as Record<string, string>);
-
-            const getWinRate = (s: any) => s.matchesPlayed > 0 ? s.matchesWon / s.matchesPlayed : 0;
-
-            const sortRanking = (a: any, b: any) => {
-                if (b.points !== a.points) return b.points - a.points;
-                if (b.trophies !== a.trophies) return b.trophies - a.trophies;
-                const winRateA = getWinRate(a);
-                const winRateB = getWinRate(b);
-                if (winRateB !== winRateA) return winRateB - winRateA;
-                if (b.setsWon !== a.setsWon) return b.setsWon - a.setsWon;
-                if (b.gamesWon !== a.gamesWon) return b.gamesWon - a.gamesWon;
-                return a.name.localeCompare(b.name);
-            };
-
-            const isTie = (a: any, b: any) => {
-                return a.points === b.points &&
-                       a.trophies === b.trophies &&
-                       getWinRate(a) === getWinRate(b) &&
-                       a.setsWon === b.setsWon &&
-                       a.gamesWon === b.gamesWon;
-            };
-
-            const currentRows = playerIds.map(id => ({
-                playerId: id,
-                name: profileMap[id] || 'Jugador',
-                ...(currentStats[id] || { points: 0, trophies: 0, matchesWon: 0, matchesPlayed: 0, setsWon: 0, gamesWon: 0 })
-            })).sort(sortRanking);
-
-            currentRows.forEach((row, index) => {
-                if (index === 0) {
-                    (row as any).rank = 1;
-                } else {
-                    const prev = currentRows[index - 1];
-                    (row as any).rank = isTie(row, prev) ? (prev as any).rank : index + 1;
-                }
-            });
-
-            const previousRows = playerIds.map(id => ({
-                playerId: id,
-                name: profileMap[id] || 'Jugador',
-                ...(previousStats[id] || { points: 0, trophies: 0, matchesWon: 0, matchesPlayed: 0, setsWon: 0, gamesWon: 0 })
-            })).sort(sortRanking);
-
-            const previousRankMap: Record<string, number> = {};
-            previousRows.forEach((row, index) => {
-                if (index === 0) {
-                    (row as any).rank = 1;
-                } else {
-                    const prev = previousRows[index - 1];
-                    (row as any).rank = isTie(row, prev) ? (prev as any).rank : index + 1;
-                }
-                previousRankMap[row.playerId] = (row as any).rank;
-            });
-
-            const hasHistory = completedTournaments.length > 1;
-            const nextRows = currentRows.map((row: any) => {
-                const previousRank = hasHistory && Object.prototype.hasOwnProperty.call(previousRankMap, row.playerId)
-                    ? previousRankMap[row.playerId]
-                    : null;
-                return {
-                    ...row,
-                    previousRank,
-                    isNewEntry: hasHistory && previousRank === null && row.points > 0,
-                } as RankingRow;
-            });
-
-            setRankingRows(nextRows);
+            const snapshot = await buildRankingSnapshot(orgId, category, modality);
+            setRankingRows(snapshot.rows);
             setPage(0);
         } catch (error) {
             setRankingRows([]);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const saveManualRankingPoints = async () => {
+        if (!editingPlayer || !organizationId || !canEditRanking || savingManualPoints) return;
+
+        const parsedPoints = Number(editingPoints.trim());
+        if (!Number.isFinite(parsedPoints)) {
+            Alert.alert('Puntaje inválido', 'Ingresa un número válido para el ajuste manual.');
+            return;
+        }
+
+        setSavingManualPoints(true);
+        try {
+            const accessContext = await getCurrentUserAccessContext();
+            const userId = accessContext?.session?.user?.id;
+            if (!userId) throw new Error('No session');
+
+            const previousSnapshot = await buildRankingSnapshot(organizationId, activeCategory, modality);
+
+            const payload = {
+                organization_id: organizationId,
+                level: activeCategory,
+                modality,
+                player_id: editingPlayer.playerId,
+                points: parsedPoints,
+                created_by: userId,
+                updated_by: userId,
+            };
+
+            const { data: existingAdjustment, error: existingError } = await supabase
+                .from('ranking_manual_adjustments')
+                .select('id')
+                .eq('organization_id', organizationId)
+                .eq('level', activeCategory)
+                .eq('modality', modality)
+                .eq('player_id', editingPlayer.playerId)
+                .maybeSingle();
+
+            if (existingError) throw existingError;
+
+            if (existingAdjustment?.id) {
+                const { error: updateError } = await supabase
+                    .from('ranking_manual_adjustments')
+                    .update({ points: parsedPoints, updated_by: userId })
+                    .eq('id', existingAdjustment.id);
+                if (updateError) throw updateError;
+            } else {
+                const { error: insertError } = await supabase
+                    .from('ranking_manual_adjustments')
+                    .insert(payload);
+                if (insertError) throw insertError;
+            }
+
+            const currentSnapshot = await buildRankingSnapshot(organizationId, activeCategory, modality);
+            setRankingRows(currentSnapshot.rows);
+            setPage(0);
+            closeRankingEditor(true);
+
+            await notifyRankingChangesForManualAdjustment({
+                organizationId,
+                level: activeCategory,
+                modality,
+                previousRows: previousSnapshot.baseRows,
+                currentRows: currentSnapshot.baseRows,
+                affectedPlayerId: editingPlayer.playerId,
+            });
+        } catch (error) {
+            console.error('Error saving manual ranking points:', error);
+            Alert.alert('Error', 'No se pudo guardar el cambio manual del ranking.');
+        } finally {
+            setSavingManualPoints(false);
         }
     };
 
@@ -360,7 +389,7 @@ export default function PlayersScreen() {
     const topThree = page === 0 ? visibleRows.slice(0, 3) : [];
     const listRows = page === 0 ? visibleRows.slice(3) : visibleRows;
 
-    const renderMovement = (row: RankingRow) => {
+    const renderMovement = (row: RankingScreenRow) => {
         if (row.previousRank === null) {
             if (row.isNewEntry) {
                 return (
@@ -403,6 +432,9 @@ export default function PlayersScreen() {
                         ? `${organizationName ? `${organizationName} · ` : ''}${activeCategory} · ${modality === 'dobles' ? 'Dobles' : 'Singles'}`
                         : NO_ORGANIZATION_MESSAGE}
                 </Text>
+                {organizationId && canEditRanking ? (
+                    <Text style={styles.adminHint}>Toque simple: editar puntaje manual. Mantener 2 segundos: perfil y enfrentamientos.</Text>
+                ) : null}
             </View>
 
             <View style={styles.modalitySelectorContainer}>
@@ -459,36 +491,38 @@ export default function PlayersScreen() {
                             <View style={styles.topThreeContainer}>
                                 <View style={styles.podiumLayout}>
                                     {topThree[0] && (
-                                        <TouchableOpacity
+                                        <Pressable
                                             key={topThree[0].playerId}
                                             style={[styles.podiumCard, styles.podiumCardFirst, styles.podiumCardFeatured]}
-                                            onPress={() => handlePlayerPress(topThree[0].playerId)}
-                                            activeOpacity={0.7}
+                                            onPress={() => openRankingEditor(topThree[0])}
+                                            onLongPress={() => handlePlayerLongPress(topThree[0].playerId)}
+                                            delayLongPress={2000}
                                         >
                                             <Text style={[styles.podiumPlace, styles.podiumPlaceFeatured]}>#1</Text>
                                             <Text style={[styles.podiumName, styles.podiumNameFeatured]}>{topThree[0].name}</Text>
                                             <Text style={[styles.podiumPoints, styles.podiumPointsFeatured]}>{topThree[0].points} pts</Text>
                                             {renderMovement(topThree[0])}
-                                        </TouchableOpacity>
+                                        </Pressable>
                                     )}
 
                                     <View style={styles.podiumSideColumn}>
                                         {topThree.slice(1, 3).map((row, index) => (
-                                            <TouchableOpacity
+                                            <Pressable
                                                 key={row.playerId}
                                                 style={[
                                                     styles.podiumCard,
                                                     styles.podiumCardCompact,
                                                     index === 0 ? styles.podiumCardSecond : styles.podiumCardThird,
                                                 ]}
-                                                onPress={() => handlePlayerPress(row.playerId)}
-                                                activeOpacity={0.7}
+                                                onPress={() => openRankingEditor(row)}
+                                                onLongPress={() => handlePlayerLongPress(row.playerId)}
+                                                delayLongPress={2000}
                                             >
                                                 <Text style={styles.podiumPlace}>#{row.rank}</Text>
                                                 <Text style={[styles.podiumName, styles.podiumNameCompact]}>{row.name}</Text>
                                                 <Text style={[styles.podiumPoints, styles.podiumPointsCompact]}>{row.points} pts</Text>
                                                 {renderMovement(row)}
-                                            </TouchableOpacity>
+                                            </Pressable>
                                         ))}
                                     </View>
                                 </View>
@@ -497,21 +531,24 @@ export default function PlayersScreen() {
 
                         <View style={styles.listCard}>
                             {listRows.map((row) => (
-                                <TouchableOpacity
+                                <Pressable
                                     key={row.playerId}
                                     style={styles.listRow}
-                                    onPress={() => handlePlayerPress(row.playerId)}
-                                    activeOpacity={0.7}
+                                    onPress={() => openRankingEditor(row)}
+                                    onLongPress={() => handlePlayerLongPress(row.playerId)}
+                                    delayLongPress={2000}
                                 >
                                     <View style={styles.listLeft}>
                                         <Text style={styles.listRank}>#{row.rank}</Text>
                                         <View>
                                             <Text style={styles.listName}>{row.name}</Text>
-                                            <Text style={styles.listPoints}>{row.points} puntos</Text>
+                                            <Text style={styles.listPoints}>
+                                                {row.points} puntos{canEditRanking ? ` · ajuste ${row.manualPoints >= 0 ? '+' : ''}${row.manualPoints}` : ''}
+                                            </Text>
                                         </View>
                                     </View>
                                     {renderMovement(row)}
-                                </TouchableOpacity>
+                                </Pressable>
                             ))}
                         </View>
 
@@ -539,6 +576,40 @@ export default function PlayersScreen() {
                 tournamentLevel={activeCategory}
                 onClose={() => setShowPlayerProfile(false)}
             />
+
+            <Modal
+                visible={!!editingPlayer}
+                transparent
+                animationType="fade"
+                onRequestClose={() => closeRankingEditor()}
+            >
+                <View style={styles.modalBackdrop}>
+                    <View style={styles.modalCard}>
+                        <Text style={styles.modalTitle}>Editar puntaje manual</Text>
+                        <Text style={styles.modalSubtitle}>
+                            {editingPlayer?.name || 'Jugador'} · {activeCategory} · {modality === 'dobles' ? 'Dobles' : 'Singles'}
+                        </Text>
+                        <TextInput
+                            value={editingPoints}
+                            onChangeText={setEditingPoints}
+                            keyboardType="numeric"
+                            style={styles.modalInput}
+                            placeholder="0"
+                            placeholderTextColor={colors.textTertiary}
+                            editable={!savingManualPoints}
+                        />
+                        <Text style={styles.modalHelper}>Ingresa cuantos puntos deseas agregar o restar al jugador.</Text>
+                        <View style={styles.modalActions}>
+                            <TouchableOpacity style={styles.modalCancelBtn} onPress={() => closeRankingEditor()} disabled={savingManualPoints}>
+                                <Text style={styles.modalCancelText}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.modalSaveBtn} onPress={saveManualRankingPoints} disabled={savingManualPoints}>
+                                <Text style={styles.modalSaveText}>{savingManualPoints ? 'Guardando...' : 'Guardar'}</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -563,6 +634,12 @@ const getStyles = (colors: any) => StyleSheet.create({
     subtitle: {
         color: colors.textSecondary,
         marginTop: spacing.xs,
+    },
+    adminHint: {
+        color: colors.textTertiary,
+        marginTop: spacing.sm,
+        fontSize: 12,
+        lineHeight: 18,
     },
     scrollContent: {
         padding: spacing.xl,
@@ -747,6 +824,79 @@ const getStyles = (colors: any) => StyleSheet.create({
     },
     pageButtonTextActive: {
         color: '#fff',
+    },
+    modalBackdrop: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: spacing.xl,
+    },
+    modalCard: {
+        width: '100%',
+        backgroundColor: colors.background,
+        borderRadius: borderRadius['2xl'],
+        padding: spacing.xl,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    modalTitle: {
+        color: colors.text,
+        fontSize: 20,
+        fontWeight: '900',
+    },
+    modalSubtitle: {
+        color: colors.textSecondary,
+        marginTop: spacing.xs,
+        marginBottom: spacing.lg,
+    },
+    modalInput: {
+        height: 52,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: borderRadius.lg,
+        backgroundColor: colors.surface,
+        color: colors.text,
+        paddingHorizontal: spacing.md,
+        fontSize: 18,
+        fontWeight: '700',
+    },
+    modalHelper: {
+        color: colors.textTertiary,
+        marginTop: spacing.sm,
+        fontSize: 12,
+        lineHeight: 18,
+    },
+    modalActions: {
+        flexDirection: 'row',
+        gap: spacing.md,
+        marginTop: spacing.xl,
+    },
+    modalCancelBtn: {
+        flex: 1,
+        height: 48,
+        borderRadius: borderRadius.full,
+        borderWidth: 1,
+        borderColor: colors.border,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.surface,
+    },
+    modalCancelText: {
+        color: colors.textSecondary,
+        fontWeight: '700',
+    },
+    modalSaveBtn: {
+        flex: 1,
+        height: 48,
+        borderRadius: borderRadius.full,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.primary[500],
+    },
+    modalSaveText: {
+        color: '#fff',
+        fontWeight: '800',
     },
     emptyState: {
         alignItems: 'center',
