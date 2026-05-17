@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, Image, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, Image, ScrollView, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
@@ -136,6 +136,12 @@ export const PlayerProfileModal = ({
         .maybeSingle();
 
       if (profileError) throw profileError;
+
+      if (!profileData) {
+        Alert.alert('Información', 'Este jugador no tiene registro en la aplicación');
+        onClose();
+        return;
+      }
 
       const playerProfile: PlayerProfile = {
         id: profileData?.id || pid,
