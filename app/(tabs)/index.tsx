@@ -301,11 +301,11 @@ export default function InicioScreen() {
                 <View style={styles.headerLeft}>
                     <Image
                         source={require('../../assets/Logos/LogoAplicación.png')}
-                        style={{ width: 140, height: 35 }}
+                        style={{ width: 46, height: 46 }}
                         resizeMode="contain"
                     />
                 </View>
-                <View style={{ width: 40, height: 40 }} />
+                <View style={{ width: 46, height: 46 }} />
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>

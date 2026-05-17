@@ -1006,7 +1006,7 @@ export default function ProfileScreen() {
                     <View style={styles.logoRow}>
                         <Image
                             source={require('../../assets/Logos/LogoAplicación.png')}
-                            style={{ width: 140, height: 35 }}
+                            style={{ width: 46, height: 46 }}
                             resizeMode="contain"
                         />
                     </View>

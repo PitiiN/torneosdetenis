@@ -31,6 +31,7 @@
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="torneosdetenis"/>
+        <data android:scheme="exp+torneosdetenis"/>
       </intent-filter>
     </activity>
   </application>
