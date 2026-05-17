@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, Image, ScrollView, Alert, ImageBackground } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
@@ -648,7 +648,7 @@ export const PlayerProfileModal = ({
 
                   <View style={styles.miniStatsRow}>
                     <View style={styles.miniStatCard}>
-                      <MaterialCommunityIcons name="hand-fist" size={20} color="#10b981" />
+                      <FontAwesome5 name="fist-raised" size={18} color="#10b981" />
                       <Text style={styles.miniStatValue}>{stats.winRate}</Text>
                       <Text style={styles.miniStatLabel}>WIN RATE</Text>
                     </View>

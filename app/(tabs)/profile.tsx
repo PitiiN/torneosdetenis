@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions, Alert, TextInput, Modal, BackHandler, Platform, RefreshControl, Linking, KeyboardAvoidingView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { useRouter } from 'expo-router';
@@ -1234,7 +1234,7 @@ export default function ProfileScreen() {
                             {/* Row 2: Win Rate & Partidos */}
                             <View style={styles.miniStatsRow}>
                                 <View style={styles.miniStatCard}>
-                                    <MaterialCommunityIcons name="hand-fist" size={20} color="#10b981" />
+                                    <FontAwesome5 name="fist-raised" size={18} color="#10b981" />
                                     <Text style={styles.miniStatValue}>{stats.winRate}</Text>
                                     <Text style={styles.miniStatLabel}>WIN RATE</Text>
                                 </View>
