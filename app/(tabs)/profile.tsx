@@ -1006,10 +1006,9 @@ export default function ProfileScreen() {
                     <View style={styles.logoRow}>
                         <Image
                             source={require('../../assets/Logos/LogoAplicación.png')}
-                            style={{ width: 24, height: 24 }}
+                            style={{ width: 140, height: 35 }}
                             resizeMode="contain"
                         />
-                        <Text style={styles.logoText}>SweetSpot</Text>
                     </View>
 
                     {isGlobalAdmin && !VIEW_TOGGLE_BLOCKED_EMAILS.has(currentUserEmail) && (
