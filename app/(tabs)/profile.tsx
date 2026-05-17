@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions, Alert, TextInput, Modal, BackHandler, Platform, RefreshControl, Linking, KeyboardAvoidingView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { useRouter } from 'expo-router';
@@ -1225,7 +1225,7 @@ export default function ProfileScreen() {
                                     <Text style={styles.miniStatLabel}>TROFEOS</Text>
                                 </View>
                                 <View style={styles.miniStatCard}>
-                                    <Ionicons name="ribbon" size={20} color={colors.textSecondary} />
+                                    <Ionicons name="ribbon" size={20} color="#10b981" />
                                     <Text style={styles.miniStatValue}>{stats.wins}</Text>
                                     <Text style={styles.miniStatLabel}>VICTORIAS</Text>
                                 </View>
@@ -1234,12 +1234,12 @@ export default function ProfileScreen() {
                             {/* Row 2: Win Rate & Partidos */}
                             <View style={styles.miniStatsRow}>
                                 <View style={styles.miniStatCard}>
-                                    <Ionicons name="analytics" size={20} color={colors.primary[500]} />
+                                    <MaterialCommunityIcons name="hand-fist" size={20} color="#10b981" />
                                     <Text style={styles.miniStatValue}>{stats.winRate}</Text>
                                     <Text style={styles.miniStatLabel}>WIN RATE</Text>
                                 </View>
                                 <View style={styles.miniStatCard}>
-                                    <Ionicons name="tennisball" size={20} color={colors.textSecondary} />
+                                    <Ionicons name="tennisball" size={20} color="#10b981" />
                                     <Text style={styles.miniStatValue}>{stats.totalMatches}</Text>
                                     <Text style={styles.miniStatLabel}>PARTIDOS</Text>
                                 </View>
@@ -1275,38 +1275,42 @@ export default function ProfileScreen() {
 
                     {/* Bottom Section: Rows of 2 columns spanning full screen width */}
                     <View style={styles.bentoBottomSection}>
-                        {/* Row 1: Finales Jugadas & Racha Actual */}
+                        {/* Row 1: Año Debut & Finales Jugadas */}
                         <View style={styles.bottomRow}>
+                            <View style={styles.bottomHalfCard}>
+                                <Ionicons name="calendar" size={20} color="#3b82f6" />
+                                <Text style={styles.bottomCardValue}>{stats.debutYear}</Text>
+                                <Text style={styles.bottomCardLabel}>AÑO DEBUT</Text>
+                            </View>
                             <View style={styles.bottomHalfCard}>
                                 <Ionicons name="flag" size={20} color="#10b981" />
                                 <Text style={styles.bottomCardValue}>{stats.finalsPlayed}</Text>
                                 <Text style={styles.bottomCardLabel}>FINALES JUGADAS</Text>
                             </View>
+                        </View>
+
+                        {/* Row 2: Racha Actual & Mejor Racha */}
+                        <View style={styles.bottomRow}>
                             <View style={styles.bottomHalfCard}>
                                 <Ionicons name="flame" size={20} color="#f97316" />
                                 <Text style={styles.bottomCardValue}>{stats.currentStreak}</Text>
                                 <Text style={styles.bottomCardLabel}>RACHA ACTUAL</Text>
                             </View>
-                        </View>
-
-                        {/* Row 2: Mejor Racha & Año Debut */}
-                        <View style={styles.bottomRow}>
                             <View style={styles.bottomHalfCard}>
-                                <Ionicons name="trending-up" size={20} color="#10b981" />
+                                <View style={{ flexDirection: 'row', gap: 2, alignItems: 'center', marginBottom: 4 }}>
+                                    <Ionicons name="flame" size={16} color="#f97316" />
+                                    <Ionicons name="flame" size={16} color="#f97316" />
+                                    <Ionicons name="flame" size={16} color="#f97316" />
+                                </View>
                                 <Text style={styles.bottomCardValue}>{stats.bestStreak}</Text>
                                 <Text style={styles.bottomCardLabel}>MEJOR RACHA</Text>
-                            </View>
-                            <View style={styles.bottomHalfCard}>
-                                <Ionicons name="calendar" size={20} color="#3b82f6" />
-                                <Text style={styles.bottomCardValue}>{stats.debutYear}</Text>
-                                <Text style={styles.bottomCardLabel}>AÑO DEBUT</Text>
                             </View>
                         </View>
 
                         {/* Row 3: Mejor Ranking & Peor Ranking */}
                         <View style={styles.bottomRow}>
                             <View style={styles.bottomHalfCard}>
-                                <Ionicons name="bar-chart" size={20} color="#10b981" />
+                                <Ionicons name="trending-up" size={20} color="#10b981" />
                                 <Text style={styles.bottomCardValue}>{stats.bestRanking}</Text>
                                 <Text style={styles.bottomCardLabel}>MEJOR RANKING</Text>
                             </View>
@@ -1327,16 +1331,18 @@ export default function ProfileScreen() {
                                 }
                             }}
                         >
-                            <Ionicons name="people" size={20} color={colors.primary[500]} />
-                            <View style={styles.rivalInfoContainer}>
+                            <View style={styles.rivalLeftSection}>
+                                <MaterialCommunityIcons name="tennis" size={22} color={colors.primary[500]} />
+                                <Text style={styles.rivalLabel}>RIVAL MÁS ENFRENTADO</Text>
+                            </View>
+                            <View style={styles.rivalRightSection}>
                                 <Text style={styles.rivalNameText} numberOfLines={1}>
                                     {stats.mostFacedRivalName || '-'}
                                 </Text>
                                 <Text style={styles.rivalDetailText}>
-                                    {stats.mostFacedRivalMatches > 0 ? `${stats.mostFacedRivalMatches} partidos` : 'Sin partidos registrados'}
+                                    {stats.mostFacedRivalMatches > 0 ? `${stats.mostFacedRivalMatches} partidos` : 'Sin partidos'}
                                 </Text>
                             </View>
-                            <Text style={styles.rivalLabel}>RIVAL MÁS ENFRENTADO</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -2076,22 +2082,30 @@ const getStyles = (colors: any) => StyleSheet.create({
         justifyContent: 'space-between',
         minHeight: 64,
     },
-    rivalInfoContainer: {
-        flex: 1,
-        marginHorizontal: spacing.md,
+    rivalLeftSection: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+        flex: 1.1,
+    },
+    rivalRightSection: {
+        alignItems: 'flex-end',
+        flex: 0.9,
     },
     rivalNameText: {
-        fontSize: 15,
+        fontSize: 14,
         fontWeight: '800',
         color: colors.text,
+        textAlign: 'right',
     },
     rivalDetailText: {
         fontSize: 11,
         color: colors.textSecondary,
         marginTop: 2,
+        textAlign: 'right',
     },
     rivalLabel: {
-        fontSize: 8,
+        fontSize: 9,
         fontWeight: '900',
         color: colors.textTertiary,
         textTransform: 'uppercase',

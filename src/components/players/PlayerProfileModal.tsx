@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, Image, ScrollView, Alert, ImageBackground } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
@@ -640,20 +640,20 @@ export const PlayerProfileModal = ({
                       <Text style={styles.miniStatLabel}>TROFEOS</Text>
                     </View>
                     <View style={styles.miniStatCard}>
-                      <Ionicons name="medal" size={20} color={colors.textSecondary} />
-                      <Text style={styles.miniStatValue}>{stats.wins}</Text>
+                      <Ionicons name="medal" size={20} color="#10b981" />
+                      <Text style={stats.wins > 0 ? [styles.miniStatValue, { color: colors.text }] : styles.miniStatValue}>{stats.wins}</Text>
                       <Text style={styles.miniStatLabel}>VICTORIAS</Text>
                     </View>
                   </View>
 
                   <View style={styles.miniStatsRow}>
                     <View style={styles.miniStatCard}>
-                      <Ionicons name="analytics" size={20} color={colors.textSecondary} />
+                      <MaterialCommunityIcons name="hand-fist" size={20} color="#10b981" />
                       <Text style={styles.miniStatValue}>{stats.winRate}</Text>
                       <Text style={styles.miniStatLabel}>WIN RATE</Text>
                     </View>
                     <View style={styles.miniStatCard}>
-                      <Ionicons name="tennisball" size={20} color={colors.textSecondary} />
+                      <Ionicons name="tennisball" size={20} color="#10b981" />
                       <Text style={styles.miniStatValue}>{stats.totalMatches}</Text>
                       <Text style={styles.miniStatLabel}>PARTIDOS</Text>
                     </View>
