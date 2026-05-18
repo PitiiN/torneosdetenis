@@ -942,8 +942,8 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
 
       achievements.push({
         id: `top-one-${normalizedLevel}`,
-        title: `Top 1 de ranking ${level}`,
-        detail: `Alcanzo el primer lugar en ${level}`,
+        title: `#1 ranking de ${level}`,
+        detail: `Alcanzó el #1 del ranking en ${level}`,
         icon: 'podium',
         tone: 'gold',
         imageSource: getMedalSource(getLevelImageName('Top1Ranking', level)),
@@ -1027,7 +1027,7 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
     championLevels.add(achievementId);
     achievements.push({
       id: achievementId,
-      title: `Campeon ${level}`,
+      title: `Campeón ${level}`,
       detail: tournament?.name || 'Campeonato ganado',
       icon: 'trophy',
       tone: 'gold',
@@ -1118,8 +1118,8 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
   if (hasUndefeatedChampion) {
     achievements.push({
       id: 'undefeated-champion',
-      title: 'Campeon invicto',
-      detail: 'Titulo ganado sin perder partidos',
+      title: 'Campeón invicto',
+      detail: 'Título ganado sin perder partidos',
       icon: 'trophy',
       tone: 'gold',
       imageSource: getMedalSource('CampeónInvicto.png'),
@@ -1130,8 +1130,8 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
   if (hasNoSetLostChampion) {
     achievements.push({
       id: 'no-set-lost-champion',
-      title: 'Campeon sin ceder sets',
-      detail: 'Titulo ganado sin perder sets',
+      title: 'Campeón sin ceder sets',
+      detail: 'Título ganado sin perder sets',
       icon: 'ribbon',
       tone: 'silver',
       imageSource: getMedalSource('CampeónSinCederSets.png'),
@@ -1142,8 +1142,8 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
   if (hasNoGameLostChampion) {
     achievements.push({
       id: 'no-game-lost-champion',
-      title: 'Campeon sin ceder games',
-      detail: 'Titulo ganado sin perder games',
+      title: 'Campeón sin ceder games',
+      detail: 'Título ganado sin perder games',
       icon: 'medal',
       tone: 'gold',
       imageSource: getMedalSource('CampeónSinCederGames.png'),
@@ -1155,7 +1155,7 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
     achievements.push({
       id: 'dios-del-tenis',
       title: 'Dios del Tenis',
-      detail: 'Campeon invicto, sin perder sets y sin ceder games',
+      detail: 'Campeón invicto, sin perder sets y sin ceder games',
       icon: 'star',
       tone: 'gold',
       imageSource: getMedalSource('DiosDelTenis.png'),

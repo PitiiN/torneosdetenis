@@ -76,8 +76,8 @@ function RankingEvolutionChart({
                 borderWidth: 1,
                 borderColor: colors.border,
                 minHeight: 140,
-                marginTop: 20,
-                marginBottom: 10,
+                marginTop: 0,
+                marginBottom: 0,
             }}>
                 <Ionicons name="analytics" size={32} color={colors.textTertiary} />
                 <Text style={{
@@ -140,8 +140,8 @@ function RankingEvolutionChart({
             padding: 16,
             borderWidth: 1,
             borderColor: colors.border,
-            marginTop: 20,
-            marginBottom: 10,
+            marginTop: 0,
+            marginBottom: 0,
             width: '100%',
         }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -728,11 +728,13 @@ export default function ProfileScreen() {
     };
 
     const handleUpdateBackhand = (val: string) => {
-        setUser({ ...user, [BACKHAND_FIELD]: val });
+        const capitalized = val ? val.charAt(0).toUpperCase() + val.slice(1) : val;
+        setUser({ ...user, [BACKHAND_FIELD]: capitalized });
     };
 
     const handleUpdateDominantHand = (val: string) => {
-        setUser({ ...user, mano_dominante: val });
+        const capitalized = val ? val.charAt(0).toUpperCase() + val.slice(1) : val;
+        setUser({ ...user, mano_dominante: capitalized });
     };
 
     const handleToggleNotifications = async () => {
@@ -934,8 +936,8 @@ export default function ProfileScreen() {
                     name: user.name,
                     phone: user.phone,
                     location: user.location,
-                    [BACKHAND_FIELD]: user[BACKHAND_FIELD],
-                    mano_dominante: user.mano_dominante
+                    [BACKHAND_FIELD]: user[BACKHAND_FIELD] ? (String(user[BACKHAND_FIELD]).trim().charAt(0).toUpperCase() + String(user[BACKHAND_FIELD]).trim().slice(1)) : '',
+                    mano_dominante: user.mano_dominante ? (String(user.mano_dominante).trim().charAt(0).toUpperCase() + String(user.mano_dominante).trim().slice(1)) : ''
                 })
                 .eq('id', user.id);
             if (error) throw error;
@@ -1227,7 +1229,7 @@ export default function ProfileScreen() {
                 </View>
 
                 {/* Stats Bento */}
-                <View style={[styles.bentoContainer, { marginTop: -20 }]}>
+                <View style={styles.bentoContainer}>
                     {/* Top Section: Left Main Rank Card + Right Column */}
                     <View style={styles.bentoTopSection}>
                         {/* Left Column: Huge Main Rank Card */}
@@ -1393,7 +1395,7 @@ export default function ProfileScreen() {
 
                 {/* Achievements section */}
                 {achievements && achievements.length > 0 && (
-                    <View style={{ marginTop: 24 }}>
+                    <View>
                         <View style={styles.sectionHeader}>
                             <Text style={styles.sectionTitle}>Logros</Text>
                         </View>
@@ -1945,10 +1947,10 @@ const getStyles = (colors: any) => StyleSheet.create({
     scrollContent: {
         padding: spacing.xl,
         paddingBottom: 120,
-        gap: spacing['3xl'],
+        gap: spacing.xl,
     },
     profileShareButton: {
-        marginTop: 8,
+        marginTop: 0,
         alignSelf: 'center',
         flexDirection: 'row',
         alignItems: 'center',

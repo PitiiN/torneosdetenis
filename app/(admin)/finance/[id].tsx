@@ -170,7 +170,7 @@ export default function TournamentFinanceDetail() {
         }))
       );
     } catch (error) {
-      Alert.alert('Error', 'No se pudo cargar la informacion financiera.');
+      Alert.alert('Error', 'No se pudo cargar la información financiera.');
     } finally {
       setLoading(false);
     }
@@ -251,8 +251,13 @@ export default function TournamentFinanceDetail() {
             tournamentId: String(tournamentId),
             userIds: [playerId],
             type: 'registration_approved',
-            title: 'Inscripcion aprobada',
-            body: `Tu inscripcion a ${tournament?.name || 'este torneo'} fue aprobada.`,
+            title: 'Inscripción aprobada',
+            body: `Tu inscripción a ${tournament?.name || 'este torneo'} fue aprobada.`,
+            data: {
+              type: 'registration_approved',
+              tournamentId: String(tournamentId),
+              organizationId: tournament?.organization_id || null,
+            },
           });
         }
       }
@@ -302,7 +307,7 @@ export default function TournamentFinanceDetail() {
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Solicitudes de Inscripcion</Text>
+            <Text style={styles.sectionTitle}>Solicitudes de Inscripción</Text>
             <View style={styles.requestList}>
               {requests.map((request) => (
                 <View key={request.id} style={styles.requestCard}>
@@ -375,7 +380,7 @@ export default function TournamentFinanceDetail() {
                   )}
 
                   {request.status === 'approved' && (
-                    <Text style={styles.approvedHint}>Inscripcion aplicada automaticamente en el campeonato.</Text>
+                    <Text style={styles.approvedHint}>Inscripción aplicada automáticamente en el campeonato.</Text>
                   )}
                 </View>
               ))}
@@ -383,7 +388,7 @@ export default function TournamentFinanceDetail() {
               {requests.length === 0 && (
                 <View style={styles.emptyContainer}>
                   <Ionicons name="mail-outline" size={42} color={colors.textTertiary} />
-                  <Text style={styles.emptyText}>No hay solicitudes de inscripcion para este torneo.</Text>
+                  <Text style={styles.emptyText}>No hay solicitudes de inscripción para este torneo.</Text>
                 </View>
               )}
             </View>
@@ -451,7 +456,7 @@ export default function TournamentFinanceDetail() {
                   </View>
 
                   <View style={styles.feeRow}>
-                    <Text style={styles.feeLabel}>Valor Inscripcion:</Text>
+                    <Text style={styles.feeLabel}>Valor Inscripción:</Text>
                     <View style={styles.feeInputWrapper}>
                       <Text style={styles.currencySymbol}>$</Text>
                       <TextInput

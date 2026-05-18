@@ -99,7 +99,7 @@ export default function CreateTournamentScreen() {
 
   const handleCreateMasterTournament = async () => {
     if (!activeOrgId) {
-      Alert.alert('Error', 'No se encontro la organizacion activa.');
+      Alert.alert('Error', 'No se encontró la organización activa.');
       return;
     }
 
@@ -110,12 +110,12 @@ export default function CreateTournamentScreen() {
 
     const normalizedCloseTime = normalizeCloseTimeForSubmit(registrationCloseTime);
     if (!normalizedCloseTime || !isValidCloseTime(normalizedCloseTime)) {
-      Alert.alert('Error', 'La hora de cierre debe ser valida. Ejemplo: 1600 o 16:00.');
+      Alert.alert('Error', 'La hora de cierre debe ser válida. Ejemplo: 1600 o 16:00.');
       return;
     }
 
     if (endDate < startDate) {
-      Alert.alert('Error', 'La fecha de termino no puede ser menor a la fecha de inicio.');
+      Alert.alert('Error', 'La fecha de término no puede ser menor a la fecha de inicio.');
       return;
     }
 
@@ -128,7 +128,7 @@ export default function CreateTournamentScreen() {
     try {
       const access = await getCurrentUserAccessContext();
       if (!access || !canManageOrganization(access, activeOrgId)) {
-        Alert.alert('Error', 'No tienes permisos para crear torneos en esta organizacion.');
+        Alert.alert('Error', 'No tienes permisos para crear torneos en esta organización.');
         return;
       }
 
@@ -156,7 +156,7 @@ export default function CreateTournamentScreen() {
       }
 
       await SecureStore.setItemAsync('selected_org_id', activeOrgId);
-      Alert.alert('Exito', 'Torneo completo creado. Ahora agrega los campeonatos por categoria y modalidad.');
+      Alert.alert('Éxito', 'Torneo completo creado. Ahora agrega los campeonatos por categoría y modalidad.');
 
       if (STATUS_MAP[status] === 'open') {
         const orgName = await SecureStore.getItemAsync('selected_org_name') || 'La organización';
@@ -173,7 +173,7 @@ export default function CreateTournamentScreen() {
       const detail = String(error?.message || '').trim();
       const normalizedDetail = detail.toLowerCase();
       if (normalizedDetail.includes('forbidden create tournament') || normalizedDetail.includes('row-level security')) {
-        Alert.alert('Permisos insuficientes', 'Tu usuario no tiene permisos de admin para crear torneos en esta organizacion.');
+        Alert.alert('Permisos insuficientes', 'Tu usuario no tiene permisos de admin para crear torneos en esta organización.');
         return;
       }
       Alert.alert(
@@ -221,7 +221,7 @@ export default function CreateTournamentScreen() {
           </View>
 
           <DateField label="Fecha de Inicio" value={startDate} onChange={setStartDate} />
-          <DateField label="Fecha de Termino" value={endDate} onChange={setEndDate} />
+          <DateField label="Fecha de Término" value={endDate} onChange={setEndDate} />
           <DateField label="Cierre de Inscripciones" value={registrationCloseAt} onChange={setRegistrationCloseAt} />
 
           <View style={styles.inputGroup}>
@@ -238,7 +238,7 @@ export default function CreateTournamentScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Direccion</Text>
+            <Text style={styles.label}>Dirección</Text>
             <TextInput
               style={styles.textInput}
               value={address}

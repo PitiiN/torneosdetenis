@@ -124,6 +124,16 @@ export const notificationService = {
     };
   },
 
+  getLastNotificationResponse: async () => {
+    const Notifications = getNotificationsModule();
+    if (!Notifications) {
+      return null;
+    }
+
+    ensureNotificationHandler();
+    return Notifications.getLastNotificationResponseAsync();
+  },
+
   scheduleMatchReminders: async (matches: Array<{
     id: string;
     tournament_id: string;

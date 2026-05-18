@@ -7,7 +7,7 @@ import { supabase } from '@/services/supabase';
 import { TOURNAMENT_CATEGORIES } from '@/constants/tournamentOptions';
 import { buildRankingRows, RankingRow } from '@/services/ranking';
 import * as SecureStore from '@/utils/SecureStore';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { PlayerProfileModal } from '@/components/players/PlayerProfileModal';
 import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
@@ -18,6 +18,11 @@ type RankingScreenRow = RankingRow & {
     isNewEntry: boolean;
 };
 
+type RankingSearchUser = {
+    id: string;
+    name: string;
+};
+
 const NO_ORGANIZATION_MESSAGE = 'Por favor, selecciona una organización en la pestaña de Inicio para ver el ranking.';
 
 const decodeEscapedUnicode = (value: unknown) =>
@@ -25,7 +30,32 @@ const decodeEscapedUnicode = (value: unknown) =>
         String.fromCharCode(parseInt(hex, 16))
     );
 
+const normalizeText = (value: unknown) =>
+    String(value ?? '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+
+const resolveCategoryParam = (value: unknown) => {
+    const normalizedValue = normalizeText(value);
+    return TOURNAMENT_CATEGORIES.find((category) => normalizeText(category) === normalizedValue) || null;
+};
+
+const resolveModalityParam = (value: unknown): 'singles' | 'dobles' | null => {
+    const normalizedValue = normalizeText(value);
+    if (normalizedValue === 'dobles') return 'dobles';
+    if (normalizedValue === 'singles') return 'singles';
+    return null;
+};
+
 export default function PlayersScreen() {
+    const params = useLocalSearchParams<{
+        organizationId?: string | string[];
+        level?: string | string[];
+        category?: string | string[];
+        modality?: string | string[];
+    }>();
     const insets = useSafeAreaInsets();
     const { colors } = useTheme();
     const styles = getStyles(colors);
@@ -42,6 +72,18 @@ export default function PlayersScreen() {
     const [editingPlayer, setEditingPlayer] = useState<RankingScreenRow | null>(null);
     const [editingPoints, setEditingPoints] = useState('');
     const [savingManualPoints, setSavingManualPoints] = useState(false);
+    const [showAddPlayerModal, setShowAddPlayerModal] = useState(false);
+    const [playerSearchQuery, setPlayerSearchQuery] = useState('');
+    const [playerSearchResults, setPlayerSearchResults] = useState<RankingSearchUser[]>([]);
+    const [isSearchingPlayers, setIsSearchingPlayers] = useState(false);
+    const [selectedSearchUser, setSelectedSearchUser] = useState<RankingSearchUser | null>(null);
+    const [newPlayerPoints, setNewPlayerPoints] = useState('');
+
+    const requestedOrganizationId = Array.isArray(params.organizationId) ? params.organizationId[0] : params.organizationId;
+    const requestedCategoryRaw = Array.isArray(params.level) ? params.level[0] : (Array.isArray(params.category) ? params.category[0] : (params.level || params.category));
+    const requestedCategory = resolveCategoryParam(requestedCategoryRaw);
+    const requestedModalityRaw = Array.isArray(params.modality) ? params.modality[0] : params.modality;
+    const requestedModality = resolveModalityParam(requestedModalityRaw);
 
     const handlePlayerLongPress = (playerId: string) => {
         setSelectedPlayerId(playerId);
@@ -54,24 +96,58 @@ export default function PlayersScreen() {
         setEditingPoints('');
     };
 
+    const closeAddPlayerModal = (force = false) => {
+        if (savingManualPoints && !force) return;
+        setShowAddPlayerModal(false);
+        setPlayerSearchQuery('');
+        setPlayerSearchResults([]);
+        setSelectedSearchUser(null);
+        setNewPlayerPoints('');
+    };
+
     const openRankingEditor = (row: RankingScreenRow) => {
         if (!canEditRanking) {
             handlePlayerLongPress(row.playerId);
             return;
         }
         setEditingPlayer(row);
-        setEditingPoints(String(row.manualPoints || 0));
+        setEditingPoints('');
     };
 
     useEffect(() => {
         loadRanking(activeCategory);
-    }, [activeCategory, modality]);
+    }, [activeCategory, modality, requestedOrganizationId]);
+
+    useEffect(() => {
+        if (requestedCategory && requestedCategory !== activeCategory) {
+            setActiveCategory(requestedCategory);
+        }
+    }, [requestedCategory, activeCategory]);
+
+    useEffect(() => {
+        if (requestedModality && requestedModality !== modality) {
+            setModality(requestedModality);
+        }
+    }, [requestedModality, modality]);
 
     useFocusEffect(
         React.useCallback(() => {
             loadRanking(activeCategory);
-        }, [activeCategory, modality])
+        }, [activeCategory, modality, requestedOrganizationId])
     );
+
+    useEffect(() => {
+        const delayDebounceFn = setTimeout(() => {
+            if (!showAddPlayerModal || playerSearchQuery.trim().length < 2) {
+                setPlayerSearchResults([]);
+                setIsSearchingPlayers(false);
+                return;
+            }
+            searchPlayers(playerSearchQuery.trim());
+        }, 300);
+
+        return () => clearTimeout(delayDebounceFn);
+    }, [playerSearchQuery, showAddPlayerModal]);
 
     const resolveFallbackOrganizationId = async (currentUserId: string) => {
         const { data: recentRegistration } = await supabase
@@ -250,7 +326,8 @@ export default function PlayersScreen() {
                 .single();
 
             const fallbackOrgId = await resolveFallbackOrganizationId(session.user.id);
-            const orgId = storedOrgId || profile?.org_id || fallbackOrgId || null;
+            const requestedOrgId = String(requestedOrganizationId || '').trim();
+            const orgId = requestedOrgId || storedOrgId || profile?.org_id || fallbackOrgId || null;
             setOrganizationId(orgId);
             if (!orgId) {
                 setCanEditRanking(false);
@@ -295,14 +372,68 @@ export default function PlayersScreen() {
         }
     };
 
-    const saveManualRankingPoints = async () => {
-        if (!editingPlayer || !organizationId || !canEditRanking || savingManualPoints) return;
+    const searchPlayers = async (queryText: string) => {
+        setIsSearchingPlayers(true);
+        try {
+            const { data, error } = await supabase
+                .from('public_profiles')
+                .select('id, name')
+                .ilike('name', `%${queryText}%`)
+                .order('name', { ascending: true })
+                .limit(12);
 
-        const parsedPoints = Number(editingPoints.trim());
-        if (!Number.isFinite(parsedPoints)) {
-            Alert.alert('Puntaje inválido', 'Ingresa un número válido para el ajuste manual.');
+            if (error) throw error;
+            setPlayerSearchResults((data || []) as RankingSearchUser[]);
+        } catch (error) {
+            setPlayerSearchResults([]);
+        } finally {
+            setIsSearchingPlayers(false);
+        }
+    };
+
+    const upsertManualAdjustment = async (input: { playerId: string; manualPoints: number; userId: string }) => {
+        const payload = {
+            organization_id: organizationId,
+            level: activeCategory,
+            modality,
+            player_id: input.playerId,
+            points: input.manualPoints,
+            created_by: input.userId,
+            updated_by: input.userId,
+        };
+
+        const { data: existingAdjustment, error: existingError } = await supabase
+            .from('ranking_manual_adjustments')
+            .select('id')
+            .eq('organization_id', organizationId)
+            .eq('level', activeCategory)
+            .eq('modality', modality)
+            .eq('player_id', input.playerId)
+            .maybeSingle();
+
+        if (existingError) throw existingError;
+
+        if (existingAdjustment?.id) {
+            const { error: updateError } = await supabase
+                .from('ranking_manual_adjustments')
+                .update({ points: input.manualPoints, updated_by: input.userId })
+                .eq('id', existingAdjustment.id);
+            if (updateError) throw updateError;
             return;
         }
+
+        const { error: insertError } = await supabase
+            .from('ranking_manual_adjustments')
+            .insert(payload);
+        if (insertError) throw insertError;
+    };
+
+    const persistManualAdjustment = async (input: {
+        playerId: string;
+        manualPoints: number;
+        onSuccess?: () => void;
+    }) => {
+        if (!organizationId || !canEditRanking || savingManualPoints) return;
 
         setSavingManualPoints(true);
         try {
@@ -311,45 +442,16 @@ export default function PlayersScreen() {
             if (!userId) throw new Error('No session');
 
             const previousSnapshot = await buildRankingSnapshot(organizationId, activeCategory, modality);
-
-            const payload = {
-                organization_id: organizationId,
-                level: activeCategory,
-                modality,
-                player_id: editingPlayer.playerId,
-                points: parsedPoints,
-                created_by: userId,
-                updated_by: userId,
-            };
-
-            const { data: existingAdjustment, error: existingError } = await supabase
-                .from('ranking_manual_adjustments')
-                .select('id')
-                .eq('organization_id', organizationId)
-                .eq('level', activeCategory)
-                .eq('modality', modality)
-                .eq('player_id', editingPlayer.playerId)
-                .maybeSingle();
-
-            if (existingError) throw existingError;
-
-            if (existingAdjustment?.id) {
-                const { error: updateError } = await supabase
-                    .from('ranking_manual_adjustments')
-                    .update({ points: parsedPoints, updated_by: userId })
-                    .eq('id', existingAdjustment.id);
-                if (updateError) throw updateError;
-            } else {
-                const { error: insertError } = await supabase
-                    .from('ranking_manual_adjustments')
-                    .insert(payload);
-                if (insertError) throw insertError;
-            }
+            await upsertManualAdjustment({
+                playerId: input.playerId,
+                manualPoints: input.manualPoints,
+                userId,
+            });
 
             const currentSnapshot = await buildRankingSnapshot(organizationId, activeCategory, modality);
             setRankingRows(currentSnapshot.rows);
             setPage(0);
-            closeRankingEditor(true);
+            input.onSuccess?.();
 
             await notifyRankingChangesForManualAdjustment({
                 organizationId,
@@ -357,7 +459,7 @@ export default function PlayersScreen() {
                 modality,
                 previousRows: previousSnapshot.baseRows,
                 currentRows: currentSnapshot.baseRows,
-                affectedPlayerId: editingPlayer.playerId,
+                affectedPlayerId: input.playerId,
             });
         } catch (error) {
             console.error('Error saving manual ranking points:', error);
@@ -365,6 +467,62 @@ export default function PlayersScreen() {
         } finally {
             setSavingManualPoints(false);
         }
+    };
+
+    const saveManualRankingPoints = async () => {
+        if (!editingPlayer || !organizationId || !canEditRanking || savingManualPoints) return;
+
+        const parsedDelta = Number(editingPoints.trim());
+        if (!Number.isFinite(parsedDelta)) {
+            Alert.alert('Puntaje inválido', 'Ingresa un número válido para el ajuste manual.');
+            return;
+        }
+
+        const currentTotalPoints = Number(editingPlayer.points) || 0;
+        const currentManualPoints = Number(editingPlayer.manualPoints) || 0;
+        const basePoints = currentTotalPoints - currentManualPoints;
+        const nextTotalPoints = Math.max(0, currentTotalPoints + parsedDelta);
+        const nextManualPoints = nextTotalPoints - basePoints;
+
+        await persistManualAdjustment({
+            playerId: editingPlayer.playerId,
+            manualPoints: nextManualPoints,
+            onSuccess: () => closeRankingEditor(true),
+        });
+    };
+
+    const saveNewManualPlayer = async () => {
+        if (!organizationId || !canEditRanking || savingManualPoints || !selectedSearchUser) return;
+
+        const parsedPoints = Number(newPlayerPoints.trim());
+        if (!Number.isFinite(parsedPoints) || parsedPoints < 0) {
+            Alert.alert('Puntaje inválido', 'Ingresa un puntaje manual mayor o igual a 0.');
+            return;
+        }
+
+        const alreadyInRanking = rankingRows.some((row) => row.playerId === selectedSearchUser.id);
+        if (alreadyInRanking) {
+            Alert.alert('Jugador ya presente', 'Este jugador ya existe en el ranking seleccionado.');
+            return;
+        }
+
+        Alert.alert(
+            'Confirmar ingreso manual',
+            `Se agregará a ${selectedSearchUser.name} al ranking ${activeCategory} ${modality === 'dobles' ? 'Dobles' : 'Singles'} con ${parsedPoints} puntos. ¿Deseas continuar?`,
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Confirmar',
+                    onPress: () => {
+                        persistManualAdjustment({
+                            playerId: selectedSearchUser.id,
+                            manualPoints: parsedPoints,
+                            onSuccess: () => closeAddPlayerModal(true),
+                        });
+                    },
+                },
+            ]
+        );
     };
 
     const pages = useMemo(() => {
@@ -433,7 +591,13 @@ export default function PlayersScreen() {
                         : NO_ORGANIZATION_MESSAGE}
                 </Text>
                 {organizationId && canEditRanking ? (
-                    <Text style={styles.adminHint}>Toque simple: editar puntaje manual. Mantener 2 segundos: perfil y enfrentamientos.</Text>
+                    <>
+                        <Text style={styles.adminHint}>Toque simple: editar puntaje manual. Mantener 2 segundos: perfil y enfrentamientos.</Text>
+                        <TouchableOpacity style={styles.addPlayerButton} onPress={() => setShowAddPlayerModal(true)}>
+                            <Ionicons name="person-add-outline" size={18} color="#fff" />
+                            <Text style={styles.addPlayerButtonText}>Agregar jugador manualmente</Text>
+                        </TouchableOpacity>
+                    </>
                 ) : null}
             </View>
 
@@ -590,21 +754,140 @@ export default function PlayersScreen() {
                             {editingPlayer?.name || 'Jugador'} · {activeCategory} · {modality === 'dobles' ? 'Dobles' : 'Singles'}
                         </Text>
                         <TextInput
+                            autoFocus
                             value={editingPoints}
                             onChangeText={setEditingPoints}
-                            keyboardType="numeric"
+                            keyboardType="numbers-and-punctuation"
                             style={styles.modalInput}
                             placeholder="0"
                             placeholderTextColor={colors.textTertiary}
                             editable={!savingManualPoints}
                         />
-                        <Text style={styles.modalHelper}>Ingresa cuantos puntos deseas agregar o restar al jugador.</Text>
+                        <Text style={styles.modalHelper}>
+                            Ingresa cuántos puntos deseas sumar o restar. Si la resta supera el puntaje actual, el jugador quedará con 0 puntos.
+                        </Text>
                         <View style={styles.modalActions}>
                             <TouchableOpacity style={styles.modalCancelBtn} onPress={() => closeRankingEditor()} disabled={savingManualPoints}>
                                 <Text style={styles.modalCancelText}>Cancelar</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.modalSaveBtn} onPress={saveManualRankingPoints} disabled={savingManualPoints}>
                                 <Text style={styles.modalSaveText}>{savingManualPoints ? 'Guardando...' : 'Guardar'}</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            <Modal
+                visible={showAddPlayerModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => closeAddPlayerModal()}
+            >
+                <View style={styles.modalBackdrop}>
+                    <View style={styles.modalCard}>
+                        <Text style={styles.modalTitle}>Agregar jugador al ranking</Text>
+                        <Text style={styles.modalSubtitle}>
+                            {organizationName || 'Organización'} · {activeCategory} · {modality === 'dobles' ? 'Dobles' : 'Singles'}
+                        </Text>
+
+                        <View style={styles.searchBox}>
+                            <Ionicons name="search" size={18} color={colors.textTertiary} />
+                            <TextInput
+                                value={playerSearchQuery}
+                                onChangeText={(value) => {
+                                    setPlayerSearchQuery(value);
+                                    if (!value.trim()) setSelectedSearchUser(null);
+                                }}
+                                style={styles.searchInput}
+                                placeholder="Buscar usuario en toda la aplicación..."
+                                placeholderTextColor={colors.textTertiary}
+                                editable={!savingManualPoints}
+                            />
+                            {playerSearchQuery.length > 0 ? (
+                                <TouchableOpacity onPress={() => {
+                                    setPlayerSearchQuery('');
+                                    setPlayerSearchResults([]);
+                                    setSelectedSearchUser(null);
+                                }}>
+                                    <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+                                </TouchableOpacity>
+                            ) : null}
+                        </View>
+
+                        {selectedSearchUser ? (
+                            <View style={styles.selectedUserCard}>
+                                <Text style={styles.selectedUserLabel}>Jugador seleccionado</Text>
+                                <Text style={styles.selectedUserName}>{selectedSearchUser.name}</Text>
+                            </View>
+                        ) : null}
+
+                        {isSearchingPlayers ? (
+                            <View style={styles.searchLoadingBox}>
+                                <TennisSpinner size={20} />
+                            </View>
+                        ) : playerSearchQuery.trim().length >= 2 ? (
+                            <ScrollView style={styles.searchResultsList} keyboardShouldPersistTaps="handled">
+                                {playerSearchResults.map((user) => {
+                                    const alreadyInRanking = rankingRows.some((row) => row.playerId === user.id);
+                                    return (
+                                        <TouchableOpacity
+                                            key={user.id}
+                                            style={[
+                                                styles.searchResultRow,
+                                                selectedSearchUser?.id === user.id && styles.searchResultRowSelected,
+                                            ]}
+                                            onPress={() => !alreadyInRanking && setSelectedSearchUser(user)}
+                                            disabled={alreadyInRanking || savingManualPoints}
+                                        >
+                                            <View style={styles.searchResultAvatar}>
+                                                <Text style={styles.searchResultInitials}>
+                                                    {user.name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase()}
+                                                </Text>
+                                            </View>
+                                            <View style={styles.searchResultTextWrap}>
+                                                <Text style={styles.searchResultName}>{user.name}</Text>
+                                                <Text style={styles.searchResultMeta}>
+                                                    {alreadyInRanking ? 'Ya está en este ranking' : 'Disponible para agregar'}
+                                                </Text>
+                                            </View>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                                {playerSearchResults.length === 0 ? (
+                                    <Text style={styles.searchEmptyText}>No se encontraron usuarios con ese nombre.</Text>
+                                ) : null}
+                            </ScrollView>
+                        ) : (
+                            <Text style={styles.modalHelper}>Escribe al menos 2 letras para buscar usuarios en toda la aplicación.</Text>
+                        )}
+
+                        <TextInput
+                            value={newPlayerPoints}
+                            onChangeText={setNewPlayerPoints}
+                            keyboardType="numeric"
+                            style={[styles.modalInput, styles.addPlayerPointsInput]}
+                            placeholder="Puntaje inicial"
+                            placeholderTextColor={colors.textTertiary}
+                            editable={!savingManualPoints}
+                        />
+                        <Text style={styles.modalHelper}>
+                            El jugador se insertará en la posición que corresponda según el puntaje indicado.
+                        </Text>
+
+                        <View style={styles.modalActions}>
+                            <TouchableOpacity style={styles.modalCancelBtn} onPress={() => closeAddPlayerModal()} disabled={savingManualPoints}>
+                                <Text style={styles.modalCancelText}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[
+                                    styles.modalSaveBtn,
+                                    (!selectedSearchUser || savingManualPoints) && styles.modalSaveBtnDisabled,
+                                ]}
+                                onPress={saveNewManualPlayer}
+                                disabled={!selectedSearchUser || savingManualPoints}
+                            >
+                                <Text style={styles.modalSaveText}>{savingManualPoints ? 'Guardando...' : 'Agregar'}</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -640,6 +923,21 @@ const getStyles = (colors: any) => StyleSheet.create({
         marginTop: spacing.sm,
         fontSize: 12,
         lineHeight: 18,
+    },
+    addPlayerButton: {
+        marginTop: spacing.md,
+        alignSelf: 'flex-start',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.sm,
+        borderRadius: borderRadius.full,
+        backgroundColor: colors.primary[500],
+    },
+    addPlayerButtonText: {
+        color: '#fff',
+        fontWeight: '800',
     },
     scrollContent: {
         padding: spacing.xl,
@@ -867,6 +1165,98 @@ const getStyles = (colors: any) => StyleSheet.create({
         fontSize: 12,
         lineHeight: 18,
     },
+    searchBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+        height: 48,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: borderRadius.lg,
+        backgroundColor: colors.surface,
+        paddingHorizontal: spacing.md,
+    },
+    searchInput: {
+        flex: 1,
+        color: colors.text,
+        fontSize: 15,
+    },
+    searchLoadingBox: {
+        paddingVertical: spacing.lg,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    searchResultsList: {
+        maxHeight: 220,
+        marginTop: spacing.md,
+    },
+    searchResultRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: spacing.md,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+    },
+    searchResultRowSelected: {
+        backgroundColor: colors.surfaceSecondary,
+        borderRadius: borderRadius.lg,
+        paddingHorizontal: spacing.sm,
+    },
+    searchResultAvatar: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: colors.primary[500] + '20',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: spacing.md,
+    },
+    searchResultInitials: {
+        color: colors.primary[500],
+        fontWeight: '800',
+        fontSize: 13,
+    },
+    searchResultTextWrap: {
+        flex: 1,
+    },
+    searchResultName: {
+        color: colors.text,
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    searchResultMeta: {
+        color: colors.textSecondary,
+        fontSize: 12,
+        marginTop: 2,
+    },
+    searchEmptyText: {
+        color: colors.textSecondary,
+        textAlign: 'center',
+        paddingVertical: spacing.lg,
+    },
+    selectedUserCard: {
+        marginTop: spacing.md,
+        padding: spacing.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: borderRadius.lg,
+        backgroundColor: colors.surfaceSecondary,
+    },
+    selectedUserLabel: {
+        color: colors.textTertiary,
+        fontSize: 12,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        marginBottom: 4,
+    },
+    selectedUserName: {
+        color: colors.text,
+        fontSize: 16,
+        fontWeight: '800',
+    },
+    addPlayerPointsInput: {
+        marginTop: spacing.lg,
+    },
     modalActions: {
         flexDirection: 'row',
         gap: spacing.md,
@@ -893,6 +1283,9 @@ const getStyles = (colors: any) => StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: colors.primary[500],
+    },
+    modalSaveBtnDisabled: {
+        opacity: 0.5,
     },
     modalSaveText: {
         color: '#fff',

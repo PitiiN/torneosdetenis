@@ -44,7 +44,7 @@
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/Logos/LogoEscritorio.png"
     },
     "plugins": [
       "expo-router",

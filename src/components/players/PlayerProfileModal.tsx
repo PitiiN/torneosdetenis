@@ -196,8 +196,9 @@ export const PlayerProfileModal = ({
       const { data: { session } } = await supabase.auth.getSession();
       const viewerId = session?.user?.id || null;
       setCurrentUserId(viewerId);
+      let resolvedViewerName = 'Tú';
       if (viewerId) {
-        await loadCurrentUserProfile(viewerId, session);
+        resolvedViewerName = await loadCurrentUserProfile(viewerId, session);
         await calculateCurrentUserStats(viewerId);
       }
 
@@ -237,7 +238,7 @@ export const PlayerProfileModal = ({
       // Calculate stats if we have org + level context
       await calculatePlayerStats(pid, playerProfile);
       if (viewerId && viewerId !== pid) {
-        await calculateHeadToHead(viewerId, pid, playerProfile);
+        await calculateHeadToHead(viewerId, pid, playerProfile, resolvedViewerName);
       } else {
         setHeadToHead(DEFAULT_HEAD_TO_HEAD);
       }
@@ -248,7 +249,7 @@ export const PlayerProfileModal = ({
     }
   };
 
-  const calculateHeadToHead = async (viewerId: string, rivalId: string, rivalProfile: PlayerProfile) => {
+  const calculateHeadToHead = async (viewerId: string, rivalId: string, rivalProfile: PlayerProfile, viewerName?: string) => {
     try {
       const { data: matchRows, error: matchError } = await supabase
         .from('matches')
@@ -301,14 +302,25 @@ export const PlayerProfileModal = ({
 
       const lastMatch = filteredMatches[0];
       const lastScore = getScoreText(lastMatch?.score);
+      const currentUserNameToUse = viewerName || currentUserName || 'Tú';
       const winnerName = [lastMatch?.winner_id, lastMatch?.winner_2_id].includes(viewerId)
-        ? 'T\u00FA'
+        ? (currentUserNameToUse === 'Tú' ? 'Tú' : currentUserNameToUse)
         : [lastMatch?.winner_id, lastMatch?.winner_2_id].includes(rivalId)
           ? rivalProfile.name
           : 'Sin ganador';
-      const lastMatchLabel = lastMatch
-        ? `${winnerName}${lastScore ? ` · ${lastScore}` : ''}`
-        : 'Sin partidos';
+
+      let lastMatchLabel = 'Sin partidos';
+      if (lastMatch) {
+        const isViewer = [lastMatch.winner_id, lastMatch.winner_2_id].includes(viewerId);
+        const isRival = [lastMatch.winner_id, lastMatch.winner_2_id].includes(rivalId);
+        let winnerText = 'Sin ganador';
+        if (isViewer) {
+          winnerText = currentUserNameToUse === 'Tú' ? 'Tú ganaste' : `${currentUserNameToUse} gan\u00f3`;
+        } else if (isRival) {
+          winnerText = `${rivalProfile.name} gan\u00f3`;
+        }
+        lastMatchLabel = `${winnerText}${lastScore ? ` · ${lastScore}` : ''}`;
+      }
 
       setHeadToHead({
         totalMatches: filteredMatches.length,
@@ -483,17 +495,38 @@ export const PlayerProfileModal = ({
                     <View style={styles.headToHeadCard}>
                       <Ionicons name="tennisball" size={22} color={colors.primary[500]} />
                       <Text style={styles.headToHeadValue}>{headToHead.totalMatches}</Text>
-                      <Text style={styles.headToHeadLabel}>PARTIDOS JUGADOS</Text>
+                      <Text 
+                        style={styles.headToHeadLabel}
+                        adjustsFontSizeToFit
+                        numberOfLines={2}
+                        minimumScaleFactor={0.7}
+                      >
+                        PARTIDOS JUGADOS
+                      </Text>
                     </View>
                     <View style={styles.headToHeadCard}>
                       <Ionicons name="person-circle-outline" size={22} color={colors.primary[500]} />
                       <Text style={styles.headToHeadValue}>{headToHead.currentUserWins}</Text>
-                      <Text style={styles.headToHeadLabel}>TU GANASTE</Text>
+                      <Text 
+                        style={styles.headToHeadLabel}
+                        adjustsFontSizeToFit
+                        numberOfLines={2}
+                        minimumScaleFactor={0.7}
+                      >
+                        TU GANASTE
+                      </Text>
                     </View>
                     <View style={styles.headToHeadCard}>
                       <Ionicons name="person-circle-outline" size={22} color={colors.textSecondary} />
                       <Text style={styles.headToHeadValue}>{headToHead.rivalWins}</Text>
-                      <Text style={styles.headToHeadLabel} numberOfLines={1}>{profile.name.toUpperCase()}</Text>
+                      <Text 
+                        style={styles.headToHeadLabel}
+                        adjustsFontSizeToFit
+                        numberOfLines={2}
+                        minimumScaleFactor={0.7}
+                      >
+                        {`${profile.name} gan\u00f3`.toUpperCase()}
+                      </Text>
                     </View>
                   </View>
                   <View style={styles.lastMatchCard}>
@@ -965,7 +998,8 @@ const getStyles = (colors: any) => StyleSheet.create({
     flex: 1,
     backgroundColor: colors.surfaceSecondary,
     borderRadius: borderRadius.lg,
-    padding: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: 6,
     alignItems: 'center',
     gap: 4,
     minHeight: 96,

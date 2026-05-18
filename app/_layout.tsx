@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { clearSessionArtifacts, supabase, supabaseConfigError } from '@/services/supabase';
 import { Session } from '@supabase/supabase-js';
@@ -9,12 +9,56 @@ import { notificationService } from '@/services/notificationService';
 
 const MIN_BOOTSTRAP_LOADING_MS = 3000;
 
+const getNotificationRoute = (data?: Record<string, any>) => {
+  const type = String(data?.type || '').trim();
+  const tournamentId = String(data?.tournamentId || '').trim();
+  const organizationId = String(data?.organizationId || '').trim();
+  const level = String(data?.level || data?.category || '').trim();
+  const modality = String(data?.modality || '').trim();
+
+  if (type === 'achievement_unlocked' || data?.target === 'profile') {
+    return '/(tabs)/profile';
+  }
+
+  if (type === 'registration_request' || data?.target === 'admin_finance') {
+    if (tournamentId) {
+      return { pathname: '/(admin)/finance/[id]', params: { id: tournamentId } } as const;
+    }
+    return '/(tabs)/finance';
+  }
+
+  if (type === 'registration_approved' || type === 'new_tournament_published' || type === 'match_reminder_24h') {
+    if (tournamentId) {
+      return { pathname: '/(tabs)/tournaments/[id]', params: { id: tournamentId } } as const;
+    }
+  }
+
+  if (
+    type === 'ranking_position_updated' ||
+    type === 'ranking_category_updated' ||
+    type === 'ranking_new_number_one'
+  ) {
+    return {
+      pathname: '/(tabs)/players',
+      params: {
+        ...(organizationId ? { organizationId } : {}),
+        ...(level ? { level } : {}),
+        ...(modality ? { modality } : {}),
+      },
+    } as const;
+  }
+
+  return null;
+};
+
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null);
   const [initialized, setInitialized] = useState(false);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [pendingNotificationDestination, setPendingNotificationDestination] = useState<any | null>(null);
   const router = useRouter();
   const segments = useSegments();
+  const lastHandledNotificationIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -69,6 +113,14 @@ export default function RootLayout() {
   }, [session, initialized, segments]);
 
   useEffect(() => {
+    if (!initialized || !pendingNotificationDestination) return;
+    if (!session) return;
+
+    router.push(pendingNotificationDestination as any);
+    setPendingNotificationDestination(null);
+  }, [initialized, pendingNotificationDestination, router, session]);
+
+  useEffect(() => {
     let isMounted = true;
 
     const syncPushTokenIfEnabled = async () => {
@@ -100,18 +152,46 @@ export default function RootLayout() {
   }, [session?.user?.id]);
 
   useEffect(() => {
+    let isMounted = true;
+
+    const handleNotificationNavigation = (notificationId: string | null, data?: Record<string, any>) => {
+      if (notificationId && lastHandledNotificationIdRef.current === notificationId) return;
+      const destination = getNotificationRoute(data);
+      if (!destination) return;
+      lastHandledNotificationIdRef.current = notificationId;
+
+      if (!initialized || !session) {
+        setPendingNotificationDestination(destination);
+        return;
+      }
+
+      router.push(destination as any);
+    };
+
+    const syncLastNotificationResponse = async () => {
+      const response = await notificationService.getLastNotificationResponse();
+      if (!isMounted || !response) return;
+      const notificationId = String(response.notification.request.identifier || '').trim() || null;
+      const data = response.notification.request.content.data as Record<string, any> | undefined;
+      handleNotificationNavigation(notificationId, data);
+    };
+
+    syncLastNotificationResponse();
+
     const unsubscribe = notificationService.addNotificationListeners(
       () => {},
       (response) => {
+        const notificationId = String(response.notification.request.identifier || '').trim() || null;
         const data = response.notification.request.content.data as Record<string, any> | undefined;
-        if (data?.type === 'achievement_unlocked' || data?.target === 'profile') {
-          router.push('/(tabs)/profile');
-        }
+        handleNotificationNavigation(notificationId, data);
       }
     );
 
-    return unsubscribe;
-  }, [router]);
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, [initialized, router, session]);
 
   if (!initialized) {
     return (

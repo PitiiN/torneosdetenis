@@ -327,8 +327,8 @@ export const notifyRankingChangesOnTournamentFinished = async (input: {
       if (!currentRank) return Promise.resolve();
       const previousRank = previousRankByPlayer.get(playerId);
       const body = previousRank === currentRank
-        ? 'Has mantenido tu posicion actual en el ranking!'
-        : `Tu nueva posicion en el ranking de ${tournament.level} es #${currentRank}.`;
+        ? '¡Has mantenido tu posición actual en el ranking!'
+        : `Tu nueva posición en el ranking de ${tournament.level} es #${currentRank}.`;
 
       return notifyTournamentUsers({
         tournamentId,
@@ -341,6 +341,7 @@ export const notifyRankingChangesOnTournamentFinished = async (input: {
           tournamentId,
           organizationId: tournament.organization_id,
           level: tournament.level,
+          modality,
           rank: currentRank,
           previousRank: previousRank || null,
         },
@@ -357,12 +358,13 @@ export const notifyRankingChangesOnTournamentFinished = async (input: {
       userIds: nonParticipantRankingPlayerIds,
       type: 'ranking_category_updated',
       title: 'Ranking actualizado',
-      body: 'Hubo cambios en el ranking de tu categoria! Entra a revisarlos! 😱',
+      body: '¡Hubo cambios en el ranking de tu categoría! ¡Entra a revisarlos! 😱',
       data: {
         type: 'ranking_category_updated',
         tournamentId,
         organizationId: tournament.organization_id,
         level: tournament.level,
+        modality,
       },
     });
   }
@@ -374,13 +376,14 @@ export const notifyRankingChangesOnTournamentFinished = async (input: {
       tournamentId,
       userIds: currentRows.map((row) => row.playerId),
       type: 'ranking_new_number_one',
-      title: 'Nuevo N1',
-      body: `Tenemos nuevo líder! Felicidades a ${currentLeader.name} por su #1 en el ranking!`,
+      title: 'Nuevo #1',
+      body: `¡Tenemos nuevo líder! ¡Felicidades a ${currentLeader.name} por su #1 en el ranking!`,
       data: {
         type: 'ranking_new_number_one',
         tournamentId,
         organizationId: tournament.organization_id,
         level: tournament.level,
+        modality,
         playerId: currentLeader.playerId,
       },
     });
@@ -398,8 +401,8 @@ export const notifyTournamentAdminsOnRegistrationRequest = async (input: {
   const adminUserIds = [...new Set(targets.map((target) => String(target.user_id || '').trim()).filter((userId) => UUID_PATTERN.test(userId)))];
   if (!adminUserIds.length) return;
 
-  const title = 'Nueva solicitud de inscripcion';
-  const body = `${input.playerName || 'Un jugador'} envio un comprobante para ${input.tournamentName || 'un torneo'}.`;
+  const title = 'Nueva solicitud de inscripción';
+  const body = `${input.playerName || 'Un jugador'} envió un comprobante para ${input.tournamentName || 'un torneo'}.`;
 
   await createInAppNotifications({
     userIds: adminUserIds,
@@ -424,6 +427,7 @@ export const notifyTournamentAdminsOnRegistrationRequest = async (input: {
       data: {
         type: 'registration_request',
         tournamentId: input.tournamentId,
+        target: 'admin_finance',
       },
     }))
   );
@@ -456,8 +460,8 @@ export const notifyRankingChangesForManualAdjustment = async (input: {
       if (!currentRank) return Promise.resolve();
       const previousRank = previousRankByPlayer.get(playerId);
       const body = previousRank === currentRank
-        ? 'Tu posicion en el ranking se mantuvo sin cambios.'
-        : `Tu nueva posicion en el ranking de ${level} es #${currentRank}.`;
+        ? 'Tu posición en el ranking se mantuvo sin cambios.'
+        : `Tu nueva posición en el ranking de ${level} es #${currentRank}.`;
 
       return notifyDirectUsers({
         userIds: [playerId],
@@ -485,7 +489,7 @@ export const notifyRankingChangesForManualAdjustment = async (input: {
       userIds: otherPlayerIds,
       type: 'ranking_category_updated',
       title: 'Ranking actualizado',
-      body: 'Hubo cambios en el ranking de tu categoria! Entra a revisarlos!',
+      body: '¡Hubo cambios en el ranking de tu categoría! ¡Entra a revisarlos!',
       data: {
         type: 'ranking_category_updated',
         organizationId,
@@ -501,8 +505,8 @@ export const notifyRankingChangesForManualAdjustment = async (input: {
     await notifyDirectUsers({
       userIds: input.currentRows.map((row) => row.playerId),
       type: 'ranking_new_number_one',
-      title: 'Nuevo N1',
-      body: `Tenemos nuevo líder! Felicidades a ${currentLeader.name} por su #1 en el ranking!`,
+      title: 'Nuevo #1',
+      body: `¡Tenemos nuevo líder! ¡Felicidades a ${currentLeader.name} por su #1 en el ranking!`,
       data: {
         type: 'ranking_new_number_one',
         organizationId,
