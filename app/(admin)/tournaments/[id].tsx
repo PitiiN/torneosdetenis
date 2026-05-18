@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, TextInput, Image, FlatList, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, TextInput, Image, FlatList, KeyboardAvoidingView, Platform, ImageBackground } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,6 +15,7 @@ import { PlayerProfileModal } from '@/components/players/PlayerProfileModal';
 import { useAuth } from '@/hooks/useAuth';
 import { getTournamentPlacements } from '@/services/ranking';
 import { formatDateDDMMYYYY, formatTime24, parseTimeRelaxed } from '@/utils/datetime';
+import { normalizeTournamentStatus } from '@/services/tournamentStatus';
 import {
     buildDescriptionWithChampion,
     extractChampionFromDescription,
@@ -22,9 +23,16 @@ import {
     syncTournamentChampion
 } from '@/services/tournamentChampion';
 import { notifyRankingChangesOnTournamentFinished, notifyTournamentUsers } from '@/services/pushNotifications';
+import * as Sharing from 'expo-sharing';
+import ViewShot from 'react-native-view-shot';
+import { SingleEliminationBracket } from '@/components/brackets/SingleEliminationBracket';
+import { RoundRobinTable } from '@/components/brackets/RoundRobinTable';
+import { TournamentFinals } from '@/components/brackets/TournamentFinals';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const COURT_OPTIONS = Array.from({ length: 20 }, (_current, index) => `Cancha ${index + 1}`);
+const BRACKET_SHARE_BG = require('../../../assets/RRSS/FondoImagenCuadros.png');
+const APP_SHARE_LOGO = require('../../../assets/Logos/LogoLetrasHorizontalBlanco.png');
 type MatchSlot = 1 | 2 | 3 | 4;
 type GroupMember = 1 | 2;
 type ManualParticipantRow = { id: string; name: string };
@@ -93,7 +101,9 @@ export default function AdminTournamentDetailScreen() {
     const [seedCountLimit, setSeedCountLimit] = useState(0);
     const [isFinalsCountModalVisible, setIsFinalsCountModalVisible] = useState(false);
     const [finalsCountInput, setFinalsCountInput] = useState('4');
+    const [sharingBracket, setSharingBracket] = useState(false);
     const tournamentDescriptionRef = useRef<string | null | undefined>(null);
+    const bracketShareRef = useRef<any>(null);
     const playerSearchBottomPadding = insets.bottom + spacing['3xl'];
 
     // Scheduling Modal
@@ -4057,6 +4067,131 @@ export default function AdminTournamentDetailScreen() {
                 : players,
         [IS_DOUBLES, players, definedDoublesPlayerIds]
     );
+    const normalizedTournamentStatus = normalizeTournamentStatus(tournament?.status);
+    const shareableKnockoutMatches = useMemo(
+        () =>
+            matches.filter((match) => {
+                const isConsolationMatch = /^Consolaci/i.test(String(match.round || ''));
+                if (activeTab === 'consolacion') return isConsolationMatch;
+                return !isConsolationMatch;
+            }),
+        [activeTab, matches]
+    );
+    const shareBracketRounds = useMemo(() => {
+        const roundsMap: Record<number, { title: string; matches: any[] }> = {};
+
+        shareableKnockoutMatches.forEach((match: any) => {
+            const roundNum = Number(match.round_number || 1);
+            if (!roundsMap[roundNum]) {
+                roundsMap[roundNum] = {
+                    title: formatRoundLabel(match.round) || `Ronda ${roundNum}`,
+                    matches: [],
+                };
+            }
+
+            const scoreText = getScoreText(match.score);
+            const setScores = String(scoreText || '')
+                .split(/\s*,\s*/)
+                .map((set) => String(set || '').split('-'));
+
+            roundsMap[roundNum].matches.push({
+                id: match.id,
+                player1: {
+                    name: getDisplayName(match, 1),
+                    avatarUrl: getDisplayAvatar(match, 1),
+                    scores: setScores.map((set) => set[0]).filter(Boolean),
+                    isWinner: match.winner_id === match.player_a_id && !!match.player_a_id,
+                    id: match.player_a_id || null,
+                },
+                player2: {
+                    name: getDisplayName(match, 3),
+                    avatarUrl: getDisplayAvatar(match, 3),
+                    scores: setScores.map((set) => set[1]).filter(Boolean),
+                    isWinner: match.winner_id === match.player_b_id && !!match.player_b_id,
+                    id: match.player_b_id || null,
+                },
+                status: match.status === 'finished' ? 'Finalizado' : (match.status === 'live' ? 'En Vivo' : 'Pendiente'),
+                scheduledAt: match.scheduled_at,
+                court: match.court,
+            });
+        });
+
+        return Object.keys(roundsMap)
+            .sort((a, b) => Number(a) - Number(b))
+            .map((key) => roundsMap[Number(key)]);
+    }, [shareableKnockoutMatches]);
+    const shareFinalsSummary = useMemo(
+        () => ({
+            groupALeader: getStandingsForGroup(roundRobinGroupNames[0] || 'A')?.[0]?.name || `Cupo ${roundRobinGroupNames[0] || 'A'}1`,
+            groupBLeader: getStandingsForGroup(roundRobinGroupNames[1] || roundRobinGroupNames[0] || 'A')?.[0]?.name || `Cupo ${roundRobinGroupNames[1] || roundRobinGroupNames[0] || 'A'}1`,
+        }),
+        [roundRobinGroupNames, roundRobinMatchesByGroup, currentGroupRows]
+    );
+    const shareFinalsMatches = useMemo(
+        () =>
+            finalRoundRobinMatches.map((match, index) => ({
+                title: match.round || `Final ${index + 1}`,
+                player1: {
+                    name: getDisplayName(match, 1),
+                    group: 'CLASIFICADO',
+                    image: getDisplayAvatar(match, 1),
+                    id: getPlayerIdBySlot(match, 1) || null,
+                },
+                player2: {
+                    name: getDisplayName(match, 3),
+                    group: 'CLASIFICADO',
+                    image: getDisplayAvatar(match, 3),
+                    id: getPlayerIdBySlot(match, 3) || null,
+                },
+                time: getScoreText(match.score) || 'Por definir',
+                isGrandFinal: String(match.round || '').includes('Gran Final'),
+            })),
+        [finalRoundRobinMatches, playerAvatarById]
+    );
+    const canShareBracket = useMemo(() => {
+        if (activeTab === 'participantes') return false;
+        if (!['open', 'in_progress', 'finished'].includes(normalizedTournamentStatus)) return false;
+
+        if (isRoundRobin) {
+            if (activeTab === 'finales') {
+                return finalRoundRobinMatches.some((match) =>
+                    [match?.player_a_id, match?.player_b_id, match?.player_a2_id, match?.player_b2_id].some(Boolean)
+                );
+            }
+            return currentGroupStandings.length > 0;
+        }
+
+        return shareableKnockoutMatches.some((match) =>
+            [match?.player_a_id, match?.player_b_id, match?.player_a2_id, match?.player_b2_id].some(Boolean)
+        );
+    }, [activeTab, currentGroupStandings.length, finalRoundRobinMatches, isRoundRobin, normalizedTournamentStatus, shareableKnockoutMatches]);
+    const handleShareTournamentBracket = async () => {
+        if (!canShareBracket || sharingBracket) return;
+
+        setSharingBracket(true);
+        try {
+            const sharingAvailable = await Sharing.isAvailableAsync();
+            if (!sharingAvailable) {
+                Alert.alert('No disponible', 'Tu dispositivo no permite compartir imágenes desde esta vista.');
+                return;
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            const uri = await bracketShareRef.current?.capture?.();
+            if (!uri) throw new Error('No se pudo generar la imagen');
+
+            await Sharing.shareAsync(uri, {
+                mimeType: 'image/png',
+                dialogTitle: 'Compartir cuadro del torneo',
+                UTI: 'public.png',
+            });
+        } catch (error) {
+            console.error('Error sharing bracket:', error);
+            Alert.alert('Error', 'No se pudo generar la imagen del cuadro.');
+        } finally {
+            setSharingBracket(false);
+        }
+    };
 
     if (isLoading) {
         return (
@@ -4086,6 +4221,11 @@ export default function AdminTournamentDetailScreen() {
                 </TouchableOpacity>
                 <Text style={styles.headerTitle} numberOfLines={1}>{tournament.name}</Text>
                 <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                    {canShareBracket ? (
+                        <TouchableOpacity style={[styles.actionButton, { padding: 4 }]} onPress={handleShareTournamentBracket} disabled={sharingBracket}>
+                            <Ionicons name="share-social-outline" size={22} color={colors.textSecondary} />
+                        </TouchableOpacity>
+                    ) : null}
                     <TouchableOpacity style={[styles.actionButton, { padding: 4 }]} onPress={() => router.push(`/(admin)/tournaments/edit/${id}` as any)}>
                         <Ionicons name="pencil" size={22} color={colors.textSecondary} />
                     </TouchableOpacity>
@@ -4788,6 +4928,51 @@ export default function AdminTournamentDetailScreen() {
                     </ScrollView>
                 )}
             </ScrollView>
+
+            {canShareBracket ? (
+                <View style={styles.hiddenShareCanvas} pointerEvents="none">
+                    <ViewShot
+                        ref={bracketShareRef}
+                        style={styles.bracketShareShot}
+                        options={{
+                            format: 'png',
+                            quality: 1,
+                            result: 'tmpfile',
+                            width: 1600,
+                            height: 2000,
+                        }}
+                    >
+                        <ImageBackground source={BRACKET_SHARE_BG} resizeMode="cover" style={styles.bracketSharePoster}>
+                            <View style={styles.bracketShareOverlay} />
+                            <View style={styles.bracketShareInner}>
+                                <Image source={APP_SHARE_LOGO} style={styles.bracketShareLogo} resizeMode="contain" />
+                                <Text style={styles.bracketShareTitle}>{tournament.name}</Text>
+                                <Text style={styles.bracketShareSubtitle}>
+                                    {activeTab.startsWith('group:') ? `Grupo ${currentGroupName}` : activeTab === 'consolacion' ? 'Repechaje' : activeTab === 'finales' ? 'Finales' : 'Cuadro Principal'}
+                                </Text>
+
+                                <View style={styles.bracketShareContent}>
+                                    {isRoundRobin ? (
+                                        activeTab === 'finales' ? (
+                                            <TournamentFinals
+                                                summary={shareFinalsSummary}
+                                                matches={shareFinalsMatches}
+                                            />
+                                        ) : (
+                                            <RoundRobinTable
+                                                groupName={`Grupo ${currentGroupName}`}
+                                                standings={currentGroupStandings}
+                                            />
+                                        )
+                                    ) : (
+                                        <SingleEliminationBracket rounds={shareBracketRounds} />
+                                    )}
+                                </View>
+                            </View>
+                        </ImageBackground>
+                    </ViewShot>
+                </View>
+            ) : null}
 
             <AdminQuickActionsBar active="tournaments" organizationId={tournament.organization_id} />
 
@@ -5619,6 +5804,58 @@ const getStyles = (colors: any) => {
             fontWeight: '600',
             color: colors.textSecondary,
             textAlign: 'left',
+        },
+        hiddenShareCanvas: {
+            position: 'absolute',
+            left: -9999,
+            top: 0,
+            opacity: 0,
+        },
+        bracketShareShot: {
+            width: 1600,
+            height: 2000,
+        },
+        bracketSharePoster: {
+            flex: 1,
+        },
+        bracketShareOverlay: {
+            ...StyleSheet.absoluteFillObject,
+            backgroundColor: 'rgba(8, 15, 28, 0.28)',
+        },
+        bracketShareInner: {
+            flex: 1,
+            paddingHorizontal: spacing['3xl'],
+            paddingTop: 72,
+            paddingBottom: 60,
+        },
+        bracketShareLogo: {
+            width: 320,
+            height: 58,
+            alignSelf: 'center',
+            marginBottom: spacing.lg,
+        },
+        bracketShareTitle: {
+            color: '#fff',
+            fontSize: 42,
+            fontWeight: '900',
+            textAlign: 'center',
+        },
+        bracketShareSubtitle: {
+            color: 'rgba(255,255,255,0.9)',
+            fontSize: 24,
+            fontWeight: '800',
+            textAlign: 'center',
+            marginTop: spacing.sm,
+            marginBottom: spacing.xl,
+        },
+        bracketShareContent: {
+            flex: 1,
+            backgroundColor: 'rgba(255,255,255,0.08)',
+            borderRadius: borderRadius['2xl'],
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.12)',
+            overflow: 'hidden',
+            paddingVertical: spacing.lg,
         },
     });
 }

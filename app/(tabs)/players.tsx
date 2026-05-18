@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput, Alert, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput, Alert, Pressable, Image, ImageBackground } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
@@ -12,6 +12,8 @@ import { TennisSpinner } from '@/components/TennisSpinner';
 import { PlayerProfileModal } from '@/components/players/PlayerProfileModal';
 import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
 import { notifyRankingChangesForManualAdjustment } from '@/services/pushNotifications';
+import * as Sharing from 'expo-sharing';
+import ViewShot from 'react-native-view-shot';
 
 type RankingScreenRow = RankingRow & {
     previousRank: number | null;
@@ -24,6 +26,9 @@ type RankingSearchUser = {
 };
 
 const NO_ORGANIZATION_MESSAGE = 'Por favor, selecciona una organización en la pestaña de Inicio para ver el ranking.';
+
+const RANKING_SHARE_BG = require('../../assets/RRSS/FondoImagenRanking.png');
+const APP_SHARE_LOGO = require('../../assets/Logos/LogoLetrasHorizontalBlanco.png');
 
 const decodeEscapedUnicode = (value: unknown) =>
     String(value ?? '').replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) =>
@@ -78,6 +83,8 @@ export default function PlayersScreen() {
     const [isSearchingPlayers, setIsSearchingPlayers] = useState(false);
     const [selectedSearchUser, setSelectedSearchUser] = useState<RankingSearchUser | null>(null);
     const [newPlayerPoints, setNewPlayerPoints] = useState('');
+    const [sharingRankingPage, setSharingRankingPage] = useState(false);
+    const rankingShareRef = React.useRef<any>(null);
 
     const requestedOrganizationId = Array.isArray(params.organizationId) ? params.organizationId[0] : params.organizationId;
     const requestedCategoryRaw = Array.isArray(params.level) ? params.level[0] : (Array.isArray(params.category) ? params.category[0] : (params.level || params.category));
@@ -581,6 +588,34 @@ export default function PlayersScreen() {
         );
     };
 
+    const handleShareRankingPage = async () => {
+        if (!organizationId || !visibleRows.length || sharingRankingPage) return;
+
+        setSharingRankingPage(true);
+        try {
+            const sharingAvailable = await Sharing.isAvailableAsync();
+            if (!sharingAvailable) {
+                Alert.alert('No disponible', 'Tu dispositivo no permite compartir imágenes desde esta vista.');
+                return;
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            const uri = await rankingShareRef.current?.capture?.();
+            if (!uri) throw new Error('No se pudo generar la imagen');
+
+            await Sharing.shareAsync(uri, {
+                mimeType: 'image/png',
+                dialogTitle: 'Compartir ranking',
+                UTI: 'public.png',
+            });
+        } catch (error) {
+            console.error('Error sharing ranking page:', error);
+            Alert.alert('Error', 'No se pudo generar la imagen del ranking.');
+        } finally {
+            setSharingRankingPage(false);
+        }
+    };
+
     return (
         <View style={styles.container}>
             <View style={[styles.header, { paddingTop: Math.max(insets.top, spacing.md) }]}>
@@ -590,6 +625,12 @@ export default function PlayersScreen() {
                         ? `${organizationName ? `${organizationName} · ` : ''}${activeCategory} · ${modality === 'dobles' ? 'Dobles' : 'Singles'}`
                         : NO_ORGANIZATION_MESSAGE}
                 </Text>
+                {organizationId && rankingRows.length > 0 ? (
+                    <TouchableOpacity style={styles.shareRankingButton} onPress={handleShareRankingPage} disabled={sharingRankingPage}>
+                        <Ionicons name="share-social-outline" size={18} color="#fff" />
+                        <Text style={styles.shareRankingButtonText}>{sharingRankingPage ? 'Generando...' : 'Compartir página'}</Text>
+                    </TouchableOpacity>
+                ) : null}
                 {organizationId && canEditRanking ? (
                     <>
                         <Text style={styles.adminHint}>Toque simple: editar puntaje manual. Mantener 2 segundos: perfil y enfrentamientos.</Text>
@@ -740,6 +781,44 @@ export default function PlayersScreen() {
                 tournamentLevel={activeCategory}
                 onClose={() => setShowPlayerProfile(false)}
             />
+
+            {organizationId && visibleRows.length > 0 ? (
+                <View style={styles.hiddenShareCanvas} pointerEvents="none">
+                    <ViewShot
+                        ref={rankingShareRef}
+                        style={styles.rankingShareShot}
+                        options={{
+                            format: 'png',
+                            quality: 1,
+                            result: 'tmpfile',
+                            width: 1080,
+                            height: 1920,
+                        }}
+                    >
+                        <ImageBackground source={RANKING_SHARE_BG} resizeMode="cover" style={styles.rankingSharePoster}>
+                            <View style={styles.rankingShareOverlay} />
+                            <View style={styles.rankingShareInner}>
+                                <Image source={APP_SHARE_LOGO} style={styles.rankingShareLogo} resizeMode="contain" />
+                                <Text style={styles.rankingShareTitle}>RANKING</Text>
+                                <Text style={styles.rankingShareSubtitle}>
+                                    {organizationName} · {activeCategory} · {modality === 'dobles' ? 'Dobles' : 'Singles'}
+                                </Text>
+                                <Text style={styles.rankingSharePageLabel}>{pages[page]?.label || 'Top 10'}</Text>
+
+                                <View style={styles.rankingShareTable}>
+                                    {visibleRows.map((row) => (
+                                        <View key={`share-${row.playerId}`} style={styles.rankingShareRow}>
+                                            <Text style={styles.rankingShareRank}>#{row.rank}</Text>
+                                            <Text style={styles.rankingShareName} numberOfLines={1}>{row.name}</Text>
+                                            <Text style={styles.rankingSharePoints}>{row.points}</Text>
+                                        </View>
+                                    ))}
+                                </View>
+                            </View>
+                        </ImageBackground>
+                    </ViewShot>
+                </View>
+            ) : null}
 
             <Modal
                 visible={!!editingPlayer}
@@ -936,6 +1015,21 @@ const getStyles = (colors: any) => StyleSheet.create({
         backgroundColor: colors.primary[500],
     },
     addPlayerButtonText: {
+        color: '#fff',
+        fontWeight: '800',
+    },
+    shareRankingButton: {
+        marginTop: spacing.md,
+        alignSelf: 'flex-start',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.sm,
+        borderRadius: borderRadius.full,
+        backgroundColor: colors.text,
+    },
+    shareRankingButtonText: {
         color: '#fff',
         fontWeight: '800',
     },
@@ -1290,6 +1384,93 @@ const getStyles = (colors: any) => StyleSheet.create({
     modalSaveText: {
         color: '#fff',
         fontWeight: '800',
+    },
+    hiddenShareCanvas: {
+        position: 'absolute',
+        left: -9999,
+        top: 0,
+        opacity: 0,
+    },
+    rankingShareShot: {
+        width: 1080,
+        height: 1920,
+    },
+    rankingSharePoster: {
+        flex: 1,
+    },
+    rankingShareOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(8, 15, 28, 0.35)',
+    },
+    rankingShareInner: {
+        flex: 1,
+        paddingHorizontal: 84,
+        paddingTop: 120,
+        paddingBottom: 96,
+    },
+    rankingShareLogo: {
+        width: 320,
+        height: 64,
+        marginBottom: 28,
+        alignSelf: 'center',
+    },
+    rankingShareTitle: {
+        color: '#fff',
+        fontSize: 54,
+        fontWeight: '900',
+        textAlign: 'center',
+        letterSpacing: 2,
+    },
+    rankingShareSubtitle: {
+        color: 'rgba(255,255,255,0.9)',
+        fontSize: 28,
+        fontWeight: '700',
+        textAlign: 'center',
+        marginTop: 12,
+    },
+    rankingSharePageLabel: {
+        color: '#FBBF24',
+        fontSize: 26,
+        fontWeight: '900',
+        textAlign: 'center',
+        marginTop: 18,
+        marginBottom: 42,
+        letterSpacing: 1,
+    },
+    rankingShareTable: {
+        backgroundColor: 'rgba(255,255,255,0.12)',
+        borderRadius: borderRadius['2xl'],
+        paddingVertical: 14,
+        paddingHorizontal: 18,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.18)',
+    },
+    rankingShareRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 18,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255,255,255,0.12)',
+    },
+    rankingShareRank: {
+        width: 110,
+        color: '#FBBF24',
+        fontSize: 28,
+        fontWeight: '900',
+    },
+    rankingShareName: {
+        flex: 1,
+        color: '#fff',
+        fontSize: 29,
+        fontWeight: '800',
+        paddingRight: 16,
+    },
+    rankingSharePoints: {
+        width: 120,
+        textAlign: 'right',
+        color: '#fff',
+        fontSize: 28,
+        fontWeight: '900',
     },
     emptyState: {
         alignItems: 'center',
