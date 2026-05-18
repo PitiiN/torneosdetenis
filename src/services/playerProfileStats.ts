@@ -922,6 +922,11 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
       case 'Top5RankingQuinta.png': return require('../../assets/Medallas/Top5RankingQuinta.png');
       case 'Top5RankingSegunda.png': return require('../../assets/Medallas/Top5RankingSegunda.png');
       case 'Top5RankingTercera.png': return require('../../assets/Medallas/Top5RankingTercera.png');
+      case 'NadaEsImposible.png': return require('../../assets/Medallas/NadaEsImposible.png');
+      case 'Bombardero.png': return require('../../assets/Medallas/Bombardero.png');
+      case 'NoEstoyNiAhi.png': return require('../../assets/Medallas/NoEstoyNiAhi.png');
+      case 'CeHacheI.png': return require('../../assets/Medallas/CeHacheI.png');
+      case 'PrimerTorneoJugado.png': return require('../../assets/Medallas/PrimerTorneoJugado.png');
       default: return undefined;
     }
   };
@@ -1155,6 +1160,124 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
       tone: 'gold',
       imageSource: getMedalSource('DiosDelTenis.png'),
       dateEarned: undefeatedDateEarned,
+    });
+  }
+
+  // --- NUEVOS LOGROS ---
+  let nadaEsImposibleMatch: any = null;
+  let bombarderoMatch: any = null;
+  let noEstoyNiAhiMatch: any = null;
+
+  for (const match of finishedPlayerMatches) {
+    const playerSide = getPlayerSide(match, playerId);
+    if (!playerSide) continue;
+
+    const scoreText = getScoreText(match?.score);
+    if (!scoreText || /^W\.?O\.?$/i.test(scoreText)) continue;
+
+    const sets = scoreText
+      .split(/\s*,\s*/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+
+    const parsedSets = sets
+      .map((set) => {
+        const parsed = parseSetScore(set);
+        if (!parsed) return null;
+        const myGames = playerSide === 'A' ? parsed.leftValue : parsed.rightValue;
+        const opponentGames = playerSide === 'A' ? parsed.rightValue : parsed.leftValue;
+        return {
+          myGames,
+          opponentGames,
+          won: myGames > opponentGames,
+        };
+      })
+      .filter((s): s is { myGames: number; opponentGames: number; won: boolean } => s !== null);
+
+    if (parsedSets.length === 0) continue;
+
+    const isWinner = isPlayerWinner(match, playerId, matchesByPlayerTournament[match.tournament_id] || []);
+
+    // 1. Nada es imposible weon! Ni una wea!
+    if (!nadaEsImposibleMatch && isWinner) {
+      const setsLost = parsedSets.filter((s) => !s.won).length;
+      const isThreeSetComeback = parsedSets.length === 3 && !parsedSets[0].won && parsedSets[1].won && parsedSets[2].won;
+      const isFiveSetComeback = parsedSets.length === 5 && setsLost === 2;
+      if (isThreeSetComeback || isFiveSetComeback) {
+        nadaEsImposibleMatch = match;
+      }
+    }
+
+    // 2. Bombardero
+    if (!bombarderoMatch) {
+      const hasSixZeroSet = parsedSets.some((s) => s.myGames === 6 && s.opponentGames === 0);
+      if (hasSixZeroSet) {
+        bombarderoMatch = match;
+      }
+    }
+
+    // 3. No estoy ni ahí
+    if (!noEstoyNiAhiMatch && isWinner) {
+      const isNoLostGame = parsedSets.every((s) => s.myGames === 6 && s.opponentGames === 0);
+      if (isNoLostGame) {
+        noEstoyNiAhiMatch = match;
+      }
+    }
+  }
+
+  if (nadaEsImposibleMatch) {
+    achievements.push({
+      id: 'nada-es-imposible',
+      title: 'Nada es imposible weon! Ni una wea!',
+      detail: 'Ganar un partido de 3 sets habiendo perdido el primer set o ganar un partido de 5 sets habiendo perdido 2 sets',
+      icon: 'star',
+      tone: 'gold',
+      imageSource: getMedalSource('NadaEsImposible.png'),
+      dateEarned: nadaEsImposibleMatch.scheduled_at || nadaEsImposibleMatch.created_at || new Date().toISOString(),
+    });
+  }
+
+  if (bombarderoMatch) {
+    achievements.push({
+      id: 'bombardero',
+      title: 'Bombardero',
+      detail: 'Ganar un set 6-0',
+      icon: 'tennisball',
+      tone: 'gold',
+      imageSource: getMedalSource('Bombardero.png'),
+      dateEarned: bombarderoMatch.scheduled_at || bombarderoMatch.created_at || new Date().toISOString(),
+    });
+  }
+
+  if (noEstoyNiAhiMatch) {
+    achievements.push({
+      id: 'no-estoy-ni-ahi',
+      title: 'No estoy ni ahí',
+      detail: 'Ganar un partido de 3 o 5 sets sin perder ningún game',
+      icon: 'star',
+      tone: 'gold',
+      imageSource: getMedalSource('NoEstoyNiAhi.png'),
+      dateEarned: noEstoyNiAhiMatch.scheduled_at || noEstoyNiAhiMatch.created_at || new Date().toISOString(),
+    });
+  }
+
+  if (nadaEsImposibleMatch && bombarderoMatch && noEstoyNiAhiMatch) {
+    const dates = [
+      new Date(nadaEsImposibleMatch.scheduled_at || nadaEsImposibleMatch.created_at || 0).getTime(),
+      new Date(bombarderoMatch.scheduled_at || bombarderoMatch.created_at || 0).getTime(),
+      new Date(noEstoyNiAhiMatch.scheduled_at || noEstoyNiAhiMatch.created_at || 0).getTime(),
+    ];
+    const maxDate = new Date(Math.max(...dates));
+    const dateEarned = maxDate.getTime() > 0 ? maxDate.toISOString() : new Date().toISOString();
+
+    achievements.push({
+      id: 'ce-hache-i',
+      title: 'Ce Hache Í!!!',
+      detail: 'Obtener los logros "Nada es imposible weon! Ni una wea!", "Bombardero" y "No estoy ni ahí"',
+      icon: 'trophy',
+      tone: 'gold',
+      imageSource: getMedalSource('CeHacheI.png'),
+      dateEarned,
     });
   }
 

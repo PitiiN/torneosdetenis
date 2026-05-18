@@ -93,6 +93,7 @@ export const PlayerProfileModal = ({
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [stats, setStats] = useState<PlayerProfileStats>(DEFAULT_STATS);
+  const [currentUserStats, setCurrentUserStats] = useState<PlayerProfileStats>(DEFAULT_STATS);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState('Tú');
   const [currentUserAvatarUrl, setCurrentUserAvatarUrl] = useState<string | null>(null);
@@ -109,6 +110,7 @@ export const PlayerProfileModal = ({
       setProfile(null);
       setAvatarUrl(null);
       setStats(DEFAULT_STATS);
+      setCurrentUserStats(DEFAULT_STATS);
       setCurrentUserId(null);
       setCurrentUserName('Tú');
       setCurrentUserAvatarUrl(null);
@@ -196,6 +198,7 @@ export const PlayerProfileModal = ({
       setCurrentUserId(viewerId);
       if (viewerId) {
         await loadCurrentUserProfile(viewerId, session);
+        await calculateCurrentUserStats(viewerId);
       }
 
       // Load profile info (using public_profiles view to bypass RLS restrictions)
@@ -344,6 +347,30 @@ export const PlayerProfileModal = ({
     }
   };
 
+  const calculateCurrentUserStats = async (viewerId: string) => {
+    try {
+      if (!tournamentOrgId || !tournamentLevel) {
+        setCurrentUserStats(DEFAULT_STATS);
+        return;
+      }
+
+      const bundle = await loadProfileStatsBundle({
+        playerId: viewerId,
+        context: {
+          org_id: tournamentOrgId,
+          level: tournamentLevel,
+        },
+        modality: tournamentModality,
+        selectedYear: null,
+      });
+
+      setCurrentUserStats(bundle.stats || DEFAULT_STATS);
+    } catch (error) {
+      console.error('Error calculating current user stats:', error);
+      setCurrentUserStats(DEFAULT_STATS);
+    }
+  };
+
   const getInitials = (name: string) => {
     const chunks = String(name || '').trim().split(/\s+/).filter(Boolean);
     if (chunks.length === 0) return 'PP';
@@ -352,6 +379,8 @@ export const PlayerProfileModal = ({
   };
 
   const rivalShareName = profile?.name || 'Rival';
+  const rivalShareRank = String(stats.rank || '-').startsWith('#') ? String(stats.rank || '-') : `#${stats.rank || '-'}`;
+  const currentShareRank = String(currentUserStats.rank || '-').startsWith('#') ? String(currentUserStats.rank || '-') : `#${currentUserStats.rank || '-'}`;
   const currentShareName = currentUserName || 'Tú';
   const rivalWinsLabel = `${rivalShareName.toUpperCase()} GANÓ`;
   const currentWinsLabel = `${currentShareName.toUpperCase()} GANÓ`;
@@ -631,6 +660,7 @@ export const PlayerProfileModal = ({
                           )}
                         </View>
                         <Text style={styles.sharePlayerName}>{rivalShareName.toUpperCase()}</Text>
+                        <Text style={styles.sharePlayerRank}>{rivalShareRank}</Text>
                       </View>
 
                       <View style={styles.shareVersusWrap}>
@@ -650,6 +680,7 @@ export const PlayerProfileModal = ({
                           )}
                         </View>
                         <Text style={styles.sharePlayerName}>{currentShareName.toUpperCase()}</Text>
+                        <Text style={styles.sharePlayerRank}>{currentShareRank}</Text>
                       </View>
                     </View>
 
@@ -1006,34 +1037,33 @@ const getStyles = (colors: any) => StyleSheet.create({
   },
   sharePosterInner: {
     flex: 1,
-    paddingHorizontal: 92,
-    paddingTop: 118,
-    paddingBottom: 118,
+    paddingHorizontal: 70,
+    paddingTop: 54,
+    paddingBottom: 48,
     alignItems: 'center',
   },
   shareBrandBlock: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24,
+    marginBottom: 4,
   },
   shareBrandLogoWrap: {
-    width: 170,
-    height: 170,
-    borderRadius: 999,
-    overflow: 'hidden',
+    width: 180,
+    height: 180,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(9, 27, 66, 0.35)',
   },
   shareBrandLogo: {
-    width: 210,
-    height: 210,
-    opacity: 0.92,
-    transform: [{ scale: 1.18 }],
+    width: 180,
+    height: 180,
+    opacity: 0.96,
   },
   sharePosterTitle: {
+    width: '100%',
+    paddingHorizontal: 12,
     color: '#ffffff',
-    fontSize: 82,
+    fontSize: 72,
+    lineHeight: 88,
     fontWeight: '900',
     fontStyle: 'italic',
     letterSpacing: 1,
@@ -1047,15 +1077,15 @@ const getStyles = (colors: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 132,
+    marginTop: 64,
   },
   shareTotalsSection: {
     width: '100%',
-    marginTop: 92,
+    marginTop: 52,
     alignItems: 'center',
   },
   sharePlayerBlock: {
-    width: 300,
+    width: 320,
     alignItems: 'center',
   },
   shareAvatarRing: {
@@ -1089,10 +1119,11 @@ const getStyles = (colors: any) => StyleSheet.create({
     fontStyle: 'italic',
   },
   sharePlayerName: {
-    marginTop: 26,
+    marginTop: 18,
+    paddingHorizontal: 8,
     color: '#ffffff',
-    fontSize: 54,
-    lineHeight: 58,
+    fontSize: 46,
+    lineHeight: 60,
     fontWeight: '900',
     fontStyle: 'italic',
     textAlign: 'center',
@@ -1101,20 +1132,35 @@ const getStyles = (colors: any) => StyleSheet.create({
     textShadowOffset: { width: 0, height: 4 },
     textShadowRadius: 8,
   },
+  sharePlayerRank: {
+    marginTop: 6,
+    paddingHorizontal: 6,
+    color: '#38c86b',
+    fontSize: 34,
+    lineHeight: 44,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 6,
+  },
   shareVersusWrap: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   shareVersusBadge: {
-    width: 190,
-    height: 190,
-    borderRadius: 95,
+    width: 230,
+    height: 170,
+    borderRadius: 100,
     alignItems: 'center',
     justifyContent: 'center',
   },
   shareVersusText: {
+    paddingHorizontal: 12,
     color: '#ffffff',
-    fontSize: 104,
+    fontSize: 88,
+    lineHeight: 112,
     fontWeight: '900',
     fontStyle: 'italic',
     textShadowColor: 'rgba(34,197,94,0.45)',
@@ -1141,14 +1187,16 @@ const getStyles = (colors: any) => StyleSheet.create({
   },
   shareStatHeading: {
     color: '#ffffff',
-    fontSize: 46,
+    fontSize: 42,
     fontWeight: '700',
     textAlign: 'center',
   },
   shareTotalMatches: {
-    marginTop: 24,
+    marginTop: 18,
+    paddingHorizontal: 16,
     color: '#ffffff',
-    fontSize: 96,
+    fontSize: 80,
+    lineHeight: 108,
     fontWeight: '900',
     fontStyle: 'italic',
     textShadowColor: 'rgba(0,0,0,0.35)',
@@ -1157,10 +1205,10 @@ const getStyles = (colors: any) => StyleSheet.create({
   },
   sharePanel: {
     width: '100%',
-    marginTop: 56,
-    paddingHorizontal: 48,
-    paddingTop: 52,
-    paddingBottom: 56,
+    marginTop: 36,
+    paddingHorizontal: 32,
+    paddingTop: 38,
+    paddingBottom: 34,
     backgroundColor: 'rgba(7, 19, 28, 0.62)',
     borderRadius: 36,
     borderWidth: 1,
@@ -1169,7 +1217,7 @@ const getStyles = (colors: any) => StyleSheet.create({
   shareWinsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 48,
+    marginTop: 28,
   },
   shareWinsBlock: {
     flex: 1,
@@ -1183,8 +1231,10 @@ const getStyles = (colors: any) => StyleSheet.create({
     marginHorizontal: 24,
   },
   shareWinsValue: {
+    paddingHorizontal: 14,
     color: '#38c86b',
-    fontSize: 88,
+    fontSize: 72,
+    lineHeight: 98,
     fontWeight: '900',
     fontStyle: 'italic',
     textShadowColor: 'rgba(0,0,0,0.35)',
@@ -1192,9 +1242,10 @@ const getStyles = (colors: any) => StyleSheet.create({
     textShadowRadius: 8,
   },
   shareWinsLabel: {
+    paddingHorizontal: 6,
     color: '#ffffff',
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: 22,
+    lineHeight: 28,
     fontWeight: '700',
     textAlign: 'center',
     textTransform: 'uppercase',
@@ -1202,14 +1253,15 @@ const getStyles = (colors: any) => StyleSheet.create({
   shareBottomDivider: {
     width: '100%',
     height: 1,
-    marginVertical: 48,
+    marginVertical: 30,
     backgroundColor: 'rgba(56, 200, 107, 0.25)',
   },
   shareLastScore: {
-    marginTop: 34,
+    marginTop: 22,
+    paddingHorizontal: 16,
     color: '#ffffff',
-    fontSize: 92,
-    lineHeight: 102,
+    fontSize: 82,
+    lineHeight: 110,
     fontWeight: '900',
     fontStyle: 'italic',
     textAlign: 'center',
@@ -1218,9 +1270,11 @@ const getStyles = (colors: any) => StyleSheet.create({
     textShadowRadius: 10,
   },
   shareLastWinner: {
-    marginTop: 16,
+    marginTop: 10,
+    paddingHorizontal: 20,
     color: '#ffffff',
-    fontSize: 34,
+    fontSize: 24,
+    lineHeight: 32,
     fontWeight: '700',
     textAlign: 'center',
     textTransform: 'uppercase',

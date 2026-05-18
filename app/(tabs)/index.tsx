@@ -20,6 +20,7 @@ interface Organization {
     created_at: string;
     logo_url: string | null;
     logo_signed_url?: string | null;
+    logo_ready?: boolean;
 }
 
 type OpenTournamentRef = {
@@ -37,6 +38,19 @@ type HomeCachePayload = {
 const HOME_RUNTIME_CACHE_KEY = 'home:organizations:v1';
 const HOME_CACHE_TTL_MS = 5 * 60_000;
 const ORGANIZATIONS_UPDATED_AT_KEY = 'organizations_last_updated_at';
+
+const normalizeOrganizations = (organizations: Organization[]): Organization[] =>
+    organizations.map((organization) => {
+        const rawLogoUrl = String(organization.logo_url || '').trim();
+        const signedLogoUrl = String(organization.logo_signed_url || '').trim();
+        return {
+            ...organization,
+            logo_signed_url: signedLogoUrl || null,
+            logo_ready: typeof organization.logo_ready === 'boolean'
+                ? organization.logo_ready
+                : Boolean(!rawLogoUrl || signedLogoUrl),
+        };
+    });
 
 export default function InicioScreen() {
     const insets = useSafeAreaInsets();
@@ -75,6 +89,59 @@ export default function InicioScreen() {
         const computed = Math.floor(availableWidth / 2);
         return Math.max(148, computed);
     }, [screenWidth]);
+
+    const organizationsReadyToRender = useMemo(() => {
+        if (loading) return false;
+        return sourceOrganizations.every((org) => Boolean(org.logo_ready));
+    }, [loading, sourceOrganizations]);
+
+    const prepareOrganizationsForRender = useCallback(async (organizationsInput: Organization[]) => {
+        const normalizedOrganizations = normalizeOrganizations(organizationsInput);
+
+        const resolvedOrganizations = await Promise.all(
+            normalizedOrganizations.map(async (organization) => {
+                const rawLogoUrl = String(organization.logo_url || '').trim();
+                const currentLogoUrl = String(organization.logo_signed_url || '').trim();
+
+                if (!rawLogoUrl) {
+                    return {
+                        ...organization,
+                        logo_signed_url: null,
+                        logo_ready: true,
+                    };
+                }
+
+                let finalLogoUrl = currentLogoUrl || null;
+                if (!finalLogoUrl) {
+                    const signedLogo = await resolveStorageAssetUrlWithRetry(rawLogoUrl, {
+                        expiresInSeconds: 900,
+                        attempts: 3,
+                        baseDelayMs: 350,
+                    });
+                    const fallbackLogo = /^https?:\/\//i.test(rawLogoUrl) ? rawLogoUrl : null;
+                    finalLogoUrl = signedLogo || fallbackLogo;
+                }
+
+                return {
+                    ...organization,
+                    logo_signed_url: finalLogoUrl,
+                    logo_ready: true,
+                };
+            })
+        );
+
+        const logoUrlsToPrefetch = resolvedOrganizations
+            .map((organization) => String(organization.logo_signed_url || '').trim())
+            .filter(Boolean);
+
+        if (logoUrlsToPrefetch.length > 0) {
+            await Promise.allSettled(
+                logoUrlsToPrefetch.map((logoUrl) => Image.prefetch(logoUrl))
+            );
+        }
+
+        return resolvedOrganizations;
+    }, []);
 
     const applyFilters = () => {
         const tournamentsByOrg = openTournaments.reduce((acc, tournament) => {
@@ -124,6 +191,7 @@ export default function InicioScreen() {
                     return {
                         ...currentOrganization,
                         logo_signed_url: nextLogoUrl,
+                        logo_ready: true,
                     };
                 });
 
@@ -154,7 +222,8 @@ export default function InicioScreen() {
             let cachedPayload = getCachedValue<HomeCachePayload>(HOME_RUNTIME_CACHE_KEY);
 
             if (cachedPayload && !forceRefresh) {
-                setSourceOrganizations(cachedPayload.organizations);
+                const preparedCachedOrganizations = await prepareOrganizationsForRender(cachedPayload.organizations);
+                setSourceOrganizations(preparedCachedOrganizations);
                 setOpenTournaments(cachedPayload.openTournaments);
                 hydratedFromCache = true;
                 setLoading(false);
@@ -199,6 +268,7 @@ export default function InicioScreen() {
                 return {
                     ...organization,
                     logo_signed_url: externalLogoUrl,
+                    logo_ready: Boolean(externalLogoUrl || !rawLogoUrl),
                 };
             });
 
@@ -221,9 +291,11 @@ export default function InicioScreen() {
                 return dateA - dateB;
             });
 
+            const preparedOrganizations = await prepareOrganizationsForRender(baseOrganizations);
+
             const nextPayload: HomeCachePayload = {
                 savedAt: Date.now(),
-                organizations: baseOrganizations,
+                organizations: preparedOrganizations,
                 openTournaments: tournamentsError ? [] : ((tournamentData || []) as OpenTournamentRef[]),
             };
 
@@ -238,61 +310,6 @@ export default function InicioScreen() {
             setLoading(false);
         }
     }
-
-    useEffect(() => {
-        let active = true;
-        const organizationsWithMissingSignedLogo = sourceOrganizations.filter((org) => org.logo_url && !org.logo_signed_url);
-        if (organizationsWithMissingSignedLogo.length === 0) return;
-
-        (async () => {
-            const logoPairs = await Promise.all(
-                organizationsWithMissingSignedLogo.map(async (org) => {
-                    const signedLogo = await resolveStorageAssetUrlWithRetry(org.logo_url, {
-                        expiresInSeconds: 900,
-                        attempts: 3,
-                        baseDelayMs: 350,
-                    });
-                    const rawLogoUrl = String(org.logo_url || '').trim();
-                    const fallbackLogo = /^https?:\/\//i.test(rawLogoUrl) ? rawLogoUrl : null;
-                    return { id: org.id, signedLogo: signedLogo || fallbackLogo };
-                })
-            );
-
-            if (!active) return;
-
-            const resolvedById = new Map(
-                logoPairs
-                    .filter((entry) => Boolean(entry.signedLogo))
-                    .map((entry) => [entry.id, entry.signedLogo as string])
-            );
-
-            if (resolvedById.size === 0) return;
-
-            setSourceOrganizations((prev) => {
-                const nextOrganizations = prev.map((org) => {
-                    const nextLogo = resolvedById.get(org.id);
-                    if (!nextLogo) return org;
-                    return { ...org, logo_signed_url: nextLogo };
-                });
-
-                setCachedValue<HomeCachePayload>(
-                    HOME_RUNTIME_CACHE_KEY,
-                    {
-                        savedAt: Date.now(),
-                        organizations: nextOrganizations,
-                        openTournaments,
-                    },
-                    HOME_CACHE_TTL_MS
-                );
-
-                return nextOrganizations;
-            });
-        })();
-
-        return () => {
-            active = false;
-        };
-    }, [sourceOrganizations, openTournaments]);
 
     return (
         <View style={styles.container}>
@@ -360,7 +377,7 @@ export default function InicioScreen() {
                     <Text style={styles.sectionTitle}>Clubes y Organizadores</Text>
                 </View>
 
-                {loading ? (
+                {loading || !organizationsReadyToRender ? (
                     <View style={styles.loadingState}>
                         <TennisSpinner size={34} />
                     </View>
@@ -394,9 +411,7 @@ export default function InicioScreen() {
                                             }}
                                         />
                                     ) : (
-                                        <View style={styles.orgFallback}>
-                                            <Ionicons name="business" size={52} color={colors.primary[500]} />
-                                        </View>
+                                        <View style={styles.orgFallback} />
                                     )}
                                 </View>
                             </TouchableOpacity>
