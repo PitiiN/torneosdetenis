@@ -41,7 +41,7 @@ const ORGANIZATIONS_UPDATED_AT_KEY = 'organizations_last_updated_at';
 export default function InicioScreen() {
     const insets = useSafeAreaInsets();
     const router = useRouter();
-    const { colors, isDark } = useTheme();
+    const { colors } = useTheme();
     const styles = getStyles(colors);
     const { width: screenWidth } = useWindowDimensions();
     const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -297,13 +297,15 @@ export default function InicioScreen() {
     return (
         <View style={styles.container}>
             {/* Top Bar */}
-            <View style={[styles.header, { paddingTop: Math.max(insets.top, spacing.md) }]}>
-                <View style={styles.headerCentered}>
-                    <Image
-                        source={isDark ? require('../../assets/Logos/LogoLetrasHorizontalBlanco.png') : require('../../assets/Logos/LogoLetrasHorizontal.png')}
-                        style={{ width: 150, height: 48 }}
-                        resizeMode="contain"
-                    />
+            <View style={{ backgroundColor: '#fff', paddingTop: insets.top }}>
+                <View style={styles.header}>
+                    <View style={styles.headerCentered}>
+                        <Image
+                            source={require('../../assets/Logos/LogoLetrasHorizontal.png')}
+                            style={styles.headerLogo}
+                            resizeMode="contain"
+                        />
+                    </View>
                 </View>
             </View>
 
@@ -377,25 +379,25 @@ export default function InicioScreen() {
                                     });
                                 }}
                             >
-                                <View style={styles.orgIconContainer}>
+                                <View style={styles.orgHeader}>
+                                    <Text style={styles.orgName} numberOfLines={2}>{org.name}</Text>
+                                </View>
+                                <View style={styles.orgImageSection}>
                                     {org.logo_signed_url ? (
                                         <Image 
                                             source={{ uri: org.logo_signed_url, cache: 'force-cache' }} 
                                             style={styles.orgLogo}
                                             fadeDuration={0}
-                                            resizeMode="contain"
+                                            resizeMode="cover"
                                             onError={() => {
                                                 retryOrganizationLogo(org);
                                             }}
                                         />
                                     ) : (
-                                        <Ionicons name="business" size={40} color={colors.primary[500]} />
+                                        <View style={styles.orgFallback}>
+                                            <Ionicons name="business" size={52} color={colors.primary[500]} />
+                                        </View>
                                     )}
-                                </View>
-                                <Text style={styles.orgName}>{org.name}</Text>
-                                <View style={styles.orgMeta}>
-                                    <Ionicons name="trophy-outline" size={12} color={colors.textTertiary} />
-                                    <Text style={styles.orgMetaText}>Ver torneos</Text>
                                 </View>
                             </TouchableOpacity>
                         ))}
@@ -452,15 +454,22 @@ const getStyles = (colors: any) => StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: spacing.xl,
-        paddingBottom: spacing.md,
-        backgroundColor: colors.background,
+        paddingTop: 0,
+        paddingBottom: 0,
+        backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: colors.border,
+        height: 72,
+        overflow: 'hidden',
     },
     headerCentered: {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    headerLogo: {
+        width: 360,
+        height: 88,
     },
     headerLeft: {
         flexDirection: 'row',
@@ -479,17 +488,20 @@ const getStyles = (colors: any) => StyleSheet.create({
     },
     welcomeSection: {
         marginBottom: spacing['2xl'],
+        alignItems: 'center',
     },
     welcomeTitle: {
         fontSize: 28,
         fontWeight: '900',
         color: colors.text,
         letterSpacing: -0.5,
+        textAlign: 'center',
     },
     welcomeSubtitle: {
         fontSize: 14,
         color: colors.textSecondary,
         marginTop: 4,
+        textAlign: 'center',
     },
     filterSection: {
         marginBottom: spacing.xl,
@@ -541,42 +553,48 @@ const getStyles = (colors: any) => StyleSheet.create({
     orgCard: {
         backgroundColor: colors.surface,
         borderRadius: borderRadius['2xl'],
-        padding: spacing.xl,
         borderWidth: 1,
         borderColor: colors.border,
-        alignItems: 'center',
-        gap: spacing.sm,
+        overflow: 'hidden',
+        minHeight: 260,
     },
-    orgIconContainer: {
-        width: 80,
-        height: 80,
-        borderRadius: borderRadius.xl,
+    orgHeader: {
+        minHeight: 78,
+        paddingHorizontal: spacing.md,
+        paddingTop: spacing.md,
+        paddingBottom: spacing.sm,
+        alignItems: 'center',
+        justifyContent: 'center',
+        flex: 1,
+        maxHeight: '25%',
+    },
+    orgImageSection: {
+        flex: 3,
+        minHeight: 195,
         backgroundColor: colors.surfaceSecondary,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: spacing.xs,
         overflow: 'hidden',
     },
     orgLogo: {
         width: '100%',
         height: '100%',
     },
+    orgFallback: {
+        flex: 1,
+        width: '100%',
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: colors.surfaceSecondary,
+    },
     orgName: {
         fontSize: 16,
-        fontWeight: '700',
+        fontWeight: '800',
         color: colors.text,
         textAlign: 'center',
-    },
-    orgMeta: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-    },
-    orgMetaText: {
-        fontSize: 12,
-        color: colors.textTertiary,
-        fontWeight: '500',
-        textAlign: 'center',
+        lineHeight: 22,
+        width: '100%',
+        flexShrink: 1,
     },
     emptyState: {
         flex: 1,

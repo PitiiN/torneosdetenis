@@ -5,9 +5,9 @@ import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
 import { TennisSpinner } from '@/components/TennisSpinner';
+import { DEFAULT_PROFILE_STATS, loadProfileStatsBundle, PlayerProfileStats, ProfileModality } from '@/services/playerProfileStats';
 import * as Sharing from 'expo-sharing';
 import ViewShot from 'react-native-view-shot';
-import { DEFAULT_PROFILE_STATS, loadProfileStatsBundle, PlayerProfileStats, ProfileModality } from '@/services/playerProfileStats';
 
 const BACKHAND_FIELD = 'rev\u00E9s';
 
@@ -51,8 +51,7 @@ const DEFAULT_HEAD_TO_HEAD: HeadToHeadStats = {
 };
 
 const HEAD_TO_HEAD_SHARE_BG = require('../../../assets/RRSS/FrenteAFrente.png');
-const PROFILE_SHARE_BG = require('../../../assets/RRSS/PerfilRRSS.png');
-const SWEETSPOT_LOGO = require('../../../assets/LogoSweetSpot512x512.png');
+const APP_SHARE_LOGO = require('../../../assets/Logos/LogoAplicación.png');
 
 const getScoreText = (scoreValue: any): string => {
   if (!scoreValue) return '';
@@ -100,9 +99,7 @@ export const PlayerProfileModal = ({
   const [activePage, setActivePage] = useState<'profile' | 'headToHead'>('profile');
   const [headToHead, setHeadToHead] = useState<HeadToHeadStats>(DEFAULT_HEAD_TO_HEAD);
   const [sharingHeadToHead, setSharingHeadToHead] = useState(false);
-  const [sharingProfile, setSharingProfile] = useState(false);
   const shareCardRef = useRef<any>(null);
-  const profileShareCardRef = useRef<any>(null);
 
   useEffect(() => {
     if (visible && playerId) {
@@ -160,6 +157,34 @@ export const PlayerProfileModal = ({
       }
     } catch (error) {
       console.error('Error loading current user profile:', error);
+    }
+  };
+
+  const handleShareHeadToHead = async () => {
+    if (!profile || !currentUserId || currentUserId === profile.id || sharingHeadToHead) return;
+
+    setSharingHeadToHead(true);
+    try {
+      const sharingAvailable = await Sharing.isAvailableAsync();
+      if (!sharingAvailable) {
+        Alert.alert('No disponible', 'Tu dispositivo no permite compartir imágenes desde esta vista.');
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      const uri = await shareCardRef.current?.capture?.();
+      if (!uri) throw new Error('No se pudo generar la imagen');
+
+      await Sharing.shareAsync(uri, {
+        mimeType: 'image/png',
+        dialogTitle: 'Compartir frente a frente',
+        UTI: 'public.png',
+      });
+    } catch (error) {
+      console.error('Error sharing head to head image:', error);
+      Alert.alert('Error', 'No se pudo generar la imagen del enfrentamiento.');
+    } finally {
+      setSharingHeadToHead(false);
     }
   };
 
@@ -326,66 +351,6 @@ export const PlayerProfileModal = ({
     return `${chunks[0][0] || ''}${chunks[1][0] || ''}`.toUpperCase();
   };
 
-  const handleShareHeadToHead = async () => {
-    if (!profile || !currentUserId || currentUserId === profile.id || sharingHeadToHead) return;
-
-    setSharingHeadToHead(true);
-    try {
-      const sharingAvailable = await Sharing.isAvailableAsync();
-      if (!sharingAvailable) {
-        Alert.alert('No disponible', 'Tu dispositivo no permite compartir imágenes desde esta vista.');
-        return;
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      const uri = await shareCardRef.current?.capture?.();
-      if (!uri) {
-        throw new Error('No se pudo generar la imagen');
-      }
-
-      await Sharing.shareAsync(uri, {
-        mimeType: 'image/png',
-        dialogTitle: 'Compartir frente a frente',
-        UTI: 'public.png',
-      });
-    } catch (error) {
-      console.error('Error sharing head to head image:', error);
-      Alert.alert('Error', 'No se pudo generar la imagen del enfrentamiento.');
-    } finally {
-      setSharingHeadToHead(false);
-    }
-  };
-
-  const handleShareProfile = async () => {
-    if (!profile || sharingProfile) return;
-
-    setSharingProfile(true);
-    try {
-      const sharingAvailable = await Sharing.isAvailableAsync();
-      if (!sharingAvailable) {
-        Alert.alert('No disponible', 'Tu dispositivo no permite compartir imágenes desde esta vista.');
-        return;
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      const uri = await profileShareCardRef.current?.capture?.();
-      if (!uri) {
-        throw new Error('No se pudo generar la imagen');
-      }
-
-      await Sharing.shareAsync(uri, {
-        mimeType: 'image/png',
-        dialogTitle: 'Compartir perfil',
-        UTI: 'public.png',
-      });
-    } catch (error) {
-      console.error('Error sharing profile image:', error);
-      Alert.alert('Error', 'No se pudo generar la imagen del perfil.');
-    } finally {
-      setSharingProfile(false);
-    }
-  };
-
   const rivalShareName = profile?.name || 'Rival';
   const currentShareName = currentUserName || 'Tú';
   const rivalWinsLabel = `${rivalShareName.toUpperCase()} GANÓ`;
@@ -511,14 +476,6 @@ export const PlayerProfileModal = ({
               <View style={styles.statsSection}>
                 <View style={styles.headToHeadHeaderRow}>
                   <Text style={styles.statsTitle}>Estadísticas</Text>
-                  <TouchableOpacity
-                    style={[styles.shareButton, sharingProfile && styles.shareButtonDisabled]}
-                    onPress={handleShareProfile}
-                    disabled={sharingProfile}
-                  >
-                    <Ionicons name="share-social-outline" size={16} color="#fff" />
-                    <Text style={styles.shareButtonText}>{sharingProfile ? 'Generando...' : 'Compartir'}</Text>
-                  </TouchableOpacity>
                 </View>
 
                 <View style={styles.statsGrid}>
@@ -580,6 +537,54 @@ export const PlayerProfileModal = ({
                       <Text style={styles.setStatLabel}>GAMES PERDIDOS</Text>
                     </View>
                   </View>
+
+                  <View style={styles.miniStatsRow}>
+                    <View style={styles.miniStatCard}>
+                      <Ionicons name="calendar" size={20} color="#3b82f6" />
+                      <Text style={styles.miniStatValue}>{stats.debutYear}</Text>
+                      <Text style={styles.miniStatLabel}>AÑO DEBUT</Text>
+                    </View>
+                    <View style={styles.miniStatCard}>
+                      <Ionicons name="flag" size={20} color="#10b981" />
+                      <Text style={styles.miniStatValue}>{stats.finalsPlayed}</Text>
+                      <Text style={styles.miniStatLabel}>FINALES JUGADAS</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.miniStatsRow}>
+                    <View style={styles.miniStatCard}>
+                      <Ionicons name="flame" size={20} color="#f97316" />
+                      <Text style={styles.miniStatValue}>{stats.currentStreak}</Text>
+                      <Text style={styles.miniStatLabel}>RACHA ACTUAL</Text>
+                    </View>
+                    <View style={styles.miniStatCard}>
+                      <View style={{ flexDirection: 'row', gap: 2, alignItems: 'center', marginBottom: 4 }}>
+                        <Ionicons name="flame" size={16} color="#f97316" />
+                        <Ionicons name="flame" size={16} color="#f97316" />
+                        <Ionicons name="flame" size={16} color="#f97316" />
+                      </View>
+                      <Text style={styles.miniStatValue}>{stats.bestStreak}</Text>
+                      <Text style={styles.miniStatLabel}>MEJOR RACHA</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.miniStatsRow}>
+                    <View style={styles.miniStatCard}>
+                      <Ionicons name="trending-up" size={20} color="#10b981" />
+                      <Text style={styles.miniStatValue}>{stats.bestRanking}</Text>
+                      <Text style={styles.miniStatLabel}>MEJOR RANKING</Text>
+                    </View>
+                    <View style={styles.miniStatCard}>
+                      <Ionicons name="trending-down" size={20} color={colors.error} />
+                      <Text style={styles.miniStatValue}>{stats.worstRanking}</Text>
+                      <Text style={styles.miniStatLabel}>PEOR RANKING</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.lastMatchCard}>
+                    <Text style={styles.lastMatchLabel}>RIVAL MÁS ENFRENTADO</Text>
+                    <Text style={styles.lastMatchValue}>{profileMostFacedLabel}</Text>
+                  </View>
                 </View>
               </View>
               )}
@@ -591,199 +596,108 @@ export const PlayerProfileModal = ({
             </View>
           )}
 
+          {profile && currentUserId && currentUserId !== profile.id ? (
+            <View style={styles.hiddenShareCanvas} pointerEvents="none">
+              <ViewShot
+                ref={shareCardRef}
+                style={styles.shareShot}
+                options={{
+                  format: 'png',
+                  quality: 1,
+                  result: 'tmpfile',
+                  width: 1080,
+                  height: 1920,
+                }}
+              >
+                <ImageBackground source={HEAD_TO_HEAD_SHARE_BG} resizeMode="cover" style={styles.sharePoster}>
+                  <View style={styles.sharePosterOverlay} />
+                  <View style={styles.sharePosterInner}>
+                    <View style={styles.shareBrandBlock}>
+                      <View style={styles.shareBrandLogoWrap}>
+                        <Image source={APP_SHARE_LOGO} style={styles.shareBrandLogo} resizeMode="contain" />
+                      </View>
+                    </View>
+                    <Text style={styles.sharePosterTitle}>FRENTE-A-FRENTE</Text>
+
+                    <View style={styles.sharePlayersRow}>
+                      <View style={styles.sharePlayerBlock}>
+                        <View style={styles.shareAvatarRing}>
+                          {avatarUrl ? (
+                            <Image source={{ uri: avatarUrl, cache: 'force-cache' }} style={styles.shareAvatar} />
+                          ) : (
+                            <View style={[styles.shareAvatar, styles.shareAvatarFallback]}>
+                              <Text style={styles.shareAvatarInitials}>{getInitials(rivalShareName)}</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.sharePlayerName}>{rivalShareName.toUpperCase()}</Text>
+                      </View>
+
+                      <View style={styles.shareVersusWrap}>
+                        <View style={styles.shareVersusBadge}>
+                          <Text style={styles.shareVersusText}>VS</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.sharePlayerBlock}>
+                        <View style={styles.shareAvatarRing}>
+                          {currentUserAvatarUrl ? (
+                            <Image source={{ uri: currentUserAvatarUrl, cache: 'force-cache' }} style={styles.shareAvatar} />
+                          ) : (
+                            <View style={[styles.shareAvatar, styles.shareAvatarFallback]}>
+                              <Text style={styles.shareAvatarInitials}>{getInitials(currentShareName)}</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.sharePlayerName}>{currentShareName.toUpperCase()}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.shareTotalsSection}>
+                      <View style={styles.shareStatSeparator}>
+                        <View style={styles.shareStatLine} />
+                        <Text style={styles.shareStatHeading}>PARTIDOS TOTALES</Text>
+                        <View style={styles.shareStatLine} />
+                      </View>
+                      <Text style={styles.shareTotalMatches}>{headToHead.totalMatches}</Text>
+                    </View>
+
+                    <View style={styles.sharePanel}>
+                      <View style={styles.shareStatSeparator}>
+                        <View style={styles.shareStatLineShort} />
+                        <Text style={styles.shareStatHeading}>VICTORIAS</Text>
+                        <View style={styles.shareStatLineShort} />
+                      </View>
+
+                      <View style={styles.shareWinsRow}>
+                        <View style={styles.shareWinsBlock}>
+                          <Text style={styles.shareWinsValue}>{headToHead.rivalWins}</Text>
+                          <Text style={styles.shareWinsLabel}>{rivalWinsLabel}</Text>
+                        </View>
+                        <View style={styles.shareWinsDivider} />
+                        <View style={styles.shareWinsBlock}>
+                          <Text style={styles.shareWinsValue}>{headToHead.currentUserWins}</Text>
+                          <Text style={styles.shareWinsLabel}>{currentWinsLabel}</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.shareBottomDivider} />
+
+                      <View style={styles.shareStatSeparator}>
+                        <View style={styles.shareStatLineShort} />
+                        <Text style={styles.shareStatHeading}>ÚLTIMO PARTIDO</Text>
+                        <View style={styles.shareStatLineShort} />
+                      </View>
+                      <Text style={styles.shareLastScore}>{headToHead.lastMatchScore}</Text>
+                      <Text style={styles.shareLastWinner}>{lastWinnerLabel}</Text>
+                    </View>
+                  </View>
+                </ImageBackground>
+              </ViewShot>
+            </View>
+          ) : null}
+
         </View>
-
-        {profile && currentUserId && currentUserId !== profile.id ? (
-          <View style={styles.hiddenShareCanvas} pointerEvents="none">
-            <ViewShot
-              ref={shareCardRef}
-              style={styles.shareShot}
-              options={{
-                format: 'png',
-                quality: 1,
-                result: 'tmpfile',
-                width: 1080,
-                height: 1920,
-              }}
-            >
-              <ImageBackground source={HEAD_TO_HEAD_SHARE_BG} resizeMode="cover" style={styles.sharePoster}>
-                <View style={styles.sharePosterOverlay} />
-                <View style={styles.sharePosterInner}>
-                  <View style={styles.shareBrandBlock}>
-                    <Image source={SWEETSPOT_LOGO} style={styles.shareBrandLogo} resizeMode="contain" />
-                    <Text style={styles.shareBrandText}>SweetSpot</Text>
-                  </View>
-                  <Text style={styles.sharePosterTitle}>FRENTE-A-FRENTE</Text>
-
-                  <View style={styles.sharePlayersRow}>
-                    <View style={styles.sharePlayerBlock}>
-                      <View style={styles.shareAvatarRing}>
-                        {avatarUrl ? (
-                          <Image source={{ uri: avatarUrl, cache: 'force-cache' }} style={styles.shareAvatar} />
-                        ) : (
-                          <View style={[styles.shareAvatar, styles.shareAvatarFallback]}>
-                            <Text style={styles.shareAvatarInitials}>{getInitials(rivalShareName)}</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={styles.sharePlayerName}>{rivalShareName.toUpperCase()}</Text>
-                    </View>
-
-                    <View style={styles.shareVersusWrap}>
-                      <View style={styles.shareVersusBadge}>
-                        <Text style={styles.shareVersusText}>VS</Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.sharePlayerBlock}>
-                      <View style={styles.shareAvatarRing}>
-                        {currentUserAvatarUrl ? (
-                          <Image source={{ uri: currentUserAvatarUrl, cache: 'force-cache' }} style={styles.shareAvatar} />
-                        ) : (
-                          <View style={[styles.shareAvatar, styles.shareAvatarFallback]}>
-                            <Text style={styles.shareAvatarInitials}>{getInitials(currentShareName)}</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={styles.sharePlayerName}>{currentShareName.toUpperCase()}</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.shareTotalsSection}>
-                    <View style={styles.shareStatSeparator}>
-                      <View style={styles.shareStatLine} />
-                      <Text style={styles.shareStatHeading}>PARTIDOS TOTALES</Text>
-                      <View style={styles.shareStatLine} />
-                    </View>
-                    <Text style={styles.shareTotalMatches}>{headToHead.totalMatches}</Text>
-                  </View>
-
-                  <View style={styles.sharePanel}>
-                    <View style={styles.shareStatSeparator}>
-                      <View style={styles.shareStatLineShort} />
-                      <Text style={styles.shareStatHeading}>VICTORIAS</Text>
-                      <View style={styles.shareStatLineShort} />
-                    </View>
-
-                    <View style={styles.shareWinsRow}>
-                      <View style={styles.shareWinsBlock}>
-                        <Text style={styles.shareWinsValue}>{headToHead.rivalWins}</Text>
-                        <Text style={styles.shareWinsLabel}>{rivalWinsLabel}</Text>
-                      </View>
-                      <View style={styles.shareWinsDivider} />
-                      <View style={styles.shareWinsBlock}>
-                        <Text style={styles.shareWinsValue}>{headToHead.currentUserWins}</Text>
-                        <Text style={styles.shareWinsLabel}>{currentWinsLabel}</Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.shareBottomDivider} />
-
-                    <View style={styles.shareStatSeparator}>
-                      <View style={styles.shareStatLineShort} />
-                      <Text style={styles.shareStatHeading}>ÚLTIMO PARTIDO</Text>
-                      <View style={styles.shareStatLineShort} />
-                    </View>
-                    <Text style={styles.shareLastScore}>{headToHead.lastMatchScore}</Text>
-                    <Text style={styles.shareLastWinner}>{lastWinnerLabel}</Text>
-                  </View>
-                </View>
-              </ImageBackground>
-            </ViewShot>
-          </View>
-        ) : null}
-
-        {profile ? (
-          <View style={styles.hiddenShareCanvas} pointerEvents="none">
-            <ViewShot
-              ref={profileShareCardRef}
-              style={styles.shareShot}
-              options={{
-                format: 'png',
-                quality: 1,
-                result: 'tmpfile',
-                width: 1080,
-                height: 1920,
-              }}
-            >
-              <ImageBackground source={PROFILE_SHARE_BG} resizeMode="cover" style={styles.profileSharePoster}>
-                <View style={styles.profileShareOverlay} />
-                <View style={styles.profileShareInner}>
-                  <Image source={SWEETSPOT_LOGO} style={styles.profileShareLogo} resizeMode="contain" />
-                  <Text style={styles.profileShareRankValue}>{stats.rank}</Text>
-                  <Text style={styles.profileShareRankTitle}>POSICIÓN RANKING</Text>
-
-                  <View style={styles.profileShareRow}>
-                    <View style={styles.profileShareSmallCard}>
-                      <Text style={styles.profileShareSmallValue}>{stats.trophies}</Text>
-                      <Text style={styles.profileShareSmallLabel}>TROFEOS</Text>
-                    </View>
-                    <View style={styles.profileShareSmallCard}>
-                      <Text style={styles.profileShareSmallValue}>{stats.wins}</Text>
-                      <Text style={styles.profileShareSmallLabel}>VICTORIAS</Text>
-                    </View>
-                    <View style={styles.profileShareSmallCard}>
-                      <Text style={styles.profileShareSmallValue}>{stats.winRate}</Text>
-                      <Text style={styles.profileShareSmallLabel}>WIN RATE</Text>
-                    </View>
-                    <View style={styles.profileShareSmallCard}>
-                      <Text style={styles.profileShareSmallValue}>{stats.totalMatches}</Text>
-                      <Text style={styles.profileShareSmallLabel}>PARTIDOS</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.profileShareRow}>
-                    <View style={styles.profileShareWideCard}>
-                      <Text style={styles.profileShareWideTitle}>TOTALES SETS</Text>
-                      <Text style={styles.profileShareWideValue}>{stats.setsWon} | {stats.setsLost}</Text>
-                      <Text style={styles.profileShareWideLabel}>GANADOS | PERDIDOS</Text>
-                    </View>
-                    <View style={styles.profileShareWideCard}>
-                      <Text style={styles.profileShareWideTitle}>TOTALES GAMES</Text>
-                      <Text style={styles.profileShareWideValue}>{stats.gamesWon} | {stats.gamesLost}</Text>
-                      <Text style={styles.profileShareWideLabel}>GANADOS | PERDIDOS</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.profileShareRow}>
-                    <View style={styles.profileShareSmallCard}>
-                      <Text style={styles.profileShareSmallValue}>{stats.debutYear}</Text>
-                      <Text style={styles.profileShareSmallLabel}>AÑO DEBUT</Text>
-                    </View>
-                    <View style={styles.profileShareSmallCard}>
-                      <Text style={styles.profileShareSmallValue}>{stats.finalsPlayed}</Text>
-                      <Text style={styles.profileShareSmallLabel}>FINALES JUGADAS</Text>
-                    </View>
-                    <View style={styles.profileShareSmallCard}>
-                      <Text style={styles.profileShareSmallValue}>{stats.currentStreak}</Text>
-                      <Text style={styles.profileShareSmallLabel}>RACHA ACTUAL</Text>
-                    </View>
-                    <View style={styles.profileShareSmallCard}>
-                      <Text style={styles.profileShareSmallValue}>{stats.bestStreak}</Text>
-                      <Text style={styles.profileShareSmallLabel}>MEJOR RACHA</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.profileShareRow}>
-                    <View style={styles.profileShareWideCard}>
-                      <Text style={styles.profileShareWideTitle}>MEJOR RANKING</Text>
-                      <Text style={styles.profileShareWideValue}>{stats.bestRanking}</Text>
-                    </View>
-                    <View style={styles.profileShareWideCard}>
-                      <Text style={styles.profileShareWideTitle}>PEOR RANKING</Text>
-                      <Text style={styles.profileShareWideValue}>{stats.worstRanking}</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.profileShareBottomCard}>
-                    <Text style={styles.profileShareBottomTitle}>RIVAL MÁS ENFRENTADO</Text>
-                    <Text style={styles.profileShareBottomValue}>{profileMostFacedLabel}</Text>
-                  </View>
-                </View>
-              </ImageBackground>
-            </ViewShot>
-          </View>
-        ) : null}
       </View>
     </Modal>
   );
@@ -941,23 +855,6 @@ const getStyles = (colors: any) => StyleSheet.create({
     fontSize: 16,
     fontWeight: '900',
   },
-  shareButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.primary[500],
-    borderRadius: borderRadius.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 8,
-  },
-  shareButtonDisabled: {
-    opacity: 0.7,
-  },
-  shareButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '800',
-  },
   statsGrid: {
     gap: spacing.sm,
   },
@@ -1071,6 +968,23 @@ const getStyles = (colors: any) => StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
   },
+  shareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.primary[500],
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+  },
+  shareButtonDisabled: {
+    opacity: 0.7,
+  },
+  shareButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
   hiddenShareCanvas: {
     position: 'absolute',
     left: -9999,
@@ -1093,31 +1007,29 @@ const getStyles = (colors: any) => StyleSheet.create({
   sharePosterInner: {
     flex: 1,
     paddingHorizontal: 92,
-    paddingTop: 128,
+    paddingTop: 118,
     paddingBottom: 118,
     alignItems: 'center',
   },
   shareBrandBlock: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 18,
-    marginBottom: 32,
+    marginBottom: 24,
+  },
+  shareBrandLogoWrap: {
+    width: 170,
+    height: 170,
+    borderRadius: 999,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(9, 27, 66, 0.35)',
   },
   shareBrandLogo: {
-    width: 72,
-    height: 72,
-  },
-  shareBrandText: {
-    color: '#ffffff',
-    fontSize: 54,
-    fontWeight: '900',
-    fontStyle: 'italic',
-    letterSpacing: 0.4,
-    textAlign: 'center',
-    textShadowColor: 'rgba(0,0,0,0.35)',
-    textShadowOffset: { width: 0, height: 4 },
-    textShadowRadius: 10,
+    width: 210,
+    height: 210,
+    opacity: 0.92,
+    transform: [{ scale: 1.18 }],
   },
   sharePosterTitle: {
     color: '#ffffff',
@@ -1312,132 +1224,5 @@ const getStyles = (colors: any) => StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     textTransform: 'uppercase',
-  },
-  profileSharePoster: {
-    width: 1080,
-    height: 1920,
-    backgroundColor: '#b43a1f',
-  },
-  profileShareOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(18, 26, 24, 0.06)',
-  },
-  profileShareInner: {
-    flex: 1,
-    paddingHorizontal: 84,
-    paddingTop: 86,
-    paddingBottom: 140,
-    alignItems: 'center',
-  },
-  profileShareLogo: {
-    width: 116,
-    height: 116,
-    marginBottom: 18,
-  },
-  profileShareRankValue: {
-    color: '#fff7e8',
-    fontSize: 126,
-    lineHeight: 132,
-    fontWeight: '900',
-    fontStyle: 'italic',
-    textAlign: 'center',
-    textShadowColor: 'rgba(0,0,0,0.28)',
-    textShadowOffset: { width: 0, height: 6 },
-    textShadowRadius: 12,
-  },
-  profileShareRankTitle: {
-    color: '#123f37',
-    fontSize: 54,
-    lineHeight: 56,
-    fontWeight: '900',
-    fontStyle: 'italic',
-    textAlign: 'center',
-    marginBottom: 108,
-  },
-  profileShareRow: {
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 32,
-  },
-  profileShareSmallCard: {
-    width: 212,
-    minHeight: 208,
-    borderRadius: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 18,
-  },
-  profileShareSmallValue: {
-    color: '#113c35',
-    fontSize: 52,
-    lineHeight: 56,
-    fontWeight: '900',
-    fontStyle: 'italic',
-    textAlign: 'center',
-  },
-  profileShareSmallLabel: {
-    color: '#113c35',
-    fontSize: 18,
-    lineHeight: 22,
-    fontWeight: '800',
-    textAlign: 'center',
-    marginTop: 10,
-  },
-  profileShareWideCard: {
-    width: 432,
-    minHeight: 208,
-    borderRadius: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 18,
-  },
-  profileShareWideTitle: {
-    color: '#113c35',
-    fontSize: 24,
-    lineHeight: 28,
-    fontWeight: '900',
-    textAlign: 'center',
-  },
-  profileShareWideValue: {
-    color: '#113c35',
-    fontSize: 50,
-    lineHeight: 54,
-    fontWeight: '900',
-    fontStyle: 'italic',
-    textAlign: 'center',
-    marginTop: 10,
-  },
-  profileShareWideLabel: {
-    color: '#113c35',
-    fontSize: 18,
-    lineHeight: 22,
-    fontWeight: '800',
-    textAlign: 'center',
-    marginTop: 6,
-  },
-  profileShareBottomCard: {
-    width: '100%',
-    minHeight: 136,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-    paddingHorizontal: 96,
-    paddingVertical: 18,
-    marginTop: 6,
-  },
-  profileShareBottomTitle: {
-    color: '#fff7e8',
-    fontSize: 24,
-    lineHeight: 28,
-    fontWeight: '900',
-  },
-  profileShareBottomValue: {
-    color: '#fff7e8',
-    fontSize: 34,
-    lineHeight: 40,
-    fontWeight: '800',
-    marginTop: 10,
   },
 });

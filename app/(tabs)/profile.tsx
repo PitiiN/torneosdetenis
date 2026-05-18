@@ -1,11 +1,13 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions, Alert, TextInput, Modal, BackHandler, Platform, RefreshControl, Linking, KeyboardAvoidingView } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions, Alert, TextInput, Modal, BackHandler, Platform, RefreshControl, Linking, KeyboardAvoidingView, ImageBackground } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as Sharing from 'expo-sharing';
+import ViewShot from 'react-native-view-shot';
 import { getTournamentPlacements } from '@/services/ranking';
 import { adminModeService } from '@/services/adminMode';
 import { notificationService } from '@/services/notificationService';
@@ -16,6 +18,8 @@ import { PlayerAchievement, loadPlayerAchievements, loadProfileStatsBundle } fro
 import { PlayerProfileModal } from '@/components/players/PlayerProfileModal';
 
 const { width } = Dimensions.get('window');
+const PROFILE_SHARE_BG = require('../../assets/RRSS/PerfilRRSS.png');
+const APP_SHARE_LOGO = require('../../assets/Logos/LogoAplicación.png');
 
 const formatDate = (dateString?: string) => {
     if (!dateString) return 'Fecha no disponible';
@@ -351,6 +355,8 @@ export default function ProfileScreen() {
     const [availableYears, setAvailableYears] = useState<number[]>([]);
     const [selectedYear, setSelectedYear] = useState<number | null>(null);
     const [showRivalProfile, setShowRivalProfile] = useState(false);
+    const [sharingProfileCard, setSharingProfileCard] = useState(false);
+    const profileShareRef = useRef<any>(null);
 
     // Profile Fields
     const [isEditingBackhand, setIsEditingBackhand] = useState(false);
@@ -589,6 +595,34 @@ export default function ProfileScreen() {
         setRefreshing(true);
         loadProfileData();
     }, []);
+
+    const handleShareProfileCard = async () => {
+        if (!user || sharingProfileCard) return;
+
+        setSharingProfileCard(true);
+        try {
+            const sharingAvailable = await Sharing.isAvailableAsync();
+            if (!sharingAvailable) {
+                Alert.alert('No disponible', 'Tu dispositivo no permite compartir imágenes desde esta vista.');
+                return;
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            const uri = await profileShareRef.current?.capture?.();
+            if (!uri) throw new Error('No se pudo generar la imagen');
+
+            await Sharing.shareAsync(uri, {
+                mimeType: 'image/png',
+                dialogTitle: 'Compartir perfil',
+                UTI: 'public.png',
+            });
+        } catch (error) {
+            console.error('Error sharing profile card:', error);
+            Alert.alert('Error', 'No se pudo generar la imagen del perfil.');
+        } finally {
+            setSharingProfileCard(false);
+        }
+    };
 
     const fetchAllOrganizations = async () => {
         const { data, error } = await supabase
@@ -1341,6 +1375,15 @@ export default function ProfileScreen() {
                     </View>
                 </View>
 
+                <TouchableOpacity
+                    style={[styles.profileShareButton, sharingProfileCard && styles.profileShareButtonDisabled]}
+                    onPress={handleShareProfileCard}
+                    disabled={sharingProfileCard}
+                >
+                    <Ionicons name="share-social-outline" size={18} color="#fff" />
+                    <Text style={styles.profileShareButtonText}>{sharingProfileCard ? 'Generando...' : 'Compartir perfil'}</Text>
+                </TouchableOpacity>
+
                 {/* Evolution Chart */}
                 <RankingEvolutionChart
                     rankingHistory={rankingHistory}
@@ -1725,9 +1768,143 @@ export default function ProfileScreen() {
                 playerId={stats.mostFacedRivalId}
                 tournamentOrgId={selectedContext?.org_id}
                 tournamentLevel={selectedContext?.level}
+                tournamentModality={modality}
                 initialPage="headToHead"
                 onClose={() => setShowRivalProfile(false)}
             />
+
+            {user ? (
+                <View style={styles.hiddenShareCanvas} pointerEvents="none">
+                    <ViewShot
+                        ref={profileShareRef}
+                        style={styles.profileShareShot}
+                        options={{
+                            format: 'png',
+                            quality: 1,
+                            result: 'tmpfile',
+                            width: 1080,
+                            height: 1920,
+                        }}
+                    >
+                        <ImageBackground source={PROFILE_SHARE_BG} resizeMode="cover" style={styles.profileSharePoster}>
+                            <View style={styles.profileShareOverlay} />
+                            <View style={styles.profileShareCanvas}>
+                                <View style={styles.profileShareLogoWrap}>
+                                    <Image source={APP_SHARE_LOGO} style={styles.profileShareLogo} resizeMode="contain" />
+                                </View>
+
+                                <View style={styles.profileShareHeader}>
+                                    <Text style={styles.profileSharePlayerName} numberOfLines={2}>{user.name || 'Jugador'}</Text>
+                                    <Text style={styles.profileShareRankValue}>{stats.rank}</Text>
+                                    <Text style={styles.profileShareRankTitle}>POSICIÓN RANKING</Text>
+                                </View>
+
+                                <View style={styles.profileShareStatsStack}>
+                                    <View style={styles.profileShareRow}>
+                                        <View style={styles.profileShareCardSmall}>
+                                            <Ionicons name="trophy" size={30} color="#fff" />
+                                            <Text style={styles.profileShareCardValue}>{stats.trophies}</Text>
+                                            <Text style={styles.profileShareCardLabel}>TROFEOS</Text>
+                                        </View>
+                                        <View style={styles.profileShareCardSmall}>
+                                            <Ionicons name="ribbon" size={30} color="#fff" />
+                                            <Text style={styles.profileShareCardValue}>{stats.wins}</Text>
+                                            <Text style={styles.profileShareCardLabel}>VICTORIAS</Text>
+                                        </View>
+                                        <View style={styles.profileShareCardSmall}>
+                                            <FontAwesome5 name="fist-raised" size={26} color="#fff" />
+                                            <Text style={styles.profileShareCardValue}>{stats.winRate}</Text>
+                                            <Text style={styles.profileShareCardLabel}>WIN RATE</Text>
+                                        </View>
+                                        <View style={styles.profileShareCardSmall}>
+                                            <Ionicons name="tennisball" size={30} color="#fff" />
+                                            <Text style={styles.profileShareCardValue}>{stats.totalMatches}</Text>
+                                            <Text style={styles.profileShareCardLabel}>PARTIDOS</Text>
+                                        </View>
+                                    </View>
+
+                                    <View style={styles.profileShareRow}>
+                                        <View style={styles.profileShareCardWide}>
+                                            <Ionicons name="layers-outline" size={28} color="#fff" />
+                                            <Text style={styles.profileShareCardTitle}>TOTALES SETS</Text>
+                                            <View style={styles.profileShareSplitRow}>
+                                                <View style={styles.profileShareSplitItem}>
+                                                    <Text style={styles.profileShareCardWideValue}>{stats.setsWon}</Text>
+                                                    <Text style={styles.profileShareCardWideLabel}>GANADOS</Text>
+                                                </View>
+                                                <View style={styles.profileShareSplitDivider} />
+                                                <View style={styles.profileShareSplitItem}>
+                                                    <Text style={styles.profileShareCardWideValue}>{stats.setsLost}</Text>
+                                                    <Text style={styles.profileShareCardWideLabel}>PERDIDOS</Text>
+                                                </View>
+                                            </View>
+                                        </View>
+                                        <View style={styles.profileShareCardWide}>
+                                            <MaterialCommunityIcons name="scoreboard-outline" size={28} color="#fff" />
+                                            <Text style={styles.profileShareCardTitle}>TOTALES GAMES</Text>
+                                            <View style={styles.profileShareSplitRow}>
+                                                <View style={styles.profileShareSplitItem}>
+                                                    <Text style={styles.profileShareCardWideValue}>{stats.gamesWon}</Text>
+                                                    <Text style={styles.profileShareCardWideLabel}>GANADOS</Text>
+                                                </View>
+                                                <View style={styles.profileShareSplitDivider} />
+                                                <View style={styles.profileShareSplitItem}>
+                                                    <Text style={styles.profileShareCardWideValue}>{stats.gamesLost}</Text>
+                                                    <Text style={styles.profileShareCardWideLabel}>PERDIDOS</Text>
+                                                </View>
+                                            </View>
+                                        </View>
+                                    </View>
+
+                                    <View style={styles.profileShareRow}>
+                                        <View style={styles.profileShareCardSmall}>
+                                            <Ionicons name="calendar" size={28} color="#fff" />
+                                            <Text style={styles.profileShareCardValue}>{stats.debutYear}</Text>
+                                            <Text style={styles.profileShareCardLabel}>AÑO DEBUT</Text>
+                                        </View>
+                                        <View style={styles.profileShareCardSmall}>
+                                            <Ionicons name="flag" size={28} color="#fff" />
+                                            <Text style={styles.profileShareCardValue}>{stats.finalsPlayed}</Text>
+                                            <Text style={styles.profileShareCardLabel}>FINALES JUGADAS</Text>
+                                        </View>
+                                        <View style={styles.profileShareCardSmall}>
+                                            <Ionicons name="flame" size={28} color="#fff" />
+                                            <Text style={styles.profileShareCardValue}>{stats.currentStreak}</Text>
+                                            <Text style={styles.profileShareCardLabel}>RACHA ACTUAL</Text>
+                                        </View>
+                                        <View style={styles.profileShareCardSmall}>
+                                            <Ionicons name="flash" size={28} color="#fff" />
+                                            <Text style={styles.profileShareCardValue}>{stats.bestStreak}</Text>
+                                            <Text style={styles.profileShareCardLabel}>MEJOR RACHA</Text>
+                                        </View>
+                                    </View>
+
+                                    <View style={styles.profileShareRow}>
+                                        <View style={styles.profileShareCardWide}>
+                                            <Ionicons name="trending-up" size={28} color="#fff" />
+                                            <Text style={styles.profileShareCardTitle}>MEJOR RANKING</Text>
+                                            <Text style={styles.profileShareCardWideValue}>{stats.bestRanking}</Text>
+                                        </View>
+                                        <View style={styles.profileShareCardWide}>
+                                            <Ionicons name="trending-down" size={28} color="#fff" />
+                                            <Text style={styles.profileShareCardTitle}>PEOR RANKING</Text>
+                                            <Text style={styles.profileShareCardWideValue}>{stats.worstRanking}</Text>
+                                        </View>
+                                    </View>
+
+                                    <View style={styles.profileShareCardBottom}>
+                                        <MaterialCommunityIcons name="tennis" size={28} color="#fff" />
+                                        <Text style={styles.profileShareCardBottomTitle}>RIVAL MÁS ENFRENTADO</Text>
+                                        <Text style={styles.profileShareCardBottomValue} numberOfLines={2}>
+                                            {stats.mostFacedRivalMatches > 0 ? `${stats.mostFacedRivalName} · ${stats.mostFacedRivalMatches} partidos` : 'Sin partidos'}
+                                        </Text>
+                                    </View>
+                                </View>
+                            </View>
+                        </ImageBackground>
+                    </ViewShot>
+                </View>
+            ) : null}
         </View>
     );
 }
@@ -1769,6 +1946,247 @@ const getStyles = (colors: any) => StyleSheet.create({
         padding: spacing.xl,
         paddingBottom: 120,
         gap: spacing['3xl'],
+    },
+    profileShareButton: {
+        marginTop: 8,
+        alignSelf: 'center',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: colors.primary[500],
+        borderRadius: borderRadius.full,
+        paddingHorizontal: spacing.xl,
+        paddingVertical: spacing.md,
+    },
+    profileShareButtonDisabled: {
+        opacity: 0.7,
+    },
+    profileShareButtonText: {
+        color: '#fff',
+        fontWeight: '800',
+        fontSize: 14,
+    },
+    hiddenShareCanvas: {
+        position: 'absolute',
+        left: -9999,
+        top: -9999,
+        opacity: 1,
+    },
+    profileShareShot: {
+        width: 1080,
+        height: 1920,
+    },
+    profileSharePoster: {
+        width: 1080,
+        height: 1920,
+    },
+    profileShareOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(4, 13, 33, 0.18)',
+    },
+    profileShareCanvas: {
+        flex: 1,
+        paddingHorizontal: 70,
+        paddingTop: 88,
+        paddingBottom: 80,
+    },
+    profileShareLogoWrap: {
+        width: 210,
+        height: 210,
+        alignSelf: 'center',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 999,
+        overflow: 'hidden',
+        backgroundColor: 'rgba(9, 27, 66, 0.35)',
+        marginBottom: 6,
+    },
+    profileShareLogo: {
+        width: 250,
+        height: 250,
+        opacity: 0.92,
+        transform: [{ scale: 1.22 }],
+    },
+    profileShareHeader: {
+        alignItems: 'center',
+        marginTop: 8,
+        marginBottom: 56,
+    },
+    profileSharePlayerName: {
+        color: '#ffffff',
+        fontSize: 38,
+        lineHeight: 44,
+        fontWeight: '800',
+        textAlign: 'center',
+        marginBottom: 18,
+        textShadowColor: 'rgba(0,0,0,0.45)',
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: 8,
+    },
+    profileShareRankValue: {
+        color: '#ffffff',
+        fontSize: 110,
+        lineHeight: 118,
+        fontWeight: '900',
+        fontStyle: 'italic',
+        textAlign: 'center',
+        textShadowColor: 'rgba(0,0,0,0.5)',
+        textShadowOffset: { width: 0, height: 3 },
+        textShadowRadius: 10,
+    },
+    profileShareRankTitle: {
+        color: '#ffffff',
+        fontSize: 28,
+        lineHeight: 34,
+        fontWeight: '800',
+        textAlign: 'center',
+        letterSpacing: 1,
+        marginTop: 6,
+        textShadowColor: 'rgba(0,0,0,0.45)',
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: 8,
+    },
+    profileShareStatsStack: {
+        flex: 1,
+        justifyContent: 'space-between',
+    },
+    profileShareRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'stretch',
+        gap: 18,
+    },
+    profileShareCardSmall: {
+        flex: 1,
+        minHeight: 170,
+        borderRadius: 26,
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.18)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 16,
+    },
+    profileShareCardWide: {
+        flex: 1,
+        minHeight: 170,
+        borderRadius: 28,
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.18)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 18,
+        paddingVertical: 18,
+    },
+    profileShareCardValue: {
+        color: '#ffffff',
+        fontSize: 38,
+        lineHeight: 42,
+        fontWeight: '900',
+        fontStyle: 'italic',
+        textAlign: 'center',
+        marginTop: 10,
+        textShadowColor: 'rgba(0,0,0,0.35)',
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: 6,
+    },
+    profileShareCardLabel: {
+        color: '#ffffff',
+        fontSize: 15,
+        lineHeight: 18,
+        fontWeight: '700',
+        textAlign: 'center',
+        marginTop: 8,
+        textShadowColor: 'rgba(0,0,0,0.35)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 4,
+    },
+    profileShareCardTitle: {
+        color: '#ffffff',
+        fontSize: 20,
+        lineHeight: 24,
+        fontWeight: '800',
+        textAlign: 'center',
+        marginTop: 8,
+        textShadowColor: 'rgba(0,0,0,0.35)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 4,
+    },
+    profileShareCardWideValue: {
+        color: '#ffffff',
+        fontSize: 40,
+        lineHeight: 46,
+        fontWeight: '900',
+        fontStyle: 'italic',
+        textAlign: 'center',
+        marginTop: 10,
+        textShadowColor: 'rgba(0,0,0,0.35)',
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: 6,
+    },
+    profileShareCardWideLabel: {
+        color: '#ffffff',
+        fontSize: 15,
+        lineHeight: 18,
+        fontWeight: '700',
+        textAlign: 'center',
+        marginTop: 8,
+        textShadowColor: 'rgba(0,0,0,0.35)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 4,
+    },
+    profileShareSplitRow: {
+        width: '100%',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginTop: 8,
+    },
+    profileShareSplitItem: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    profileShareSplitDivider: {
+        width: 1,
+        alignSelf: 'stretch',
+        backgroundColor: 'rgba(255,255,255,0.28)',
+        marginHorizontal: 10,
+    },
+    profileShareCardBottom: {
+        minHeight: 138,
+        borderRadius: 28,
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.18)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 26,
+        paddingVertical: 18,
+    },
+    profileShareCardBottomTitle: {
+        color: '#ffffff',
+        fontSize: 22,
+        lineHeight: 26,
+        fontWeight: '800',
+        textAlign: 'center',
+        marginTop: 8,
+        textShadowColor: 'rgba(0,0,0,0.35)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 4,
+    },
+    profileShareCardBottomValue: {
+        color: '#ffffff',
+        fontSize: 28,
+        lineHeight: 34,
+        fontWeight: '700',
+        textAlign: 'center',
+        marginTop: 10,
+        textShadowColor: 'rgba(0,0,0,0.35)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 4,
     },
     profileSection: {
         gap: spacing.xl,
