@@ -1000,18 +1000,16 @@ export default function ProfileScreen() {
 
     return (
         <View style={styles.container}>
-            {/* Header */}
-            <View style={[styles.header, { paddingTop: Math.max(insets.top, spacing.md) }]}>
-                <View style={styles.headerContent}>
-                    <View style={styles.logoRow}>
-                        <Image
-                            source={require('../../assets/Logos/LogoAplicación.png')}
-                            style={{ width: 46, height: 46 }}
-                            resizeMode="contain"
-                        />
-                    </View>
-
-                    {isGlobalAdmin && !VIEW_TOGGLE_BLOCKED_EMAILS.has(currentUserEmail) && (
+            <ScrollView 
+                contentContainerStyle={[
+                    styles.scrollContent, 
+                    { paddingTop: Math.max(insets.top + spacing.md, spacing.xl) }
+                ]} 
+                showsVerticalScrollIndicator={false}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary[500]} />}
+            >
+                {isGlobalAdmin && !VIEW_TOGGLE_BLOCKED_EMAILS.has(currentUserEmail) && (
+                    <View style={{ alignItems: 'center', marginBottom: spacing.md }}>
                         <TouchableOpacity
                             style={[styles.viewToggle, viewMode === 'user' && styles.viewToggleUser]}
                             onPress={handleToggleMode}
@@ -1025,15 +1023,8 @@ export default function ProfileScreen() {
                                 {viewMode === 'admin' ? 'VISTA USUARIO' : 'VISTA ADMIN'}
                             </Text>
                         </TouchableOpacity>
-                    )}
-                </View>
-            </View>
-
-            <ScrollView 
-                contentContainerStyle={styles.scrollContent} 
-                showsVerticalScrollIndicator={false}
-                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary[500]} />}
-            >
+                    </View>
+                )}
                 {/* Profile Brief */}
                 <View style={styles.profileSection}>
                     <View style={styles.profileMain}>

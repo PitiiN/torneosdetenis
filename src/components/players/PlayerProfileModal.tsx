@@ -4,10 +4,10 @@ import { FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-ico
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
-import { getTournamentPlacements } from '@/services/ranking';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import * as Sharing from 'expo-sharing';
 import ViewShot from 'react-native-view-shot';
+import { DEFAULT_PROFILE_STATS, loadProfileStatsBundle, PlayerProfileStats, ProfileModality } from '@/services/playerProfileStats';
 
 const BACKHAND_FIELD = 'rev\u00E9s';
 
@@ -16,6 +16,7 @@ interface PlayerProfileModalProps {
   playerId: string | null;
   tournamentOrgId?: string | null;
   tournamentLevel?: string | null;
+  tournamentModality?: ProfileModality;
   initialPage?: 'profile' | 'headToHead';
   onClose: () => void;
 }
@@ -29,18 +30,6 @@ interface PlayerProfile {
   dominantHand: string | null;
 }
 
-interface PlayerStats {
-  rank: string;
-  trophies: number;
-  wins: number;
-  winRate: string;
-  totalMatches: number;
-  setsWon: number;
-  setsLost: number;
-  gamesWon: number;
-  gamesLost: number;
-}
-
 interface HeadToHeadStats {
   totalMatches: number;
   currentUserWins: number;
@@ -50,17 +39,7 @@ interface HeadToHeadStats {
   lastMatchWinnerLabel: string;
 }
 
-const DEFAULT_STATS: PlayerStats = {
-  rank: '-',
-  trophies: 0,
-  wins: 0,
-  winRate: '0%',
-  totalMatches: 0,
-  setsWon: 0,
-  setsLost: 0,
-  gamesWon: 0,
-  gamesLost: 0,
-};
+const DEFAULT_STATS: PlayerProfileStats = DEFAULT_PROFILE_STATS;
 
 const DEFAULT_HEAD_TO_HEAD: HeadToHeadStats = {
   totalMatches: 0,
@@ -72,6 +51,7 @@ const DEFAULT_HEAD_TO_HEAD: HeadToHeadStats = {
 };
 
 const HEAD_TO_HEAD_SHARE_BG = require('../../../assets/RRSS/FrenteAFrente.png');
+const PROFILE_SHARE_BG = require('../../../assets/RRSS/PerfilRRSS.png');
 const SWEETSPOT_LOGO = require('../../../assets/LogoSweetSpot512x512.png');
 
 const getScoreText = (scoreValue: any): string => {
@@ -104,6 +84,7 @@ export const PlayerProfileModal = ({
   playerId,
   tournamentOrgId,
   tournamentLevel,
+  tournamentModality = 'singles',
   initialPage = 'profile',
   onClose,
 }: PlayerProfileModalProps) => {
@@ -112,14 +93,16 @@ export const PlayerProfileModal = ({
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [stats, setStats] = useState<PlayerStats>(DEFAULT_STATS);
+  const [stats, setStats] = useState<PlayerProfileStats>(DEFAULT_STATS);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState('Tú');
   const [currentUserAvatarUrl, setCurrentUserAvatarUrl] = useState<string | null>(null);
   const [activePage, setActivePage] = useState<'profile' | 'headToHead'>('profile');
   const [headToHead, setHeadToHead] = useState<HeadToHeadStats>(DEFAULT_HEAD_TO_HEAD);
   const [sharingHeadToHead, setSharingHeadToHead] = useState(false);
+  const [sharingProfile, setSharingProfile] = useState(false);
   const shareCardRef = useRef<any>(null);
+  const profileShareCardRef = useRef<any>(null);
 
   useEffect(() => {
     if (visible && playerId) {
@@ -315,151 +298,21 @@ export const PlayerProfileModal = ({
 
   const calculatePlayerStats = async (pid: string, playerProfile: PlayerProfile) => {
     try {
-      // Get all tournaments for this player from matches (bypasses RLS on registrations)
-      const { data: playerMatchRows, error: pmError } = await supabase
-        .from('matches')
-        .select('tournament_id')
-        .or(`player_a_id.eq.${pid},player_b_id.eq.${pid},player_a2_id.eq.${pid},player_b2_id.eq.${pid}`);
-
-      if (pmError) throw pmError;
-      const tournamentIds = [...new Set((playerMatchRows || []).map((r: any) => r.tournament_id).filter(Boolean))] as string[];
-      if (tournamentIds.length === 0) {
+      if (!tournamentOrgId || !tournamentLevel) {
         setStats(DEFAULT_STATS);
         return;
       }
-
-      // Get tournament data, filtering by org and level if available
-      let query = supabase
-        .from('tournaments')
-        .select('id, name, organization_id, level, status, format, modality, description, max_players, start_date, end_date, set_type')
-        .in('id', tournamentIds)
-        .eq('status', 'finished');
-
-      if (tournamentOrgId) query = query.eq('organization_id', tournamentOrgId);
-      if (tournamentLevel) query = query.eq('level', tournamentLevel);
-
-      const { data: completedTournaments, error: tourError } = await query;
-      if (tourError) throw tourError;
-      if (!completedTournaments || completedTournaments.length === 0) {
-        setStats(DEFAULT_STATS);
-        return;
-      }
-
-      const completedTournamentIds = completedTournaments.map((t: any) => t.id);
-
-      // Load matches for completed tournaments
-      const { data: allMatchesRows, error: matchError } = await supabase
-        .from('matches')
-        .select('*')
-        .in('tournament_id', completedTournamentIds);
-
-      if (matchError) throw matchError;
-
-      // Load registrations for ranking
-      const { data: completedRegistrationsRows, error: regErr2 } = await supabase
-        .from('registrations')
-        .select('player_id, status')
-        .in('tournament_id', completedTournamentIds);
-
-      if (regErr2) throw regErr2;
-
-      let wins = 0;
-      let totalMatches = 0;
-      let setsWon = 0;
-      let setsLost = 0;
-      let gamesWon = 0;
-      let gamesLost = 0;
-      let trophies = 0;
-      const allPlayersPoints: Record<string, number> = {};
-      const rankingPlayerIds = new Set<string>();
-
-      // Calculate match stats for this player
-      (allMatchesRows || []).forEach((match: any) => {
-        const isPlayerA = match.player_a_id === pid || match.player_a2_id === pid;
-        const isPlayerB = match.player_b_id === pid || match.player_b2_id === pid;
-        if (!isPlayerA && !isPlayerB) return;
-        if (match.status !== 'finished') return;
-
-        totalMatches += 1;
-        const winnerId = match.winner_id;
-        const winner2Id = match.winner_2_id;
-        const isWinner = winnerId === pid || winner2Id === pid;
-        if (isWinner) wins += 1;
-
-        const scoreText = getScoreText(match.score);
-        if (scoreText && !/^W\.?O\.?$/i.test(scoreText)) {
-          scoreText.split(/\s*,\s*/).forEach((setScore: string) => {
-            const [aRaw, bRaw] = setScore.split('-');
-            const a = Number((aRaw || '').match(/\d+/)?.[0]);
-            const b = Number((bRaw || '').match(/\d+/)?.[0]);
-            if (!Number.isFinite(a) || !Number.isFinite(b)) return;
-
-            const myGames = isPlayerA ? a : b;
-            const oppGames = isPlayerA ? b : a;
-            gamesWon += myGames;
-            gamesLost += oppGames;
-            if (myGames > oppGames) setsWon += 1;
-            else if (oppGames > myGames) setsLost += 1;
-          });
-        }
+      const bundle = await loadProfileStatsBundle({
+        playerId: pid,
+        context: {
+          org_id: tournamentOrgId,
+          level: tournamentLevel,
+        },
+        modality: tournamentModality,
+        selectedYear: null,
       });
 
-      const winRate = totalMatches > 0 ? Math.round((wins / totalMatches) * 100) : 0;
-
-      // Calculate ranking position
-      const matchesByTour = (allMatchesRows || []).reduce((acc: any, m: any) => {
-        acc[m.tournament_id] = [...(acc[m.tournament_id] || []), m];
-        return acc;
-      }, {});
-
-      completedTournaments.forEach((t: any) => {
-        const placements = getTournamentPlacements(t, matchesByTour[t.id] || []);
-        placements.forEach((p: any) => {
-          if ((p.playerId === pid || p.playerId2 === pid) && String(p.place) === '1') trophies += 1;
-          if (p.playerId) {
-            allPlayersPoints[p.playerId] = (allPlayersPoints[p.playerId] || 0) + (Number(p.points) || 0);
-            rankingPlayerIds.add(p.playerId);
-          }
-          if (p.playerId2) {
-            allPlayersPoints[p.playerId2] = (allPlayersPoints[p.playerId2] || 0) + (Number(p.points) || 0);
-            rankingPlayerIds.add(p.playerId2);
-          }
-        });
-      });
-
-      (completedRegistrationsRows || []).forEach((registration: any) => {
-        const regPlayerId = String(registration?.player_id || '').trim();
-        const regStatus = String(registration?.status || '').toLowerCase();
-        if (!regPlayerId || regStatus === 'cancelled' || regStatus === 'rejected') return;
-        rankingPlayerIds.add(regPlayerId);
-        if (!Object.prototype.hasOwnProperty.call(allPlayersPoints, regPlayerId)) {
-          allPlayersPoints[regPlayerId] = 0;
-        }
-      });
-
-      if (Object.keys(allPlayersPoints).length > 0 && !Object.prototype.hasOwnProperty.call(allPlayersPoints, pid)) {
-        allPlayersPoints[pid] = 0;
-        rankingPlayerIds.add(pid);
-      }
-
-      const userScore = allPlayersPoints[pid] || 0;
-      const playersAhead = Object.values(allPlayersPoints).filter(score => score > userScore).length;
-      const hasCompetitiveData = totalMatches > 0 || userScore > 0;
-      const rank = Object.prototype.hasOwnProperty.call(allPlayersPoints, pid) && hasCompetitiveData
-        ? `#${playersAhead + 1}`
-        : '-';
-
-      setStats({
-        rank,
-        trophies,
-        wins,
-        winRate: `${winRate}%`,
-        totalMatches,
-        setsWon,
-        setsLost,
-        gamesWon,
-        gamesLost,
-      });
+      setStats(bundle.stats || DEFAULT_STATS);
     } catch (error) {
       console.error('Error calculating player stats:', error);
       setStats(DEFAULT_STATS);
@@ -503,6 +356,36 @@ export const PlayerProfileModal = ({
     }
   };
 
+  const handleShareProfile = async () => {
+    if (!profile || sharingProfile) return;
+
+    setSharingProfile(true);
+    try {
+      const sharingAvailable = await Sharing.isAvailableAsync();
+      if (!sharingAvailable) {
+        Alert.alert('No disponible', 'Tu dispositivo no permite compartir imágenes desde esta vista.');
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      const uri = await profileShareCardRef.current?.capture?.();
+      if (!uri) {
+        throw new Error('No se pudo generar la imagen');
+      }
+
+      await Sharing.shareAsync(uri, {
+        mimeType: 'image/png',
+        dialogTitle: 'Compartir perfil',
+        UTI: 'public.png',
+      });
+    } catch (error) {
+      console.error('Error sharing profile image:', error);
+      Alert.alert('Error', 'No se pudo generar la imagen del perfil.');
+    } finally {
+      setSharingProfile(false);
+    }
+  };
+
   const rivalShareName = profile?.name || 'Rival';
   const currentShareName = currentUserName || 'Tú';
   const rivalWinsLabel = `${rivalShareName.toUpperCase()} GANÓ`;
@@ -512,6 +395,9 @@ export const PlayerProfileModal = ({
     : headToHead.lastMatchWinnerLabel === 'Tú'
     ? currentWinsLabel
     : `${String(headToHead.lastMatchWinnerLabel || 'Sin ganador').toUpperCase()} GANÓ`;
+  const profileMostFacedLabel = stats.mostFacedRivalMatches > 0
+    ? `${stats.mostFacedRivalName} · ${stats.mostFacedRivalMatches} partidos`
+    : (stats.mostFacedRivalName || '-');
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -623,7 +509,17 @@ export const PlayerProfileModal = ({
                 </View>
               ) : (
               <View style={styles.statsSection}>
-                <Text style={styles.statsTitle}>Estadísticas</Text>
+                <View style={styles.headToHeadHeaderRow}>
+                  <Text style={styles.statsTitle}>Estadísticas</Text>
+                  <TouchableOpacity
+                    style={[styles.shareButton, sharingProfile && styles.shareButtonDisabled]}
+                    onPress={handleShareProfile}
+                    disabled={sharingProfile}
+                  >
+                    <Ionicons name="share-social-outline" size={16} color="#fff" />
+                    <Text style={styles.shareButtonText}>{sharingProfile ? 'Generando...' : 'Compartir'}</Text>
+                  </TouchableOpacity>
+                </View>
 
                 <View style={styles.statsGrid}>
                   {/* Ranking */}
@@ -790,6 +686,98 @@ export const PlayerProfileModal = ({
                     </View>
                     <Text style={styles.shareLastScore}>{headToHead.lastMatchScore}</Text>
                     <Text style={styles.shareLastWinner}>{lastWinnerLabel}</Text>
+                  </View>
+                </View>
+              </ImageBackground>
+            </ViewShot>
+          </View>
+        ) : null}
+
+        {profile ? (
+          <View style={styles.hiddenShareCanvas} pointerEvents="none">
+            <ViewShot
+              ref={profileShareCardRef}
+              style={styles.shareShot}
+              options={{
+                format: 'png',
+                quality: 1,
+                result: 'tmpfile',
+                width: 1080,
+                height: 1920,
+              }}
+            >
+              <ImageBackground source={PROFILE_SHARE_BG} resizeMode="cover" style={styles.profileSharePoster}>
+                <View style={styles.profileShareOverlay} />
+                <View style={styles.profileShareInner}>
+                  <Image source={SWEETSPOT_LOGO} style={styles.profileShareLogo} resizeMode="contain" />
+                  <Text style={styles.profileShareRankValue}>{stats.rank}</Text>
+                  <Text style={styles.profileShareRankTitle}>POSICIÓN RANKING</Text>
+
+                  <View style={styles.profileShareRow}>
+                    <View style={styles.profileShareSmallCard}>
+                      <Text style={styles.profileShareSmallValue}>{stats.trophies}</Text>
+                      <Text style={styles.profileShareSmallLabel}>TROFEOS</Text>
+                    </View>
+                    <View style={styles.profileShareSmallCard}>
+                      <Text style={styles.profileShareSmallValue}>{stats.wins}</Text>
+                      <Text style={styles.profileShareSmallLabel}>VICTORIAS</Text>
+                    </View>
+                    <View style={styles.profileShareSmallCard}>
+                      <Text style={styles.profileShareSmallValue}>{stats.winRate}</Text>
+                      <Text style={styles.profileShareSmallLabel}>WIN RATE</Text>
+                    </View>
+                    <View style={styles.profileShareSmallCard}>
+                      <Text style={styles.profileShareSmallValue}>{stats.totalMatches}</Text>
+                      <Text style={styles.profileShareSmallLabel}>PARTIDOS</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.profileShareRow}>
+                    <View style={styles.profileShareWideCard}>
+                      <Text style={styles.profileShareWideTitle}>TOTALES SETS</Text>
+                      <Text style={styles.profileShareWideValue}>{stats.setsWon} | {stats.setsLost}</Text>
+                      <Text style={styles.profileShareWideLabel}>GANADOS | PERDIDOS</Text>
+                    </View>
+                    <View style={styles.profileShareWideCard}>
+                      <Text style={styles.profileShareWideTitle}>TOTALES GAMES</Text>
+                      <Text style={styles.profileShareWideValue}>{stats.gamesWon} | {stats.gamesLost}</Text>
+                      <Text style={styles.profileShareWideLabel}>GANADOS | PERDIDOS</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.profileShareRow}>
+                    <View style={styles.profileShareSmallCard}>
+                      <Text style={styles.profileShareSmallValue}>{stats.debutYear}</Text>
+                      <Text style={styles.profileShareSmallLabel}>AÑO DEBUT</Text>
+                    </View>
+                    <View style={styles.profileShareSmallCard}>
+                      <Text style={styles.profileShareSmallValue}>{stats.finalsPlayed}</Text>
+                      <Text style={styles.profileShareSmallLabel}>FINALES JUGADAS</Text>
+                    </View>
+                    <View style={styles.profileShareSmallCard}>
+                      <Text style={styles.profileShareSmallValue}>{stats.currentStreak}</Text>
+                      <Text style={styles.profileShareSmallLabel}>RACHA ACTUAL</Text>
+                    </View>
+                    <View style={styles.profileShareSmallCard}>
+                      <Text style={styles.profileShareSmallValue}>{stats.bestStreak}</Text>
+                      <Text style={styles.profileShareSmallLabel}>MEJOR RACHA</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.profileShareRow}>
+                    <View style={styles.profileShareWideCard}>
+                      <Text style={styles.profileShareWideTitle}>MEJOR RANKING</Text>
+                      <Text style={styles.profileShareWideValue}>{stats.bestRanking}</Text>
+                    </View>
+                    <View style={styles.profileShareWideCard}>
+                      <Text style={styles.profileShareWideTitle}>PEOR RANKING</Text>
+                      <Text style={styles.profileShareWideValue}>{stats.worstRanking}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.profileShareBottomCard}>
+                    <Text style={styles.profileShareBottomTitle}>RIVAL MÁS ENFRENTADO</Text>
+                    <Text style={styles.profileShareBottomValue}>{profileMostFacedLabel}</Text>
                   </View>
                 </View>
               </ImageBackground>
@@ -1324,5 +1312,132 @@ const getStyles = (colors: any) => StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     textTransform: 'uppercase',
+  },
+  profileSharePoster: {
+    width: 1080,
+    height: 1920,
+    backgroundColor: '#b43a1f',
+  },
+  profileShareOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(18, 26, 24, 0.06)',
+  },
+  profileShareInner: {
+    flex: 1,
+    paddingHorizontal: 84,
+    paddingTop: 86,
+    paddingBottom: 140,
+    alignItems: 'center',
+  },
+  profileShareLogo: {
+    width: 116,
+    height: 116,
+    marginBottom: 18,
+  },
+  profileShareRankValue: {
+    color: '#fff7e8',
+    fontSize: 126,
+    lineHeight: 132,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.28)',
+    textShadowOffset: { width: 0, height: 6 },
+    textShadowRadius: 12,
+  },
+  profileShareRankTitle: {
+    color: '#123f37',
+    fontSize: 54,
+    lineHeight: 56,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginBottom: 108,
+  },
+  profileShareRow: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 32,
+  },
+  profileShareSmallCard: {
+    width: 212,
+    minHeight: 208,
+    borderRadius: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 18,
+  },
+  profileShareSmallValue: {
+    color: '#113c35',
+    fontSize: 52,
+    lineHeight: 56,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  profileShareSmallLabel: {
+    color: '#113c35',
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  profileShareWideCard: {
+    width: 432,
+    minHeight: 208,
+    borderRadius: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+  },
+  profileShareWideTitle: {
+    color: '#113c35',
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  profileShareWideValue: {
+    color: '#113c35',
+    fontSize: 50,
+    lineHeight: 54,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  profileShareWideLabel: {
+    color: '#113c35',
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginTop: 6,
+  },
+  profileShareBottomCard: {
+    width: '100%',
+    minHeight: 136,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    paddingHorizontal: 96,
+    paddingVertical: 18,
+    marginTop: 6,
+  },
+  profileShareBottomTitle: {
+    color: '#fff7e8',
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: '900',
+  },
+  profileShareBottomValue: {
+    color: '#fff7e8',
+    fontSize: 34,
+    lineHeight: 40,
+    fontWeight: '800',
+    marginTop: 10,
   },
 });

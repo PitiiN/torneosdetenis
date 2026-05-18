@@ -41,7 +41,7 @@ const ORGANIZATIONS_UPDATED_AT_KEY = 'organizations_last_updated_at';
 export default function InicioScreen() {
     const insets = useSafeAreaInsets();
     const router = useRouter();
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
     const styles = getStyles(colors);
     const { width: screenWidth } = useWindowDimensions();
     const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -298,14 +298,13 @@ export default function InicioScreen() {
         <View style={styles.container}>
             {/* Top Bar */}
             <View style={[styles.header, { paddingTop: Math.max(insets.top, spacing.md) }]}>
-                <View style={styles.headerLeft}>
+                <View style={styles.headerCentered}>
                     <Image
-                        source={require('../../assets/Logos/LogoAplicación.png')}
-                        style={{ width: 46, height: 46 }}
+                        source={isDark ? require('../../assets/Logos/LogoLetrasHorizontalBlanco.png') : require('../../assets/Logos/LogoLetrasHorizontal.png')}
+                        style={{ width: 150, height: 48 }}
                         resizeMode="contain"
                     />
                 </View>
-                <View style={{ width: 46, height: 46 }} />
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -457,6 +456,11 @@ const getStyles = (colors: any) => StyleSheet.create({
         backgroundColor: colors.background,
         borderBottomWidth: 1,
         borderBottomColor: colors.border,
+    },
+    headerCentered: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     headerLeft: {
         flexDirection: 'row',
