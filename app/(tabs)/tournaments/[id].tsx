@@ -885,7 +885,8 @@ export default function TournamentDetailScreen() {
                 scheduledAt: m.scheduled_at,
                 court: m.court,
                 canSubmitScore: Boolean(canSubmitScore),
-                onSubmitScore: () => openScoreSubmissionModal(m)
+                onSubmitScore: () => openScoreSubmissionModal(m),
+                round: m.round
             });
         });
 
@@ -1484,7 +1485,12 @@ export default function TournamentDetailScreen() {
                         )
                     ) : (
                         <View style={styles.bracketContainer}>
-                            <SingleEliminationBracket rounds={rounds} onPlayerPress={handlePlayerPress} />
+                            <SingleEliminationBracket 
+                                rounds={rounds} 
+                                onPlayerPress={handlePlayerPress} 
+                                matchHeight={IS_DOUBLES ? 180 : 130}
+                                roundGap={24}
+                            />
                         </View>
                     )
                 ) : (

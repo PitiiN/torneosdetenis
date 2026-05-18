@@ -20,9 +20,10 @@ interface MatchCardProps {
   onPlayerPress?: (playerId: string) => void;
   canSubmitScore?: boolean;
   onSubmitScore?: () => void;
+  width?: number;
 }
 
-export const MatchCard = ({ player1, player2, status, scheduledAt, court, onPlayerPress, canSubmitScore, onSubmitScore }: MatchCardProps) => {
+export const MatchCard = ({ player1, player2, status, scheduledAt, court, onPlayerPress, canSubmitScore, onSubmitScore, width }: MatchCardProps) => {
   const { colors } = useTheme();
   const styles = getStyles(colors);
 
@@ -76,7 +77,7 @@ export const MatchCard = ({ player1, player2, status, scheduledAt, court, onPlay
   };
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, width !== undefined && { width }]}>
       <View style={[styles.playerRow, player1.isWinner && styles.winnerRow]}>
         <TouchableOpacity
           style={styles.playerInfo}

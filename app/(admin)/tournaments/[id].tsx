@@ -102,6 +102,8 @@ export default function AdminTournamentDetailScreen() {
     const [isFinalsCountModalVisible, setIsFinalsCountModalVisible] = useState(false);
     const [finalsCountInput, setFinalsCountInput] = useState('4');
     const [sharingBracket, setSharingBracket] = useState(false);
+    const [isShareSliceModalVisible, setIsShareSliceModalVisible] = useState(false);
+    const [activeShareSliceIndex, setActiveShareSliceIndex] = useState(0);
     const tournamentDescriptionRef = useRef<string | null | undefined>(null);
     const bracketShareRef = useRef<any>(null);
     const playerSearchBottomPadding = insets.bottom + spacing['3xl'];
@@ -4113,6 +4115,7 @@ export default function AdminTournamentDetailScreen() {
                 status: match.status === 'finished' ? 'Finalizado' : (match.status === 'live' ? 'En Vivo' : 'Pendiente'),
                 scheduledAt: match.scheduled_at,
                 court: match.court,
+                round: match.round,
             });
         });
 
@@ -4120,6 +4123,68 @@ export default function AdminTournamentDetailScreen() {
             .sort((a, b) => Number(a) - Number(b))
             .map((key) => roundsMap[Number(key)]);
     }, [shareableKnockoutMatches]);
+
+    const round1Matches = shareBracketRounds[0]?.matches || [];
+    const numRound1Matches = round1Matches.length;
+    const totalSlices = numRound1Matches > 8 ? numRound1Matches / 8 : 1;
+
+    const slicedShareBracketRounds = useMemo(() => {
+        if (numRound1Matches <= 8 || activeShareSliceIndex >= totalSlices) {
+            return shareBracketRounds;
+        }
+
+        const matchesPerSliceInRound1 = 8;
+        let lastCountGte1Index = 0;
+
+        // Map each round, either slicing it (if count >= 1) or selecting the direct successor match (if count < 1)
+        const sliced = shareBracketRounds.map((round, index) => {
+            const count = matchesPerSliceInRound1 / Math.pow(2, index);
+            const start = activeShareSliceIndex * count;
+            
+            if (count >= 1) {
+                lastCountGte1Index = index;
+                const slicedMatches = round.matches.slice(start, start + count);
+                return {
+                    ...round,
+                    originalIdx: index,
+                    matches: slicedMatches
+                };
+            } else {
+                // Filter out the 3rd place match if it's the last round
+                const matchesToUse = round.matches.filter(m => 
+                    !m.round?.toLowerCase().includes('3er') && 
+                    !m.round?.toLowerCase().includes('3º') && 
+                    !m.round?.toLowerCase().includes('tercer')
+                );
+                
+                const matchIndex = Math.floor(activeShareSliceIndex * count);
+                const match = matchesToUse[matchIndex];
+                
+                return {
+                    ...round,
+                    originalIdx: lastCountGte1Index, // Align horizontally with the last multi-match round
+                    matches: match ? [match] : []
+                };
+            }
+        }).filter(round => round.matches.length > 0);
+
+        return sliced;
+    }, [shareBracketRounds, activeShareSliceIndex, numRound1Matches, totalSlices]);
+
+    const currentSliceName = useMemo(() => {
+        if (numRound1Matches <= 8) return '';
+        const half = totalSlices / 2;
+        const isMirror = activeShareSliceIndex >= half;
+        const subIndex = isMirror ? activeShareSliceIndex - half + 1 : activeShareSliceIndex + 1;
+        const side = isMirror ? 'Parte Baja' : 'Parte Superior';
+        
+        if (totalSlices === 2) {
+            return side;
+        } else {
+            return `${side} - Cuadrante ${subIndex}`;
+        }
+    }, [activeShareSliceIndex, numRound1Matches, totalSlices]);
+
     const shareFinalsSummary = useMemo(
         () => ({
             groupALeader: getStandingsForGroup(roundRobinGroupNames[0] || 'A')?.[0]?.name || `Cupo ${roundRobinGroupNames[0] || 'A'}1`,
@@ -4168,6 +4233,12 @@ export default function AdminTournamentDetailScreen() {
     const handleShareTournamentBracket = async () => {
         if (!canShareBracket || sharingBracket) return;
 
+        // If the tournament bracket is too large, let the user select which section to share
+        if (numRound1Matches > 8) {
+            setIsShareSliceModalVisible(true);
+            return;
+        }
+
         setSharingBracket(true);
         try {
             const sharingAvailable = await Sharing.isAvailableAsync();
@@ -4188,6 +4259,36 @@ export default function AdminTournamentDetailScreen() {
         } catch (error) {
             console.error('Error sharing bracket:', error);
             Alert.alert('Error', 'No se pudo generar la imagen del cuadro.');
+        } finally {
+            setSharingBracket(false);
+        }
+    };
+
+    const handleExecuteShareForSlice = async (sliceIndex: number) => {
+        setIsShareSliceModalVisible(false);
+        setSharingBracket(true);
+        setActiveShareSliceIndex(sliceIndex);
+
+        try {
+            const sharingAvailable = await Sharing.isAvailableAsync();
+            if (!sharingAvailable) {
+                Alert.alert('No disponible', 'Tu dispositivo no permite compartir imágenes desde esta vista.');
+                return;
+            }
+
+            // Wait 250ms for React to fully re-render the hidden ViewShot with the active slice and isMirror prop
+            await new Promise((resolve) => setTimeout(resolve, 250));
+            const uri = await bracketShareRef.current?.capture?.();
+            if (!uri) throw new Error('No se pudo generar la imagen');
+
+            await Sharing.shareAsync(uri, {
+                mimeType: 'image/png',
+                dialogTitle: 'Compartir sección del cuadro',
+                UTI: 'public.png',
+            });
+        } catch (error) {
+            console.error('Error sharing bracket section:', error);
+            Alert.alert('Error', 'No se pudo generar la imagen de esta sección.');
         } finally {
             setSharingBracket(false);
         }
@@ -4948,7 +5049,13 @@ export default function AdminTournamentDetailScreen() {
                                 <Image source={APP_SHARE_LOGO} style={styles.bracketShareLogo} resizeMode="contain" />
                                 <Text style={styles.bracketShareTitle}>{tournament.name}</Text>
                                 <Text style={styles.bracketShareSubtitle}>
-                                    {activeTab.startsWith('group:') ? `Grupo ${currentGroupName}` : activeTab === 'consolacion' ? 'Repechaje' : activeTab === 'finales' ? 'Finales' : 'Cuadro Principal'}
+                                    {activeTab.startsWith('group:') 
+                                        ? `Grupo ${currentGroupName}` 
+                                        : activeTab === 'consolacion' 
+                                            ? 'Repechaje' 
+                                            : activeTab === 'finales' 
+                                                ? 'Finales' 
+                                                : `Cuadro Principal${currentSliceName ? ` - ${currentSliceName}` : ''}`}
                                 </Text>
 
                                 <View style={styles.bracketShareContent}>
@@ -4965,7 +5072,13 @@ export default function AdminTournamentDetailScreen() {
                                             />
                                         )
                                     ) : (
-                                        <SingleEliminationBracket rounds={shareBracketRounds} />
+                                        <SingleEliminationBracket 
+                                            rounds={slicedShareBracketRounds} 
+                                            matchHeight={MATCH_HEIGHT}
+                                            roundGap={ROUND_GAP}
+                                            isShareImage={true}
+                                            isMirror={activeShareSliceIndex >= totalSlices / 2 && numRound1Matches > 8}
+                                        />
                                     )}
                                 </View>
                             </View>
@@ -4974,7 +5087,49 @@ export default function AdminTournamentDetailScreen() {
                 </View>
             ) : null}
 
-            <AdminQuickActionsBar active="tournaments" organizationId={tournament.organization_id} />
+            {/* Share Slice Selector Modal */}
+            <Modal visible={isShareSliceModalVisible} transparent animationType="slide">
+                <View style={styles.shareModalOverlay}>
+                    <View style={styles.shareModalContent}>
+                        <Text style={styles.shareModalTitle}>Compartir Cuadro de Torneo</Text>
+                        <Text style={styles.shareModalSubtitle}>
+                            El cuadro supera el tamaño recomendado. Selecciona la sección que deseas exportar:
+                        </Text>
+                        
+                        <ScrollView style={styles.sliceListContainer}>
+                            {Array.from({ length: totalSlices }).map((_, idx) => {
+                                const half = totalSlices / 2;
+                                const isMirror = idx >= half;
+                                const subIndex = isMirror ? idx - half + 1 : idx + 1;
+                                const side = isMirror ? 'Parte Baja' : 'Parte Superior';
+                                const sliceLabel = totalSlices === 2 ? side : `${side} - Cuadrante ${subIndex}`;
+                                
+                                return (
+                                    <TouchableOpacity 
+                                        key={idx} 
+                                        style={styles.sliceOptionButton}
+                                        onPress={() => handleExecuteShareForSlice(idx)}
+                                    >
+                                        <Ionicons 
+                                            name={isMirror ? "arrow-back-circle-outline" : "arrow-forward-circle-outline"} 
+                                            size={24} 
+                                            color={colors.primary[500]} 
+                                        />
+                                        <Text style={styles.sliceOptionText}>{sliceLabel}</Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </ScrollView>
+
+                        <TouchableOpacity 
+                            style={styles.shareCancelButton}
+                            onPress={() => setIsShareSliceModalVisible(false)}
+                        >
+                            <Text style={styles.shareCancelButtonText}>Cancelar</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
 
             {/* Edit Match Score Modal */}
             <Modal visible={isEditModalVisible} transparent animationType="fade">
@@ -5856,6 +6011,70 @@ const getStyles = (colors: any) => {
             borderColor: 'rgba(255,255,255,0.12)',
             overflow: 'hidden',
             paddingVertical: spacing.lg,
+        },
+        shareModalOverlay: {
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.6)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: spacing.xl,
+        },
+        shareModalContent: {
+            width: '100%',
+            maxWidth: 440,
+            backgroundColor: colors.surface,
+            borderRadius: borderRadius.xl,
+            padding: spacing.xl,
+            gap: spacing.md,
+        },
+        shareModalTitle: {
+            fontSize: 18,
+            fontWeight: '800',
+            color: colors.text,
+            textAlign: 'center',
+            marginBottom: spacing.xs,
+        },
+        shareModalSubtitle: {
+            fontSize: 14,
+            color: colors.textSecondary,
+            textAlign: 'center',
+            marginBottom: spacing.md,
+            lineHeight: 20,
+        },
+        sliceListContainer: {
+            maxHeight: 300,
+            width: '100%',
+        },
+        sliceOptionButton: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            padding: spacing.md,
+            backgroundColor: colors.background,
+            borderRadius: borderRadius.md,
+            marginBottom: spacing.sm,
+            gap: spacing.sm,
+            borderWidth: 1,
+            borderColor: colors.border,
+        },
+        sliceOptionText: {
+            color: colors.text,
+            fontSize: 14,
+            fontWeight: '600',
+        },
+        shareCancelButton: {
+            height: 48,
+            backgroundColor: colors.background,
+            borderWidth: 1,
+            borderColor: colors.border,
+            borderRadius: borderRadius.md,
+            justifyContent: 'center',
+            alignItems: 'center',
+            marginTop: spacing.xs,
+        },
+        shareCancelButtonText: {
+            color: colors.text,
+            fontWeight: '600',
+            textAlign: 'center',
         },
     });
 }
