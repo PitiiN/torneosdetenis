@@ -49,6 +49,13 @@ export const MatchCard = ({ player1, player2, status, scheduledAt, court, onPlay
     );
   };
 
+  const parseSetScore = (val: string | number | undefined | null): number => {
+    if (val === undefined || val === null) return 0;
+    const str = String(val).trim();
+    const match = str.match(/^(\d+)/);
+    return match ? parseInt(match[1], 10) : 0;
+  };
+
   const renderScores = (player: Player, otherPlayer: Player) => {
     if (!player.scores || player.scores.length === 0) {
       return (
@@ -58,13 +65,32 @@ export const MatchCard = ({ player1, player2, status, scheduledAt, court, onPlay
       );
     }
 
-    return player.scores.map((s, idx) => (
-      <View key={idx} style={[styles.scoreBox, player.isWinner && styles.scoreBoxWinner]}>
-        <Text style={[styles.scoreText, player.isWinner && styles.scoreTextWinner]}>
-          {s ?? '-'}
-        </Text>
-      </View>
-    ));
+    return player.scores.map((s, idx) => {
+      const currentVal = parseSetScore(s);
+      const otherVal = parseSetScore(otherPlayer.scores?.[idx]);
+
+      const isSetWinner = currentVal > otherVal;
+      const isSetLoser = currentVal < otherVal;
+
+      let boxStyle: any = styles.scoreBox;
+      let textStyle: any = styles.scoreText;
+
+      if (isSetWinner) {
+        boxStyle = [styles.scoreBox, styles.scoreBoxWinner];
+        textStyle = [styles.scoreText, styles.scoreTextWinner];
+      } else if (isSetLoser) {
+        boxStyle = [styles.scoreBox, styles.scoreBoxLoser];
+        textStyle = [styles.scoreText, styles.scoreTextLoser];
+      }
+
+      return (
+        <View key={idx} style={boxStyle}>
+          <Text style={textStyle}>
+            {s ?? '-'}
+          </Text>
+        </View>
+      );
+    });
   };
 
   const isTappable = (player: Player) =>
@@ -224,6 +250,9 @@ const getStyles = (colors: any) => StyleSheet.create({
   scoreBoxWinner: {
     backgroundColor: colors.primary[500],
   },
+  scoreBoxLoser: {
+    backgroundColor: colors.surfaceSecondary,
+  },
   scoreText: {
     color: colors.textSecondary,
     fontSize: 12,
@@ -231,6 +260,10 @@ const getStyles = (colors: any) => StyleSheet.create({
   },
   scoreTextWinner: {
     color: '#fff',
+    fontWeight: '800',
+  },
+  scoreTextLoser: {
+    color: colors.textTertiary,
   },
   statusBadge: {
     backgroundColor: colors.primary[500] + '26', // 26 is ~15% opacity
