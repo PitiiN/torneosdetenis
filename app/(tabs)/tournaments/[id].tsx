@@ -138,7 +138,7 @@ export default function TournamentDetailScreen() {
             // Fetch Tournament
             const { data: tourData, error: tourErr } = await supabase
                 .from('tournaments')
-                .select('id, name, status, format, level, set_type, surface, start_date, address, comuna, registration_fee, max_players, description, modality, organization_id, parent_tournament_id, registration_close_at, registration_close_time, is_tournament_master')
+                .select('id, name, status, format, level, set_type, surface, start_date, end_date, address, comuna, registration_fee, max_players, description, modality, organization_id, parent_tournament_id, registration_close_at, registration_close_time, is_tournament_master')
                 .eq('id', tournamentId)
                 .single();
             
@@ -1404,6 +1404,11 @@ export default function TournamentDetailScreen() {
                     <Text style={styles.infoSubtitle}>
                         Superficie: {tournament.surface} | Inicio: {new Date(tournament.start_date).toLocaleDateString()}
                     </Text>
+                    {tournament.end_date && (
+                        <Text style={styles.infoSubtitle}>
+                            Término: {new Date(tournament.end_date).toLocaleDateString()}
+                        </Text>
+                    )}
                     {(tournament.address || tournament.comuna) && (
                         <View style={[styles.infoRow, { marginTop: 4 }]}>
                             <Ionicons name="location-outline" size={16} color={colors.textSecondary} />
