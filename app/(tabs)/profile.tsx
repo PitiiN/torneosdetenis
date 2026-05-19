@@ -370,7 +370,7 @@ export default function ProfileScreen() {
     // Super Admin States
     const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
     const [currentUserEmail, setCurrentUserEmail] = useState('');
-    const [viewMode, setViewMode] = useState(adminModeService.getMode());
+
     const [allOrganizations, setAllOrganizations] = useState<any[]>([]);
     const [orgSearch, setOrgSearch] = useState('');
     const [showOrgSearchModal, setShowOrgSearchModal] = useState(false);
@@ -431,12 +431,12 @@ export default function ProfileScreen() {
         }
     }, [selectedContext, user?.id, modality, selectedYear]);
 
-    useEffect(() => {
-        const unsubscribe = adminModeService.subscribe((m) => {
-            setViewMode(m);
-        });
-        return unsubscribe;
-    }, []);
+    // Removed viewMode subscription
+
+
+
+
+
 
     useEffect(() => {
         if (user?.id && user.notifications_enabled) {
@@ -460,10 +460,10 @@ export default function ProfileScreen() {
         fetchAchievements();
     }, [user?.id]);
 
-    const handleToggleMode = () => {
-        const next = viewMode === 'admin' ? 'user' : 'admin';
-        adminModeService.setMode(next);
-    };
+    // Removed handleToggleMode
+
+
+
 
     const loadProfileData = async () => {
         setLoading(true);
@@ -1044,23 +1044,23 @@ export default function ProfileScreen() {
                 showsVerticalScrollIndicator={false}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary[500]} />}
             >
-                {isGlobalAdmin && !VIEW_TOGGLE_BLOCKED_EMAILS.has(currentUserEmail) && (
-                    <View style={{ alignItems: 'center', marginBottom: spacing.md }}>
-                        <TouchableOpacity
-                            style={[styles.viewToggle, viewMode === 'user' && styles.viewToggleUser]}
-                            onPress={handleToggleMode}
-                        >
-                            <Ionicons
-                                name={viewMode === 'admin' ? 'eye-outline' : 'settings-outline'}
-                                size={14}
-                                color="#fff"
-                            />
-                            <Text style={styles.viewToggleText}>
-                                {viewMode === 'admin' ? 'VISTA USUARIO' : 'VISTA ADMIN'}
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-                )}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
                 {/* Profile Brief */}
                 <View style={styles.profileSection}>
                     <View style={styles.profileMain}>
@@ -1102,7 +1102,7 @@ export default function ProfileScreen() {
                                 </View>
                             </View>
                             <View>
-                                {(isGlobalAdmin && viewMode === 'admin') ? (
+                                {isGlobalAdmin ? (
                                     <TextInput
                                         style={styles.userNameInput}
                                         value={user.name}
@@ -1170,7 +1170,7 @@ export default function ProfileScreen() {
                         {(userContexts.length > 0 || isGlobalAdmin) && (
                             <TouchableOpacity
                                 style={styles.contextSelector}
-                                onPress={() => (isGlobalAdmin && viewMode === 'admin') ? setShowOrgSearchModal(true) : setShowContextModal(true)}
+                                onPress={() => isGlobalAdmin ? setShowOrgSearchModal(true) : setShowContextModal(true)}
                             >
                                 <View style={styles.contextInfo}>
                                     <Ionicons name="filter-outline" size={16} color={colors.primary[500]} />
