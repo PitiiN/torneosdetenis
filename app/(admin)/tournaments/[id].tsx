@@ -12,7 +12,6 @@ import { TennisSpinner } from '@/components/TennisSpinner';
 import { resolveStorageAssetUrl } from '@/services/storage';
 import { AdminQuickActionsBar } from '@/components/navigation/AdminQuickActionsBar';
 import { PlayerProfileModal } from '@/components/players/PlayerProfileModal';
-import { useAuth } from '@/hooks/useAuth';
 import { getTournamentPlacements } from '@/services/ranking';
 import { formatDateDDMMYYYY, formatTime24, parseTimeRelaxed } from '@/utils/datetime';
 import { normalizeTournamentStatus } from '@/services/tournamentStatus';
@@ -843,12 +842,12 @@ export default function AdminTournamentDetailScreen() {
     const getNextMatchLink = (match: any, sourceMatches: any[]) => {
         if (String(match.round || '').startsWith('Grupo ')) return null;
         const isRoundRobinFinal = String(match.round || '').includes('RR');
-        const isConsolation = /^Consolaci/i.test(String(match.round || ''));
+        const isConsolation = /^(Consolaci|Repechaje)/i.test(String(match.round || ''));
         const bracketMatches = sourceMatches
             .filter(candidate => {
                 if (isRoundRobinFinal) return String(candidate.round || '').includes('RR');
-                if (isConsolation) return /^Consolaci/i.test(String(candidate.round || ''));
-                return !/^Consolaci/i.test(String(candidate.round || '')) && !String(candidate.round || '').includes('RR');
+                if (isConsolation) return /^(Consolaci|Repechaje)/i.test(String(candidate.round || ''));
+                return !/^(Consolaci|Repechaje)/i.test(String(candidate.round || '')) && !String(candidate.round || '').includes('RR');
             })
             .sort((a, b) => {
                 if ((a.round_number || 0) !== (b.round_number || 0)) return (a.round_number || 0) - (b.round_number || 0);
@@ -932,7 +931,7 @@ export default function AdminTournamentDetailScreen() {
     const getConsolationLinkForLoser = (match: any, sourceMatches: any[], formatOverride?: string | null) => {
         if (!hasConsolationBracket(formatOverride ?? tournament?.format)) return null;
         if (String(match.round || '').startsWith('Grupo ')) return null;
-        if (/^Consolaci/i.test(String(match.round || ''))) return null;
+        if (/^(Consolaci|Repechaje)/i.test(String(match.round || ''))) return null;
         if (String(match.round || '') === 'Semifinales RR') {
             const placementMatch = sourceMatches.find(
                 (candidate) => String(candidate.round || '') === '3er y 4to Puesto RR'
@@ -957,7 +956,7 @@ export default function AdminTournamentDetailScreen() {
         const firstMainRoundMatches = sourceMatches
             .filter((candidate) =>
                 !String(candidate.round || '').startsWith('Grupo ') &&
-                !/^Consolaci/i.test(String(candidate.round || '')) &&
+                !/^(Consolaci|Repechaje)/i.test(String(candidate.round || '')) &&
                 !String(candidate.round || '').includes('RR') &&
                 !/3er|4to|5to|6to|puesto/i.test(String(candidate.round || '')) &&
                 Number(candidate.round_number || 0) === 1
@@ -966,7 +965,7 @@ export default function AdminTournamentDetailScreen() {
 
         const consolationFirstRoundMatches = sourceMatches
             .filter((candidate) =>
-                /^Consolaci/i.test(String(candidate.round || '')) &&
+                /^(Consolaci|Repechaje)/i.test(String(candidate.round || '')) &&
                 !/3er|4to|5to|6to|puesto/i.test(String(candidate.round || '')) &&
                 Number(candidate.round_number || 0) === 1
             )
@@ -1825,7 +1824,7 @@ export default function AdminTournamentDetailScreen() {
         const firstRoundMatches = matches
             .filter((match) =>
                 !String(match.round || '').startsWith('Grupo ') &&
-                !/^Consolaci/i.test(String(match.round || '')) &&
+                !/^(Consolaci|Repechaje)/i.test(String(match.round || '')) &&
                 !String(match.round || '').includes('RR') &&
                 Number(match.round_number || 0) === 1
             )
@@ -2124,7 +2123,7 @@ export default function AdminTournamentDetailScreen() {
             : matches
                 .filter((match) =>
                     !String(match.round || '').startsWith('Grupo ') &&
-                    !/^Consolaci/i.test(String(match.round || '')) &&
+                    !/^(Consolaci|Repechaje)/i.test(String(match.round || '')) &&
                     !String(match.round || '').includes('RR') &&
                     Number(match.round_number || 0) === 1
                 ).length * 2;
@@ -2441,7 +2440,7 @@ export default function AdminTournamentDetailScreen() {
         const firstRoundMatches = matches
             .filter((match) =>
                 !String(match.round || '').startsWith('Grupo ') &&
-                !/^Consolaci/i.test(String(match.round || '')) &&
+                !/^(Consolaci|Repechaje)/i.test(String(match.round || '')) &&
                 !String(match.round || '').includes('RR') &&
                 Number(match.round_number || 0) === 1
             )
@@ -4206,7 +4205,7 @@ export default function AdminTournamentDetailScreen() {
     const shareableKnockoutMatches = useMemo(
         () =>
             matches.filter((match) => {
-                const isConsolationMatch = /^Consolaci/i.test(String(match.round || ''));
+                const isConsolationMatch = /^(Consolaci|Repechaje)/i.test(String(match.round || ''));
                 if (activeTab === 'consolacion') return isConsolationMatch;
                 return !isConsolationMatch;
             }),
@@ -4994,7 +4993,7 @@ export default function AdminTournamentDetailScreen() {
                         <View style={{ flexDirection: 'row', gap: spacing['3xl'], paddingHorizontal: spacing.xl }}>
                             {(() => {
                                 const filteredMatches = matches.filter(m => {
-                                    const isConsolationMatch = /^Consolaci/i.test(String(m.round || ''));
+                                    const isConsolationMatch = /^(Consolaci|Repechaje)/i.test(String(m.round || ''));
                                     if (activeTab === 'consolacion') return isConsolationMatch;
                                     return !isConsolationMatch;
                                 });
@@ -6343,6 +6342,10 @@ const getStyles = (colors: any) => {
         },
         alertConfirmButtonText: {
             color: '#fff',
+            fontSize: 14,
+            fontWeight: '700',
+        },
+        alertActionButtonText: {
             fontSize: 14,
             fontWeight: '700',
         },
