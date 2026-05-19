@@ -5198,10 +5198,122 @@ export default function AdminTournamentDetailScreen() {
                                                 matches={shareFinalsMatches}
                                             />
                                         ) : (
-                                            <RoundRobinTable
-                                                groupName={`Grupo ${currentGroupName}`}
-                                                standings={currentGroupStandings}
-                                            />
+                                            <View style={{ flex: 1, padding: spacing.xl, gap: spacing.lg }}>
+                                                {/* Tabla de Posiciones */}
+                                                <RoundRobinTable
+                                                    groupName={`Grupo ${currentGroupName}`}
+                                                    standings={currentGroupStandings.map((s: any) => ({
+                                                        name: s.p1Name || s.name || 'Por definir',
+                                                        pj: s.played ?? 0,
+                                                        pg: s.won ?? 0,
+                                                        pp: s.lost ?? 0,
+                                                        diff: s.diff ?? 0,
+                                                        pts: s.points ?? 0,
+                                                        playerId: s.p1Id || s.playerId || null,
+                                                        isActive: s.isActive ?? false
+                                                    }))}
+                                                />
+                                                
+                                                {/* Sección de Partidos */}
+                                                <View style={{ flex: 1, marginTop: spacing.md }}>
+                                                    <View style={{ 
+                                                        flexDirection: 'row', 
+                                                        alignItems: 'center', 
+                                                        justifyContent: 'center', 
+                                                        gap: spacing.sm, 
+                                                        marginBottom: spacing.md,
+                                                        borderBottomWidth: 1,
+                                                        borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+                                                        paddingBottom: spacing.sm
+                                                    }}>
+                                                        <Ionicons name="tennisball-outline" size={20} color={colors.primary[500]} />
+                                                        <Text style={{ fontSize: 20, fontWeight: '900', color: '#fff', letterSpacing: 0.5 }}>
+                                                            PARTIDOS DEL GRUPO
+                                                        </Text>
+                                                    </View>
+
+                                                    <View style={{ 
+                                                        flexDirection: 'row', 
+                                                        flexWrap: 'wrap', 
+                                                        gap: spacing.md, 
+                                                        justifyContent: 'space-between' 
+                                                    }}>
+                                                        {(roundRobinMatchesByGroup[currentGroupName] || []).map((m: any) => {
+                                                            const scoreText = getScoreText(m.score);
+                                                            const isFinished = !!scoreText;
+                                                            return (
+                                                                <View 
+                                                                    key={m.id} 
+                                                                    style={{ 
+                                                                        width: '48%', 
+                                                                        backgroundColor: 'rgba(255, 255, 255, 0.04)', 
+                                                                        borderRadius: borderRadius.xl, 
+                                                                        borderWidth: 1, 
+                                                                        borderColor: 'rgba(255, 255, 255, 0.08)', 
+                                                                        paddingHorizontal: spacing.md,
+                                                                        paddingVertical: spacing.lg,
+                                                                        flexDirection: 'row', 
+                                                                        alignItems: 'center', 
+                                                                        justifyContent: 'space-between',
+                                                                        marginBottom: spacing.xs
+                                                                    }}
+                                                                >
+                                                                    {/* Jugador A */}
+                                                                    <View style={{ flex: 1, alignItems: 'center', gap: spacing.xs }}>
+                                                                        {renderPlayerAvatar(getDisplayName(m, 1), getDisplayAvatar(m, 1), 40)}
+                                                                        <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff', textAlign: 'center', marginTop: 2 }} numberOfLines={1}>
+                                                                            {getDisplayName(m, 1)}
+                                                                        </Text>
+                                                                        {IS_DOUBLES && (
+                                                                            <>
+                                                                                {renderPlayerAvatar(getDisplayName(m, 2), getDisplayAvatar(m, 2), 40)}
+                                                                                <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff', textAlign: 'center', marginTop: 1 }} numberOfLines={1}>
+                                                                                    {getDisplayName(m, 2)}
+                                                                                </Text>
+                                                                            </>
+                                                                        )}
+                                                                    </View>
+
+                                                                    {/* VS */}
+                                                                    <View style={{ alignItems: 'center', paddingHorizontal: spacing.xs, minWidth: 60 }}>
+                                                                        <Text style={{ fontSize: 12, fontWeight: '900', color: colors.primary[500], fontStyle: 'italic', marginBottom: 4 }}>
+                                                                            VS
+                                                                        </Text>
+                                                                        <View style={{ 
+                                                                            backgroundColor: isFinished ? colors.success + '20' : 'rgba(255, 255, 255, 0.08)', 
+                                                                            paddingHorizontal: 6, 
+                                                                            paddingVertical: 3, 
+                                                                            borderRadius: borderRadius.sm,
+                                                                            borderWidth: isFinished ? 1 : 0,
+                                                                            borderColor: colors.success + '40'
+                                                                        }}>
+                                                                            <Text style={{ fontSize: 10, fontWeight: '900', color: isFinished ? colors.success : '#aaa', textAlign: 'center' }}>
+                                                                                {scoreText || 'PRÓXIMO'}
+                                                                            </Text>
+                                                                        </View>
+                                                                    </View>
+
+                                                                    {/* Jugador B */}
+                                                                    <View style={{ flex: 1, alignItems: 'center', gap: spacing.xs }}>
+                                                                        {renderPlayerAvatar(getDisplayName(m, 3), getDisplayAvatar(m, 3), 40)}
+                                                                        <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff', textAlign: 'center', marginTop: 2 }} numberOfLines={1}>
+                                                                            {getDisplayName(m, 3)}
+                                                                        </Text>
+                                                                        {IS_DOUBLES && (
+                                                                            <>
+                                                                                {renderPlayerAvatar(getDisplayName(m, 4), getDisplayAvatar(m, 4), 40)}
+                                                                                <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff', textAlign: 'center', marginTop: 1 }} numberOfLines={1}>
+                                                                                    {getDisplayName(m, 4)}
+                                                                                </Text>
+                                                                            </>
+                                                                        )}
+                                                                    </View>
+                                                                </View>
+                                                            );
+                                                        })}
+                                                    </View>
+                                                </View>
+                                            </View>
                                         )
                                     ) : (
                                         <SingleEliminationBracket 
