@@ -41,6 +41,14 @@ const normalizeMoneyAmount = (value: unknown, fallback = 0) => {
   return Number.isFinite(parsedFallback) && parsedFallback > 0 ? parsedFallback : 0;
 };
 
+const formatMoneyString = (val: string | number) => {
+  if (val === undefined || val === null) return '0';
+  const num = typeof val === 'number' ? val : parseInt(val.replace(/\D/g, ''), 10);
+  if (isNaN(num)) return '0';
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+};
+
+
 const requestStatusLabel = (status: RegistrationRequest['status']) => {
   if (status === 'approved') return 'APROBADA';
   if (status === 'rejected') return 'RECHAZADA';
@@ -287,7 +295,7 @@ export default function TournamentFinanceDetail() {
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.headerTextContainer}>
-          <Text style={styles.title} numberOfLines={1}>{tournament?.name}</Text>
+          <Text style={styles.title} numberOfLines={2}>{tournament?.name}</Text>
           <Text style={styles.subtitle}>Finanzas y Solicitudes</Text>
         </View>
         <View style={{ width: 40 }} />
@@ -298,11 +306,11 @@ export default function TournamentFinanceDetail() {
           <View style={styles.summaryGrid}>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Ingresos Reales</Text>
-              <Text style={[styles.summaryValue, { color: colors.success }]}>${totals.income}</Text>
+              <Text style={[styles.summaryValue, { color: colors.success }]}>${formatMoneyString(totals.income)}</Text>
             </View>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Deuda Pendiente</Text>
-              <Text style={[styles.summaryValue, { color: colors.error }]}>${totals.debt}</Text>
+              <Text style={[styles.summaryValue, { color: colors.error }]}>${formatMoneyString(totals.debt)}</Text>
             </View>
           </View>
 
@@ -461,10 +469,11 @@ export default function TournamentFinanceDetail() {
                       <Text style={styles.currencySymbol}>$</Text>
                       <TextInput
                         style={styles.feeInput}
-                        value={String(registration.fee_amount || 0)}
+                        value={formatMoneyString(registration.fee_amount || 0)}
                         keyboardType="numeric"
                         onChangeText={(value) => {
-                          const feeAmount = Number(value) || 0;
+                          const rawValue = value.replace(/\D/g, '');
+                          const feeAmount = parseInt(rawValue, 10) || 0;
                           setRegistrations((current) =>
                             current.map((item) => item.id === registration.id ? { ...item, fee_amount: feeAmount } : item)
                           );
