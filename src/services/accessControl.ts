@@ -18,12 +18,14 @@ export type UserAccessContext = {
 const PROFILE_SELECT_WITH_SUPER = 'id, role, org_id, is_super_admin';
 const PROFILE_SELECT_FALLBACK = 'id, role, org_id';
 const DEFAULT_PROFILE_NAME = 'Jugador';
+const SUPER_ADMIN_EMAIL_ALLOWLIST = new Set(['javier.aravena25@gmail.com']);
 
 const normalizeBoolean = (value: unknown) => value === true;
+const normalizeEmail = (value: unknown) => String(value || '').trim().toLowerCase();
 
 const inferSuperAdminFromLegacyProfile = (profile: AccessProfile | null) => {
     if (!profile) return false;
-    return profile.role === 'super_admin' || (profile.role === 'admin' && !profile.org_id);
+    return profile.role === 'super_admin';
 };
 
 const buildCandidateProfileName = (session: Session) => {
@@ -110,9 +112,14 @@ export async function getCurrentUserAccessContext(): Promise<UserAccessContext |
     }
     if (!profile) return null;
 
+    const sessionEmail = normalizeEmail(session.user.email);
+    const isAllowedSuperAdminEmail = SUPER_ADMIN_EMAIL_ALLOWLIST.has(sessionEmail);
     const hasExplicitSuperAdmin = normalizeBoolean(profile.is_super_admin);
-    const isSuperAdmin = hasExplicitSuperAdmin || inferSuperAdminFromLegacyProfile(profile);
-    const isAdmin = isSuperAdmin || profile.role === 'admin' || profile.role === 'organizer';
+    const isSuperAdmin = isAllowedSuperAdminEmail && (hasExplicitSuperAdmin || inferSuperAdminFromLegacyProfile(profile));
+    const hasOrganizationScopedAdminRole =
+        (profile.role === 'admin' || profile.role === 'organizer') &&
+        Boolean(profile.org_id);
+    const isAdmin = isSuperAdmin || hasOrganizationScopedAdminRole;
 
     return {
         session,

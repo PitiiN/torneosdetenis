@@ -763,7 +763,80 @@ export default function TournamentDetailScreen() {
             : { w1: match.player_b_id, w2: match.player_b2_id, side: 'B' };
     };
 
+    const isResolvedPlayerLabel = (value: any) => {
+        const normalized = String(value || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .trim()
+            .toUpperCase();
+
+        return normalized !== '' &&
+               normalized !== 'POR DEFINIR' &&
+               normalized !== 'TBD' &&
+               normalized !== 'BYE';
+    };
+
+    const hasAssignedCompetitor = (primaryId: any, secondaryId: any, primaryName: any, secondaryName: any) => {
+        const ids = [primaryId, secondaryId]
+            .map(value => String(value || '').trim())
+            .filter(Boolean);
+
+        if (ids.some(id => id.toUpperCase() !== 'BYE')) {
+            return true;
+        }
+
+        return [primaryName, secondaryName].some(isResolvedPlayerLabel);
+    };
+
+    const hasOpponentAssignedForCurrentUser = (match: any) => {
+        if (!currentUserId) return false;
+
+        const isPlayerOnSideA = match.player_a_id === currentUserId || match.player_a2_id === currentUserId;
+        const isPlayerOnSideB = match.player_b_id === currentUserId || match.player_b2_id === currentUserId;
+
+        if (isPlayerOnSideA) {
+            return hasAssignedCompetitor(
+                match.player_b_id,
+                match.player_b2_id,
+                match.player_b?.name,
+                match.player_b2?.name
+            );
+        }
+
+        if (isPlayerOnSideB) {
+            return hasAssignedCompetitor(
+                match.player_a_id,
+                match.player_a2_id,
+                match.player_a?.name,
+                match.player_a2?.name
+            );
+        }
+
+        return false;
+    };
+
+    const canPlayerSubmitScore = (match: any) => {
+        const isPlayerInMatch = currentUserId && (
+            match.player_a_id === currentUserId ||
+            match.player_a2_id === currentUserId ||
+            match.player_b_id === currentUserId ||
+            match.player_b2_id === currentUserId
+        );
+
+        return Boolean(
+            tournament?.players_can_submit_scores &&
+            match.status !== 'finished' &&
+            isRegistered &&
+            isPlayerInMatch &&
+            hasOpponentAssignedForCurrentUser(match)
+        );
+    };
+
     const openScoreSubmissionModal = (match: any) => {
+        if (!hasOpponentAssignedForCurrentUser(match)) {
+            Alert.alert('Aviso', 'No puedes ingresar un resultado hasta que exista un rival asignado en este enfrentamiento.');
+            return;
+        }
         setSelectedScoreMatch(match);
         const setsToShow = getSetsToShow(tournament?.set_type);
         const initialSets = Array.from({ length: setsToShow }, () => ({ s1: '', s2: '' }));
@@ -782,6 +855,10 @@ export default function TournamentDetailScreen() {
 
     const saveMatchScore = async () => {
         if (!selectedScoreMatch) return;
+        if (!hasOpponentAssignedForCurrentUser(selectedScoreMatch)) {
+            Alert.alert('Aviso', 'No puedes ingresar un resultado hasta que exista un rival asignado en este enfrentamiento.');
+            return;
+        }
         setSavingScore(true);
 
         const finalScore = setScores
@@ -854,16 +931,7 @@ export default function TournamentDetailScreen() {
             const scoreStr = m.score || '';
             const setScores = scoreStr.split(/\s*,\s*/).map((s: string) => s.split('-'));
             
-            const isPlayerInMatch = currentUserId && (
-                m.player_a_id === currentUserId ||
-                m.player_a2_id === currentUserId ||
-                m.player_b_id === currentUserId ||
-                m.player_b2_id === currentUserId
-            );
-            const canSubmitScore = tournament?.players_can_submit_scores && 
-                                   m.status !== 'finished' && 
-                                   isRegistered && 
-                                   isPlayerInMatch;
+            const canSubmitScore = canPlayerSubmitScore(m);
 
             roundsMap[roundNum].matches.push({
                 id: m.id,
@@ -1416,16 +1484,7 @@ export default function TournamentDetailScreen() {
                                         {`Proximos Partidos - Grupo ${currentGroupName}`}
                                     </Text>
                                     {(groupMatchesByName[currentGroupName] || []).map(match => {
-                                        const isPlayerInGroupMatch = currentUserId && (
-                                            match.player_a_id === currentUserId ||
-                                            match.player_a2_id === currentUserId ||
-                                            match.player_b_id === currentUserId ||
-                                            match.player_b2_id === currentUserId
-                                        );
-                                        const canSubmitScoreForGroupMatch = tournament?.players_can_submit_scores && 
-                                                                           match.status !== 'finished' && 
-                                                                           isRegistered && 
-                                                                           isPlayerInGroupMatch;
+                                        const canSubmitScoreForGroupMatch = canPlayerSubmitScore(match);
 
                                         return (
                                             <View key={match.id} style={{ gap: 4 }}>

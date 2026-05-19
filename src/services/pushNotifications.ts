@@ -237,7 +237,7 @@ export const notifyRankingChangesOnTournamentFinished = async (input: {
 
   const { data: tournament, error: tournamentError } = await supabase
     .from('tournaments')
-    .select('id, name, organization_id, level, modality, status')
+    .select('id, name, organization_id, level, modality, status, is_tournament_master')
     .eq('id', tournamentId)
     .maybeSingle();
 
@@ -248,9 +248,10 @@ export const notifyRankingChangesOnTournamentFinished = async (input: {
 
   const { data: contextTournamentsRows, error: contextTournamentsError } = await supabase
     .from('tournaments')
-    .select('id, name, organization_id, level, modality, status, format, description, start_date, end_date, created_at')
+    .select('id, name, organization_id, level, modality, status, format, description, start_date, end_date, created_at, is_tournament_master')
     .eq('organization_id', tournament.organization_id)
     .eq('level', tournament.level)
+    .eq('is_tournament_master', false)
     .in('status', ['completed', 'finalized', 'finished']);
 
   if (contextTournamentsError) {

@@ -326,6 +326,8 @@ const buildRanking = (
   const ranking: Record<string, RankingAccumulator> = {};
 
   tournaments.forEach((tournament) => {
+    if (tournament?.is_tournament_master === true) return;
+
     const tournamentMatches = matchesByTournament[tournament.id] || [];
     const placements = getTournamentPlacements(tournament, tournamentMatches);
 
@@ -360,6 +362,10 @@ const buildRanking = (
         const playerId = String(registration?.player_id || '').trim();
         if (playerId) ensureRankingAccumulator(ranking, playerId);
       });
+  });
+
+  Object.values(ranking).forEach((entry) => {
+    entry.points = Math.max(0, Number(entry.points) || 0);
   });
 
   const getWinRate = (entry: RankingAccumulator) =>
@@ -515,9 +521,10 @@ export const loadProfileStatsBundle = async ({
 }) => {
   const { data: scopedTournaments, error: scopedTournamentsError } = await supabase
     .from('tournaments')
-    .select('id, name, status, format, description, modality, level, organization_id, start_date, end_date, created_at')
+    .select('id, name, status, format, description, modality, level, organization_id, start_date, end_date, created_at, is_tournament_master')
     .eq('organization_id', context.org_id)
-    .eq('level', context.level);
+    .eq('level', context.level)
+    .eq('is_tournament_master', false);
 
   if (scopedTournamentsError) throw scopedTournamentsError;
 
@@ -721,7 +728,7 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
 
   const { data: playerTournamentsRows, error: playerTournamentsError } = await supabase
     .from('tournaments')
-    .select('id, name, status, format, description, modality, level, organization_id, start_date, end_date, created_at')
+    .select('id, name, status, format, description, modality, level, organization_id, start_date, end_date, created_at, is_tournament_master')
     .in('id', playerTournamentIds);
 
   if (playerTournamentsError) throw playerTournamentsError;
@@ -808,9 +815,10 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
   if (contextKeys.length && orgIds.length && levels.length) {
     const { data: rankingPoolTournamentsRows } = await supabase
       .from('tournaments')
-      .select('id, name, status, format, description, modality, level, organization_id, start_date, end_date, created_at')
+      .select('id, name, status, format, description, modality, level, organization_id, start_date, end_date, created_at, is_tournament_master')
       .in('organization_id', orgIds)
       .in('level', levels)
+      .eq('is_tournament_master', false)
       .in('status', Array.from(COMPLETED_STATUSES));
 
     rankingPoolTournaments = (rankingPoolTournamentsRows || []).filter((tournament: any) =>

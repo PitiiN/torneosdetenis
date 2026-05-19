@@ -24,6 +24,7 @@ type MasterTournament = {
   name: string;
   status: string;
   start_date: string | null;
+  end_date: string | null;
   registration_close_at: string | null;
   registration_close_time: string | null;
   address: string | null;
@@ -159,6 +160,13 @@ export default function TournamentMasterDetailScreen() {
   const [selectedProofMimeType, setSelectedProofMimeType] = useState<string | null>(null);
   const [isProofModalVisible, setIsProofModalVisible] = useState(false);
   const [isTransferModalVisible, setIsTransferModalVisible] = useState(false);
+  const [customAlert, setCustomAlert] = useState<{ title: string; message: string } | null>(null);
+
+  const Alert = {
+    alert: (title: string, message: string) => {
+      setCustomAlert({ title, message });
+    }
+  };
 
   const loadMasterData = useCallback(async () => {
     if (!masterTournamentId) return;
@@ -167,7 +175,7 @@ export default function TournamentMasterDetailScreen() {
     try {
       const { data: masterData, error: masterError } = await supabase
         .from('tournaments')
-        .select('id, organization_id, name, status, start_date, registration_close_at, registration_close_time, address, comuna, surface, is_tournament_master, poster_url, transfer_info')
+        .select('id, organization_id, name, status, start_date, end_date, registration_close_at, registration_close_time, address, comuna, surface, is_tournament_master, poster_url, transfer_info')
         .eq('id', masterTournamentId)
         .single();
 
@@ -345,7 +353,7 @@ export default function TournamentMasterDetailScreen() {
         tournamentName: selectedChampionship.name,
       });
 
-      Alert.alert('Solicitud enviada', 'Tu comprobante fue enviado al admin. Quedaste pendiente de revision.');
+      Alert.alert('Solicitud enviada', 'Tu comprobante fue enviado al admin. Quedaste pendiente de revisión.');
       Keyboard.dismiss();
       closeProofModal();
       await loadMasterData();
@@ -481,6 +489,11 @@ export default function TournamentMasterDetailScreen() {
               ? `Inicio: ${new Date(masterTournament.start_date).toLocaleDateString('es-ES')}`
               : 'Inicio por confirmar'}
           </Text>
+          {masterTournament.end_date && (
+            <Text style={styles.masterInfoText}>
+              Término: {new Date(masterTournament.end_date).toLocaleDateString('es-ES')}
+            </Text>
+          )}
           <Text style={styles.masterInfoText}>
             Cierre inscripciones: {formatRegistrationDeadline(masterTournament.registration_close_at, masterTournament.registration_close_time)}
           </Text>
@@ -611,7 +624,7 @@ export default function TournamentMasterDetailScreen() {
         {championships.length === 0 && (
           <View style={styles.emptyState}>
             <Ionicons name="tennisball-outline" size={44} color={colors.textTertiary} />
-            <Text style={styles.emptyText}>Este torneo aun no tiene campeonatos configurados.</Text>
+            <Text style={styles.emptyText}>Aún no hay competencias creadas.</Text>
           </View>
         )}
       </ScrollView>
@@ -685,6 +698,26 @@ export default function TournamentMasterDetailScreen() {
             >
               <Ionicons name="copy-outline" size={18} color="#fff" />
               <Text style={styles.transferCopyButtonText}>Copiar datos</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      {/* Reusable Custom Alert Modal */}
+      <Modal
+        visible={!!customAlert}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setCustomAlert(null)}
+      >
+        <View style={styles.alertBackdrop}>
+          <View style={styles.alertCard}>
+            <Text style={styles.alertTitle}>{customAlert?.title}</Text>
+            <Text style={styles.alertMessage}>{customAlert?.message}</Text>
+            <TouchableOpacity
+              style={styles.alertButton}
+              onPress={() => setCustomAlert(null)}
+            >
+              <Text style={styles.alertButtonText}>Aceptar</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -992,5 +1025,54 @@ const getStyles = (colors: any) => StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '800',
+  },
+  alertBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  alertCard: {
+    width: '100%',
+    maxWidth: 320,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  alertTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: colors.text,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  alertMessage: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: spacing.xl,
+  },
+  alertButton: {
+    backgroundColor: colors.primary[500],
+    paddingVertical: 12,
+    paddingHorizontal: spacing.xl,
+    borderRadius: borderRadius.lg,
+    width: '100%',
+    alignItems: 'center',
+  },
+  alertButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

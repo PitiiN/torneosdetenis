@@ -30,7 +30,7 @@ export default function TabsLayout() {
             resolvedOrgId = await SecureStore.getItemAsync('selected_org_id');
         }
         if (!resolvedOrgId) {
-            resolvedOrgId = access.profile.org_id || (await SecureStore.getItemAsync('selected_org_id'));
+            resolvedOrgId = access.profile.org_id || null;
         }
         setAdminOrganizationId(resolvedOrgId);
     }, []);

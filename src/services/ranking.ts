@@ -420,6 +420,8 @@ export const buildRankingRows = (
   };
 
   tournaments.forEach((tournament) => {
+    if (tournament?.is_tournament_master === true) return;
+
     const tournamentMatches = matchesByTournament[tournament.id] || [];
     const placements = getTournamentPlacements(tournament, tournamentMatches);
 
@@ -471,6 +473,10 @@ export const buildRankingRows = (
     const playerStats = ensureStats(playerId);
     playerStats.manualPoints += Number(manualPoints) || 0;
     playerStats.points += Number(manualPoints) || 0;
+  });
+
+  Object.values(stats).forEach((row) => {
+    row.points = Math.max(0, Number(row.points) || 0);
   });
 
   const getWinRate = (row: RankingAccumulator) =>

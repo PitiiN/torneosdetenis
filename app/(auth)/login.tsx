@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ImageBackground, KeyboardAvoidingView, Platform, Alert, ScrollView, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, ScrollView, Keyboard, TouchableWithoutFeedback, Image } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { supabase } from '@/services/supabase';
 import { colors, spacing, borderRadius, typography } from '@/theme';
@@ -52,12 +52,7 @@ export default function LoginScreen() {
     return (
         <View style={styles.container}>
             <StatusBar style="light" />
-            <ImageBackground 
-                source={{ uri: 'https://images.unsplash.com/photo-1595435066311-665cd94b6139?q=80&w=2000&auto=format&fit=crop' }} 
-                style={styles.bgImage}
-                blurRadius={2}
-            >
-                <View style={styles.overlay}>
+            <View style={styles.overlay}>
                     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
                         <KeyboardAvoidingView 
                             behavior={Platform.OS === 'ios' ? 'padding' : 'position'}
@@ -73,10 +68,11 @@ export default function LoginScreen() {
                                 showsVerticalScrollIndicator={false}
                             >
                                 <View style={styles.header}>
-                                    <View style={styles.logoContainer}>
-                                        <Ionicons name="tennisball" size={60} color={colors.primary[500]} />
-                                    </View>
-                                    <Text style={styles.title}>SweetSpot</Text>
+                                    <Image 
+                                        source={require('../../assets/Logos/LogoLetrasHorizontalBlanco.png')}
+                                        style={styles.logo}
+                                        resizeMode="contain"
+                                    />
                                     <Text style={styles.subtitle}>Tu próximo torneo comienza aquí</Text>
                                 </View>
 
@@ -147,8 +143,7 @@ export default function LoginScreen() {
                             </ScrollView>
                         </KeyboardAvoidingView>
                     </TouchableWithoutFeedback>
-                </View>
-            </ImageBackground>
+            </View>
         </View>
     );
 }
@@ -161,6 +156,11 @@ const styles = StyleSheet.create({
     bgImage: {
         flex: 1,
         width: '100%',
+    },
+    logo: {
+        width: 220,
+        height: 165,
+        marginBottom: spacing.xs,
     },
     overlay: {
         flex: 1,

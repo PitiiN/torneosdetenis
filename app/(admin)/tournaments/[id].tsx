@@ -64,6 +64,28 @@ export default function AdminTournamentDetailScreen() {
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('main');
 
+    const [customAlert, setCustomAlert] = useState<{
+        visible: boolean;
+        title: string;
+        message: string;
+        buttons?: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'destructive' | 'default' }>;
+    } | null>(null);
+
+    const Alert = {
+        alert: (
+            title: string,
+            message: string,
+            buttons?: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'destructive' | 'default' }>
+        ) => {
+            setCustomAlert({
+                visible: true,
+                title,
+                message,
+                buttons,
+            });
+        }
+    };
+
     // Score Edit Modal
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
     const [selectedMatch, setSelectedMatch] = useState<any>(null);
@@ -852,10 +874,82 @@ export default function AdminTournamentDetailScreen() {
         return { nextMatch, nextSlotField, nextSlotField2 };
     };
 
+    const getFeederMatchesForSelectedTarget = (targetMatch: any, sourceMatches: any[]) => {
+        if (!targetMatch) return [];
+
+        const targetRound = String(targetMatch.round || '');
+        const isRoundRobinStage = targetRound.includes('RR') && !targetRound.startsWith('Grupo ');
+        const normalizedMatches = [...sourceMatches].sort((a, b) => {
+            if ((a.round_number || 0) !== (b.round_number || 0)) return (a.round_number || 0) - (b.round_number || 0);
+            return (a.match_order || 0) - (b.match_order || 0);
+        });
+
+        if (targetRound === '3er y 4to Puesto RR') {
+            return normalizedMatches.filter((candidate) => String(candidate.round || '') === 'Semifinales RR');
+        }
+
+        if (!isRoundRobinStage) return [];
+
+        const previousRound = Number(targetMatch.round_number || 0) - 1;
+        if (previousRound < 1) return [];
+
+        const previousRoundMatches = normalizedMatches.filter((candidate) =>
+            String(candidate.round || '').includes('RR') &&
+            !/3er|4to|5to|6to|puesto/i.test(String(candidate.round || '')) &&
+            Number(candidate.round_number || 0) === previousRound
+        );
+
+        if (!previousRoundMatches.length) return [];
+
+        const sameRoundTargets = normalizedMatches.filter((candidate) =>
+            String(candidate.round || '').includes('RR') &&
+            !/3er|4to|5to|6to|puesto/i.test(String(candidate.round || '')) &&
+            Number(candidate.round_number || 0) === Number(targetMatch.round_number || 0)
+        );
+        const targetIndex = sameRoundTargets.findIndex((candidate) => candidate.id === targetMatch.id);
+        if (targetIndex === -1) return [];
+
+        const feederStartIndex = targetIndex * 2;
+        return previousRoundMatches.slice(feederStartIndex, feederStartIndex + 2);
+    };
+
+    const canReuseAssignedPlayerForSelectedTarget = (profileId: string) => {
+        if (!UUID_PATTERN.test(profileId) || !selectedSlot) return false;
+
+        const targetMatch = matches.find((match) => match.id === selectedSlot.matchId);
+        if (!targetMatch) return false;
+
+        const feederMatches = getFeederMatchesForSelectedTarget(targetMatch, matches);
+        if (!feederMatches.length) return false;
+
+        return feederMatches.some((match) =>
+            [match.player_a_id, match.player_a2_id, match.player_b_id, match.player_b2_id]
+                .map((value) => String(value || '').trim())
+                .includes(profileId)
+        );
+    };
+
     const getConsolationLinkForLoser = (match: any, sourceMatches: any[], formatOverride?: string | null) => {
         if (!hasConsolationBracket(formatOverride ?? tournament?.format)) return null;
         if (String(match.round || '').startsWith('Grupo ')) return null;
         if (/^Consolaci/i.test(String(match.round || ''))) return null;
+        if (String(match.round || '') === 'Semifinales RR') {
+            const placementMatch = sourceMatches.find(
+                (candidate) => String(candidate.round || '') === '3er y 4to Puesto RR'
+            );
+            if (!placementMatch) return null;
+
+            const semiFinals = sourceMatches
+                .filter((candidate) => String(candidate.round || '') === 'Semifinales RR')
+                .sort((a, b) => (a.match_order || 0) - (b.match_order || 0));
+
+            const currentIndex = semiFinals.findIndex((candidate) => candidate.id === match.id);
+            if (currentIndex === -1) return null;
+
+            const nextSlotField = currentIndex % 2 === 0 ? 'player_a_id' : 'player_b_id';
+            const nextSlotField2 = currentIndex % 2 === 0 ? 'player_a2_id' : 'player_b2_id';
+            return { nextMatch: placementMatch, nextSlotField, nextSlotField2 };
+        }
         if (String(match.round || '').includes('RR')) return null;
         if (/3er|4to|5to|6to|puesto/i.test(String(match.round || ''))) return null;
         if (Number(match.round_number || 0) !== 1) return null;
@@ -1084,7 +1178,6 @@ export default function AdminTournamentDetailScreen() {
     }
 
     async function repairFinishedMatchesProgression(allMatches: any[], formatOverride?: string | null) {
-        if (isRoundRobinFormat(formatOverride ?? tournament?.format)) return false;
         if (!allMatches.length) return false;
 
         const finishedMatches = [...allMatches]
@@ -1193,6 +1286,33 @@ export default function AdminTournamentDetailScreen() {
 
             const isABye = [nameA, nameA2].some(isByeValue);
             const isBBye = [nameB, nameB2].some(isByeValue);
+            const isDoubleBye = isABye && isBBye;
+
+            if (isDoubleBye) {
+                const updatePayload: any = {
+                    score: 'W.O.',
+                    status: 'finished',
+                    winner_id: null,
+                };
+                if (IS_DOUBLES) {
+                    updatePayload.winner_2_id = null;
+                }
+
+                const { error } = await supabase
+                    .from('matches')
+                    .update(updatePayload)
+                    .eq('id', m.id);
+
+                if (!error) {
+                    const updatedCurrentMatch = { ...m, ...updatePayload };
+                    workingMatches = workingMatches.map((candidateMatch) =>
+                        candidateMatch.id === m.id ? updatedCurrentMatch : candidateMatch
+                    );
+                    resolvedAnyBye = true;
+                    await propagateWinnerToNextMatch(updatedCurrentMatch, null, null, workingMatches, 'A');
+                }
+                continue;
+            }
 
             if (isABye === isBBye) continue;
 
@@ -1368,8 +1488,8 @@ export default function AdminTournamentDetailScreen() {
         Alert.alert(
             nextValue ? 'Habilitar resultados' : 'Deshabilitar resultados',
             nextValue
-                ? 'Los jugadores inscritos podran ingresar sus propios resultados en los partidos donde participan.'
-                : 'Los jugadores ya no podran ingresar resultados desde su vista.',
+                ? 'Los jugadores inscritos podrán ingresar sus propios resultados en los partidos donde participan.'
+                : 'Los jugadores ya no podrán ingresar resultados desde su vista.',
             [
                 { text: 'Cancelar', style: 'cancel' },
                 {
@@ -2513,6 +2633,8 @@ export default function AdminTournamentDetailScreen() {
         const maxSeedable = registeredEntries.length;
         const normalizedSeedCount = Math.max(0, Math.min(Math.floor(requestedSeedCount || 0), maxSeedable));
         const seededRegisteredEntries = registeredEntries.slice(0, normalizedSeedCount);
+        const seedSlotTargets = roundRobinSlots.slice(0, normalizedSeedCount);
+        const nonSeededSlots = roundRobinSlots.filter((_slot, index) => index >= normalizedSeedCount);
         const remainingEntries = shuffleArray([
             ...registeredEntries.slice(normalizedSeedCount),
             ...manualEntries,
@@ -2521,12 +2643,17 @@ export default function AdminTournamentDetailScreen() {
                 IS_DOUBLES
             )
         ]).slice(0, Math.max(0, totalGroupSlots - seededRegisteredEntries.length));
-        const randomizedEntries = [...seededRegisteredEntries, ...remainingEntries].slice(0, totalGroupSlots);
-        const assignmentsByGroup = roundRobinSlots.reduce((acc: Record<string, Record<number, any>>, slot, slotIndex) => {
-            acc[slot.groupName] = acc[slot.groupName] || {};
-            acc[slot.groupName][slot.slotIndex] = randomizedEntries[slotIndex];
-            return acc;
-        }, {});
+        const assignmentsByGroup = {} as Record<string, Record<number, any>>;
+
+        seedSlotTargets.forEach((slot, slotIndex) => {
+            assignmentsByGroup[slot.groupName] = assignmentsByGroup[slot.groupName] || {};
+            assignmentsByGroup[slot.groupName][slot.slotIndex] = seededRegisteredEntries[slotIndex];
+        });
+
+        nonSeededSlots.forEach((slot, slotIndex) => {
+            assignmentsByGroup[slot.groupName] = assignmentsByGroup[slot.groupName] || {};
+            assignmentsByGroup[slot.groupName][slot.slotIndex] = remainingEntries[slotIndex];
+        });
 
         const rrSlots: Record<string, Record<string, { name: string }>> = {};
 
@@ -2847,9 +2974,12 @@ export default function AdminTournamentDetailScreen() {
             .map((playerId) => String(playerId || '').trim())
             .filter((playerId) => UUID_PATTERN.test(playerId));
 
-        const hasConflict = candidateRegisteredIds.some(
-            (playerId) => assignedRegisteredPlayerIds.has(playerId) && !currentTargetRegisteredIds.has(playerId)
-        );
+        const hasConflict = candidateRegisteredIds.some((playerId) => {
+            if (!assignedRegisteredPlayerIds.has(playerId) || currentTargetRegisteredIds.has(playerId)) {
+                return false;
+            }
+            return !canReuseAssignedPlayerForSelectedTarget(playerId);
+        });
         if (hasConflict) {
             Alert.alert('Información', 'Esa dupla ya está asignada en otra llave/grupo.');
             return;
@@ -3218,7 +3348,10 @@ export default function AdminTournamentDetailScreen() {
                 if (currentTargetIds.has(profileId)) return false;
             }
 
-            return assignedRegisteredPlayerIds.has(profileId);
+            if (assignedRegisteredPlayerIds.has(profileId)) {
+                return !canReuseAssignedPlayerForSelectedTarget(profileId);
+            }
+            return false;
         })();
 
         if (isAlreadyAssignedElsewhere) {
@@ -3420,9 +3553,9 @@ export default function AdminTournamentDetailScreen() {
                     onPress: async () => {
                         try {
                             const { error } = await supabase
-                                .from('tournaments')
-                                .delete()
-                                .eq('id', id);
+                                .rpc('delete_tournament_cascade', {
+                                    p_tournament_id: String(id),
+                                });
 
                             if (error) throw error;
 
@@ -5691,10 +5824,67 @@ export default function AdminTournamentDetailScreen() {
             {selectedPlayerForProfile && (
                 <PlayerProfileModal
                     playerId={selectedPlayerForProfile}
+                    tournamentOrgId={tournament?.organization_id || null}
+                    tournamentLevel={tournament?.level || null}
+                    tournamentModality={String(tournament?.modality || '').toLowerCase() === 'dobles' ? 'dobles' : 'singles'}
                     visible={!!selectedPlayerForProfile}
                     onClose={() => setSelectedPlayerForProfile(null)}
                 />
             )}
+
+            {/* Reusable Custom Alert Modal with Button Support */}
+            <Modal
+                visible={!!customAlert}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setCustomAlert(null)}
+            >
+                <View style={styles.alertBackdrop}>
+                    <View style={styles.alertCard}>
+                        <Text style={styles.alertTitle}>{customAlert?.title}</Text>
+                        <Text style={styles.alertMessage}>{customAlert?.message}</Text>
+                        <View style={styles.alertActions}>
+                            {customAlert?.buttons && customAlert.buttons.length > 0 ? (
+                                <View style={{ flexDirection: customAlert.buttons.length > 2 ? 'column' : 'row', gap: spacing.sm, width: '100%' }}>
+                                    {customAlert.buttons.map((btn, index) => {
+                                        const isCancel = btn.style === 'cancel';
+                                        const isDestructive = btn.style === 'destructive';
+                                        return (
+                                            <TouchableOpacity
+                                                key={index}
+                                                style={[
+                                                    styles.alertActionButton,
+                                                    isCancel ? styles.alertCancelButton : styles.alertConfirmButton,
+                                                    isDestructive && { backgroundColor: colors.error },
+                                                    customAlert.buttons!.length > 2 && { width: '100%', marginBottom: spacing.xs }
+                                                ]}
+                                                onPress={() => {
+                                                    setCustomAlert(null);
+                                                    btn.onPress?.();
+                                                }}
+                                            >
+                                                <Text style={[
+                                                    styles.alertActionButtonText,
+                                                    isCancel ? styles.alertCancelButtonText : styles.alertConfirmButtonText
+                                                ]}>
+                                                    {btn.text}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        );
+                                    })}
+                                </View>
+                            ) : (
+                                <TouchableOpacity
+                                    style={styles.alertButton}
+                                    onPress={() => setCustomAlert(null)}
+                                >
+                                    <Text style={styles.alertButtonText}>Aceptar</Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    </View>
+                </View>
+            </Modal>
     </View>
     );
 }
@@ -6075,6 +6265,86 @@ const getStyles = (colors: any) => {
             color: colors.text,
             fontWeight: '600',
             textAlign: 'center',
+        },
+        alertBackdrop: {
+            flex: 1,
+            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: spacing.xl,
+        },
+        alertCard: {
+            width: '100%',
+            maxWidth: 320,
+            backgroundColor: colors.surface,
+            borderRadius: borderRadius.xl,
+            padding: spacing.xl,
+            alignItems: 'center',
+            borderWidth: 1,
+            borderColor: colors.border,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.35,
+            shadowRadius: 8,
+            elevation: 5,
+        },
+        alertTitle: {
+            fontSize: 18,
+            fontWeight: '900',
+            color: colors.text,
+            marginBottom: spacing.sm,
+            textAlign: 'center',
+        },
+        alertMessage: {
+            fontSize: 14,
+            color: colors.textSecondary,
+            textAlign: 'center',
+            lineHeight: 20,
+            marginBottom: spacing.xl,
+        },
+        alertButton: {
+            backgroundColor: colors.primary[500],
+            paddingVertical: 12,
+            paddingHorizontal: spacing.xl,
+            borderRadius: borderRadius.lg,
+            width: '100%',
+            alignItems: 'center',
+        },
+        alertButtonText: {
+            color: '#ffffff',
+            fontSize: 14,
+            fontWeight: '700',
+        },
+        alertActions: {
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            gap: spacing.sm,
+            width: '100%',
+        },
+        alertActionButton: {
+            flex: 1,
+            height: 44,
+            borderRadius: borderRadius.lg,
+            justifyContent: 'center',
+            alignItems: 'center',
+        },
+        alertCancelButton: {
+            backgroundColor: colors.surfaceSecondary,
+            borderWidth: 1,
+            borderColor: colors.border,
+        },
+        alertConfirmButton: {
+            backgroundColor: colors.primary[500],
+        },
+        alertCancelButtonText: {
+            color: colors.textSecondary,
+            fontSize: 14,
+            fontWeight: '700',
+        },
+        alertConfirmButtonText: {
+            color: '#fff',
+            fontSize: 14,
+            fontWeight: '700',
         },
     });
 }

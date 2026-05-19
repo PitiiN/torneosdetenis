@@ -652,7 +652,7 @@ export default function MasterTournamentAdminScreen() {
 
         <View style={styles.masterCard}>
           <Text style={styles.masterText}>Inicio: {formatDateDDMMYYYY(masterTournament.start_date)}</Text>
-          <Text style={styles.masterText}>Termino: {formatDateDDMMYYYY(masterTournament.end_date)}</Text>
+          <Text style={styles.masterText}>Término: {formatDateDDMMYYYY(masterTournament.end_date)}</Text>
           <Text style={styles.masterText}>
             Cierre inscripciones: {formatRegistrationDeadline(masterTournament.registration_close_at, masterTournament.registration_close_time)}
           </Text>
@@ -728,7 +728,7 @@ export default function MasterTournamentAdminScreen() {
         {championshipCards.length === 0 && (
           <View style={styles.emptyState}>
             <Ionicons name="tennisball-outline" size={44} color={colors.textTertiary} />
-            <Text style={styles.emptyText}>Aun no hay campeonatos creados.</Text>
+            <Text style={styles.emptyText}>Aún no hay competencias creadas.</Text>
           </View>
         )}
       </ScrollView>

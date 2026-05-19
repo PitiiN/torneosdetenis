@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Dimensions, Image, Alert, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,6 +40,7 @@ interface Tournament {
     parent_tournament_id?: string | null;
     registration_close_at?: string | null;
     registration_close_time?: string | null;
+    champion_name?: string | null;
 }
 
 type OrganizationInfo = {
@@ -98,33 +99,7 @@ const getEffectiveStatus = (tournament: Tournament) =>
     });
 
 function ChampionName({ tournament }: { tournament: Tournament }) {
-    const [resolvedName, setResolvedName] = useState<string | null>(null);
-    const tagManager = extractChampionFromDescription(tournament.description);
-    const shouldForceResolve = String(tournament.modality || '').toLowerCase().includes('doble')
-        || String(tournament.format || '').toLowerCase().includes('repech');
-
-    useEffect(() => {
-        if ((!shouldForceResolve && tagManager) || (tournament.status !== 'finished' && normalizeTournamentStatus(tournament.status) !== 'finished')) return;
-
-        const resolve = async () => {
-            try {
-                const [matchesRes, participantsRes] = await Promise.all([
-                    supabase.from('matches').select('*').eq('tournament_id', tournament.id),
-                    supabase.from('tournament_participants').select('player_id, profiles(name)').eq('tournament_id', tournament.id)
-                ]);
-
-                if (matchesRes.data) {
-                    const name = resolveChampionFromMatches(matchesRes.data, participantsRes.data || [], tournament.description);
-                    if (name) setResolvedName(name);
-                }
-            } catch (e) {
-                console.error('Error resolving champion:', e);
-            }
-        };
-        resolve();
-    }, [tournament.id, tournament.status, tournament.description, tournament.format, tournament.modality, shouldForceResolve, tagManager]);
-
-    const displayName = resolvedName || tagManager || 'Finalizado';
+    const displayName = tournament.champion_name || extractChampionFromDescription(tournament.description) || 'Finalizado';
 
     return (
         <Text style={{ fontSize: 14, color: '#333', fontWeight: '800' }}>
@@ -132,6 +107,62 @@ function ChampionName({ tournament }: { tournament: Tournament }) {
         </Text>
     );
 }
+
+const normalizeTournamentRecord = (tournament: any): Tournament => ({
+    ...tournament,
+    status: getEffectiveTournamentStatus({
+        status: normalizeTournamentStatus(tournament.status),
+        startDate: tournament.start_date,
+        endDate: tournament.end_date || null
+    }),
+    name: decodeEscapedUnicode(tournament.name || ''),
+    description: decodeEscapedUnicode(tournament.description || ''),
+    format: decodeEscapedUnicode(tournament.format || ''),
+    surface: decodeEscapedUnicode(tournament.surface || ''),
+    address: decodeEscapedUnicode(tournament.address || ''),
+    comuna: decodeEscapedUnicode(tournament.comuna || ''),
+});
+
+const resolveTournamentChampionName = async (tournament: Tournament) => {
+    const tagManager = extractChampionFromDescription(tournament.description);
+    const shouldForceResolve = String(tournament.modality || '').toLowerCase().includes('doble')
+        || String(tournament.format || '').toLowerCase().includes('repech');
+    const isFinished = tournament.status === 'finished' || normalizeTournamentStatus(tournament.status) === 'finished';
+
+    if (!isFinished) return null;
+    if (tagManager && !shouldForceResolve) return tagManager;
+
+    try {
+        const [matchesRes, participantsRes] = await Promise.all([
+            supabase.from('matches').select('*').eq('tournament_id', tournament.id),
+            supabase.from('tournament_participants').select('player_id, profiles(name)').eq('tournament_id', tournament.id)
+        ]);
+
+        if (!matchesRes.data) {
+            return tagManager || null;
+        }
+
+        return resolveChampionFromMatches(matchesRes.data, participantsRes.data || [], tournament.description) || tagManager || null;
+    } catch (error) {
+        console.error('Error resolving champion:', error);
+        return tagManager || null;
+    }
+};
+
+const hydrateTournamentChampionNames = async (tournaments: Tournament[]) => {
+    const hydrated = await Promise.all(
+        tournaments.map(async (tournament) => {
+            if (tournament.is_tournament_master) {
+                return { ...tournament, champion_name: null };
+            }
+
+            const championName = await resolveTournamentChampionName(tournament);
+            return { ...tournament, champion_name: championName };
+        })
+    );
+
+    return hydrated;
+};
 
 export default function TorneosScreen() {
     const insets = useSafeAreaInsets();
@@ -171,6 +202,7 @@ export default function TorneosScreen() {
     );
 
     async function bootstrapScreen() {
+        setLoading(true);
         setOrgName('');
         setTournaments([]);
         setOrganizationInfo(null);
@@ -181,6 +213,7 @@ export default function TorneosScreen() {
             setRegisteredTournamentIds(new Set());
             setOrgName('Torneos');
             setOrganizationInfo(null);
+            setLoading(false);
             return;
         }
 
@@ -190,7 +223,7 @@ export default function TorneosScreen() {
         if (access.isSuperAdmin) {
             nextOrgId = normalizedRouteOrgId || storedOrgId || null;
         } else {
-            nextOrgId = normalizedRouteOrgId || storedOrgId || access.profile.org_id || null;
+            nextOrgId = normalizedRouteOrgId || access.profile.org_id || storedOrgId || null;
         }
 
         if (!nextOrgId && access.isSuperAdmin) {
@@ -236,6 +269,7 @@ export default function TorneosScreen() {
             setRegisteredTournamentIds(new Set());
             setOrgName('Torneos');
             setOrganizationInfo(null);
+            setLoading(false);
             return;
         }
 
@@ -246,10 +280,16 @@ export default function TorneosScreen() {
             access.profile.org_id === nextOrgId
         );
 
-        await fetchOrgDetails(nextOrgId);
-        await fetchTournaments(nextOrgId, canManageOrg);
-        await fetchRegistrations(access.session.user.id, nextOrgId);
-        await fetchFollowStatus(access.session.user.id, nextOrgId);
+        try {
+            await Promise.all([
+                fetchOrgDetails(nextOrgId),
+                fetchTournaments(nextOrgId, canManageOrg),
+                fetchRegistrations(access.session.user.id, nextOrgId),
+                fetchFollowStatus(access.session.user.id, nextOrgId),
+            ]);
+        } finally {
+            setLoading(false);
+        }
     }
 
     async function fetchFollowStatus(currentUserId: string, targetOrgId: string) {
@@ -389,13 +429,11 @@ export default function TorneosScreen() {
         }
     }
     async function fetchTournaments(targetOrgId: string, canManageOrg: boolean) {
-        setLoading(true);
         try {
             const tournamentsCacheKey = `tournaments:${targetOrgId}:${canManageOrg ? 'manage' : 'player'}`;
             const cachedTournaments = getCachedValue<Tournament[]>(tournamentsCacheKey);
             if (cachedTournaments) {
                 setTournaments(cachedTournaments);
-                setLoading(false);
             }
 
             let query = supabase
@@ -468,44 +506,12 @@ export default function TorneosScreen() {
                 setPendingRequestCountByMonth({});
             }
 
-            setTournaments(
-                (data || []).map((tournament: any) => ({
-                    ...tournament,
-                    status: getEffectiveTournamentStatus({
-                        status: normalizeTournamentStatus(tournament.status),
-                        startDate: tournament.start_date,
-                        endDate: tournament.end_date || null
-                    }),
-                    name: decodeEscapedUnicode(tournament.name || ''),
-                    description: decodeEscapedUnicode(tournament.description || ''),
-                    format: decodeEscapedUnicode(tournament.format || ''),
-                    surface: decodeEscapedUnicode(tournament.surface || ''),
-                    address: decodeEscapedUnicode(tournament.address || ''),
-                    comuna: decodeEscapedUnicode(tournament.comuna || ''),
-                }))
-            );
-            setCachedValue(
-                tournamentsCacheKey,
-                (data || []).map((tournament: any) => ({
-                    ...tournament,
-                    status: getEffectiveTournamentStatus({
-                        status: normalizeTournamentStatus(tournament.status),
-                        startDate: tournament.start_date,
-                        endDate: tournament.end_date || null
-                    }),
-                    name: decodeEscapedUnicode(tournament.name || ''),
-                    description: decodeEscapedUnicode(tournament.description || ''),
-                    format: decodeEscapedUnicode(tournament.format || ''),
-                    surface: decodeEscapedUnicode(tournament.surface || ''),
-                    address: decodeEscapedUnicode(tournament.address || ''),
-                    comuna: decodeEscapedUnicode(tournament.comuna || ''),
-                })),
-                60_000
-            );
+            const normalizedTournaments = (data || []).map(normalizeTournamentRecord);
+            const hydratedTournaments = await hydrateTournamentChampionNames(normalizedTournaments);
+            setTournaments(hydratedTournaments);
+            setCachedValue(tournamentsCacheKey, hydratedTournaments, 60_000);
         } catch (error) {
             setPendingRequestCountByMonth({});
-        } finally {
-            setLoading(false);
         }
     }
 
@@ -530,9 +536,9 @@ export default function TorneosScreen() {
                                     onPress: async () => {
                                         try {
                                             const { error } = await supabase
-                                                .from('tournaments')
-                                                .delete()
-                                                .eq('id', tournamentId);
+                                                .rpc('delete_tournament_cascade', {
+                                                    p_tournament_id: tournamentId,
+                                                });
 
                                             if (error) throw error;
                                             await bootstrapScreen();

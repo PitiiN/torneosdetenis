@@ -86,6 +86,28 @@ export default function PlayersScreen() {
     const [sharingRankingPage, setSharingRankingPage] = useState(false);
     const rankingShareRef = React.useRef<any>(null);
 
+    const [customAlert, setCustomAlert] = useState<{
+        visible: boolean;
+        title: string;
+        message: string;
+        buttons?: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'destructive' | 'default' }>;
+    } | null>(null);
+
+    const Alert = {
+        alert: (
+            title: string,
+            message: string,
+            buttons?: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'destructive' | 'default' }>
+        ) => {
+            setCustomAlert({
+                visible: true,
+                title,
+                message,
+                buttons,
+            });
+        }
+    };
+
     const requestedOrganizationId = Array.isArray(params.organizationId) ? params.organizationId[0] : params.organizationId;
     const requestedCategoryRaw = Array.isArray(params.level) ? params.level[0] : (Array.isArray(params.category) ? params.category[0] : (params.level || params.category));
     const requestedCategory = resolveCategoryParam(requestedCategoryRaw);
@@ -193,9 +215,10 @@ export default function PlayersScreen() {
     const buildRankingSnapshot = async (orgId: string, category: string, currentModality: 'singles' | 'dobles') => {
         const { data: tournaments, error: tournamentsError } = await supabase
             .from('tournaments')
-            .select('id, name, description, format, status, level, end_date, start_date, modality, created_at')
+            .select('id, name, description, format, status, level, end_date, start_date, modality, created_at, is_tournament_master')
             .eq('organization_id', orgId)
             .eq('level', category)
+            .eq('is_tournament_master', false)
             .in('status', ['completed', 'finalized', 'finished'])
             .order('end_date', { ascending: false });
 
@@ -972,6 +995,59 @@ export default function PlayersScreen() {
                     </View>
                 </View>
             </Modal>
+            {/* Reusable Custom Alert Modal with Button Support */}
+            <Modal
+                visible={!!customAlert}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setCustomAlert(null)}
+            >
+                <View style={styles.alertBackdrop}>
+                    <View style={styles.alertCard}>
+                        <Text style={styles.alertTitle}>{customAlert?.title}</Text>
+                        <Text style={styles.alertMessage}>{customAlert?.message}</Text>
+                        <View style={styles.alertActions}>
+                            {customAlert?.buttons && customAlert.buttons.length > 0 ? (
+                                <View style={{ flexDirection: customAlert.buttons.length > 2 ? 'column' : 'row', gap: spacing.sm, width: '100%' }}>
+                                    {customAlert.buttons.map((btn, index) => {
+                                        const isCancel = btn.style === 'cancel';
+                                        const isDestructive = btn.style === 'destructive';
+                                        return (
+                                            <TouchableOpacity
+                                                key={index}
+                                                style={[
+                                                    styles.alertActionButton,
+                                                    isCancel ? styles.alertCancelButton : styles.alertConfirmButton,
+                                                    isDestructive && { backgroundColor: colors.error },
+                                                    customAlert.buttons!.length > 2 && { width: '100%', marginBottom: spacing.xs }
+                                                ]}
+                                                onPress={() => {
+                                                    setCustomAlert(null);
+                                                    btn.onPress?.();
+                                                }}
+                                            >
+                                                <Text style={[
+                                                    styles.alertActionButtonText,
+                                                    isCancel ? styles.alertCancelButtonText : styles.alertConfirmButtonText
+                                                ]}>
+                                                    {btn.text}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        );
+                                    })}
+                                </View>
+                            ) : (
+                                <TouchableOpacity
+                                    style={styles.alertButton}
+                                    onPress={() => setCustomAlert(null)}
+                                >
+                                    <Text style={styles.alertButtonText}>Aceptar</Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -1518,6 +1594,51 @@ const getStyles = (colors: any) => StyleSheet.create({
         elevation: 2
     },
     modalityBtnText: {
+        alignItems: 'center',
+        paddingVertical: 80,
+    },
+    loadingState: {
+        minHeight: 260,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    emptyTitle: {
+        color: colors.text,
+        fontSize: 20,
+        fontWeight: '800',
+        marginTop: spacing.md,
+    },
+    emptyText: {
+        color: colors.textSecondary,
+        marginTop: spacing.sm,
+        textAlign: 'center',
+    },
+    modalitySelectorContainer: {
+        paddingHorizontal: spacing.xl,
+        paddingBottom: spacing.md,
+        backgroundColor: colors.background,
+    },
+    modalitySelector: {
+        flexDirection: 'row',
+        backgroundColor: colors.surfaceSecondary,
+        borderRadius: borderRadius.lg,
+        padding: 4,
+    },
+    modalityBtn: {
+        flex: 1,
+        paddingVertical: 8,
+        alignItems: 'center',
+        borderRadius: borderRadius.md
+    },
+    modalityBtnActive: {
+        backgroundColor: colors.surface,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+        elevation: 2
+    },
+    modalityBtnText: {
         fontSize: 13,
         fontWeight: '600',
         color: colors.textSecondary,
@@ -1527,9 +1648,84 @@ const getStyles = (colors: any) => StyleSheet.create({
         color: colors.primary[500],
         fontWeight: '700'
     },
+    alertBackdrop: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: spacing.xl,
+    },
+    alertCard: {
+        width: '100%',
+        maxWidth: 320,
+        backgroundColor: colors.surface,
+        borderRadius: borderRadius.xl,
+        padding: spacing.xl,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: colors.border,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.35,
+        shadowRadius: 8,
+        elevation: 5,
+    },
+    alertTitle: {
+        fontSize: 18,
+        fontWeight: '900',
+        color: colors.text,
+        marginBottom: spacing.sm,
+        textAlign: 'center',
+    },
+    alertMessage: {
+        fontSize: 14,
+        color: colors.textSecondary,
+        textAlign: 'center',
+        lineHeight: 20,
+        marginBottom: spacing.xl,
+    },
+    alertButton: {
+        backgroundColor: colors.primary[500],
+        paddingVertical: 12,
+        paddingHorizontal: spacing.xl,
+        borderRadius: borderRadius.lg,
+        width: '100%',
+        alignItems: 'center',
+    },
+    alertButtonText: {
+        color: '#ffffff',
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    alertActions: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: spacing.sm,
+        width: '100%',
+    },
+    alertActionButton: {
+        flex: 1,
+        height: 44,
+        borderRadius: borderRadius.lg,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    alertCancelButton: {
+        backgroundColor: colors.surfaceSecondary,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    alertConfirmButton: {
+        backgroundColor: colors.primary[500],
+    },
+    alertCancelButtonText: {
+        color: colors.textSecondary,
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    alertConfirmButtonText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '700',
+    },
 });
-
-
-
-
-
