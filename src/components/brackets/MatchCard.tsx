@@ -239,13 +239,14 @@ const getStyles = (colors: any) => StyleSheet.create({
     gap: 4,
   },
   scoreBox: {
-    width: 24,
+    minWidth: 24,
     height: 24,
     borderRadius: 4,
     backgroundColor: colors.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: spacing.sm,
+    paddingHorizontal: 4,
   },
   scoreBoxWinner: {
     backgroundColor: colors.primary[500],
