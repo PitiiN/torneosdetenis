@@ -229,7 +229,7 @@ export default function PlayerCalendarScreen() {
             <>
               {renderMatchCard(nextMatch, true)}
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Pr\u00F3ximos partidos</Text>
+                <Text style={styles.sectionTitle}>Próximos partidos</Text>
               </View>
               {upcomingMatches.length > 0 ? (
                 <View style={styles.list}>{upcomingMatches.map((match) => renderMatchCard(match))}</View>
@@ -244,7 +244,7 @@ export default function PlayerCalendarScreen() {
             <View style={styles.emptyState}>
               <Ionicons name="calendar-outline" size={48} color={colors.textTertiary} />
               <Text style={styles.emptyTitle}>Sin partidos programados</Text>
-              <Text style={styles.emptyText}>Cuando tengas partidos con horario definido aparecer\u00E1n aqu\u00ED.</Text>
+              <Text style={styles.emptyText}>Cuando tengas partidos con horario definido aparecerán aquí.</Text>
             </View>
           )}
         </ScrollView>
