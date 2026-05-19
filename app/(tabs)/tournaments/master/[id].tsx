@@ -956,6 +956,7 @@ const getStyles = (colors: any) => StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '800',
+    textAlign: 'center',
   },
   detailsButton: {
     minWidth: 92,
@@ -972,6 +973,7 @@ const getStyles = (colors: any) => StyleSheet.create({
     color: colors.text,
     fontSize: 12,
     fontWeight: '700',
+    textAlign: 'center',
   },
   emptyState: {
     alignItems: 'center',
