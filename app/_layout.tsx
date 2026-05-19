@@ -27,7 +27,14 @@ const getNotificationRoute = (data?: Record<string, any>) => {
     return '/(tabs)/finance';
   }
 
-  if (type === 'registration_approved' || type === 'new_tournament_published' || type === 'match_reminder_24h') {
+  if (
+    type === 'registration_approved' ||
+    type === 'new_tournament_published' ||
+    type === 'match_reminder_24h' ||
+    type === 'match_schedule_updated' ||
+    type === 'next_match_defined' ||
+    type === 'tournament_finished'
+  ) {
     if (tournamentId) {
       return { pathname: '/(tabs)/tournaments/[id]', params: { id: tournamentId } } as const;
     }

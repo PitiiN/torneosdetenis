@@ -198,7 +198,7 @@ export default function AdminTournamentDetailScreen() {
             userIds: recipientIds,
             type: 'next_match_defined',
             title: 'Nuevo enfrentamiento definido',
-            body: `Tu proximo partido ya esta definido: ${buildMatchPairingLabel(match)}.`,
+            body: `Tu próximo partido ya está definido: ${buildMatchPairingLabel(match)}.`,
             matchId: String(match?.id || '').trim() || null,
             data: {
                 type: 'next_match_defined',
@@ -224,7 +224,7 @@ export default function AdminTournamentDetailScreen() {
             userIds: recipientIds,
             type: 'match_schedule_updated',
             title: 'Partido reprogramado',
-            body: `Se actualizo el partido ${buildMatchPairingLabel(match)}. Nueva programacion: ${scheduleLabel} - ${courtLabel}.`,
+            body: `Se actualizó el partido ${buildMatchPairingLabel(match)}. Nueva programación: ${scheduleLabel} - ${courtLabel}.`,
             matchId: String(match?.id || '').trim() || null,
             data: {
                 type: 'match_schedule_updated',
@@ -1396,8 +1396,8 @@ export default function AdminTournamentDetailScreen() {
                                     type: 'tournament_finished',
                                     title: 'Torneo finalizado',
                                     body: championName
-                                        ? `Felicitamos a ${championName} por coronarse campeon de ${tournament?.name || 'este torneo'}.`
-                                        : `${tournament?.name || 'Este torneo'} finalizo.`,
+                                        ? `Felicitamos a ${championName} por coronarse campeón de ${tournament?.name || 'este torneo'}.`
+                                        : `${tournament?.name || 'Este torneo'} finalizó.`,
                                     data: {
                                         type: 'tournament_finished',
                                         tournamentId,

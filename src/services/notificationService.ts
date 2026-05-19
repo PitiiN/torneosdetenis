@@ -167,7 +167,7 @@ export const notificationService = {
 
           return Notifications.scheduleNotificationAsync({
             content: {
-              title: 'Tu proximo partido se acerca',
+              title: 'Tu próximo partido se acerca',
               body: `${match.tournamentName || 'Torneo'}: juegas contra ${match.opponentLabel || 'rival por definir'} en 24 horas.`,
               sound: 'default',
               data: {

@@ -494,7 +494,7 @@ export default function TournamentDetailScreen() {
             userIds: recipientIds,
             type: 'next_match_defined',
             title: 'Nuevo enfrentamiento definido',
-            body: `Tu proximo partido ya esta definido: ${buildMatchPairingLabel(match)}.`,
+            body: `Tu próximo partido ya está definido: ${buildMatchPairingLabel(match)}.`,
             matchId: String(match?.id || '').trim() || null,
             data: {
                 type: 'next_match_defined',
