@@ -12,6 +12,7 @@ import { canManageOrganization, getCurrentUserAccessContext } from '@/services/a
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { normalizeTournamentStatus } from '@/services/tournamentStatus';
 import { buildDescriptionWithRankingPoints, DEFAULT_RANKING_POINTS, parseRankingPoints } from '@/services/ranking';
+import { notifyOrganizationFollowersOnNewTournament } from '@/services/pushNotifications';
 
 const formatCloseTimeInput = (value: string) => {
     const digits = value.replace(/\D/g, '').slice(0, 4);
@@ -293,6 +294,10 @@ export default function EditTournamentScreen() {
                 updatePayload.registration_fee = parseInt(registrationFee) || 0;
             }
 
+            const wasNotOpen = tournamentData?.status !== 'open';
+            const isNowOpen = updatePayload.status === 'open';
+            const shouldNotifyFollowers = wasNotOpen && isNowOpen && isMasterTournament;
+
             const { error } = await supabase
                 .from('tournaments')
                 .update(updatePayload)
@@ -307,6 +312,29 @@ export default function EditTournamentScreen() {
                     .eq('parent_tournament_id', id);
 
                 if (syncChildrenStatusError) throw syncChildrenStatusError;
+            }
+
+            if (shouldNotifyFollowers) {
+                let orgName = 'La organización';
+                try {
+                    const { data: orgData } = await supabase
+                        .from('organizations')
+                        .select('name')
+                        .eq('id', tournamentData.organization_id)
+                        .single();
+                    if (orgData?.name) {
+                        orgName = orgData.name;
+                    }
+                } catch (err) {
+                    console.warn('Error fetching organization name:', err);
+                }
+
+                notifyOrganizationFollowersOnNewTournament({
+                    organizationId: tournamentData.organization_id,
+                    organizationName: orgName,
+                    tournamentId: String(id),
+                    tournamentName: tournamentName.trim(),
+                }).catch(err => console.warn('Push notification error:', err));
             }
 
             const structureChanged =

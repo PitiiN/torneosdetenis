@@ -669,11 +669,6 @@ export default function TorneosScreen() {
                 {/* Manager Actions */}
                 {shouldShowOrganizationInfo && organizationInfo && (
                     <View style={styles.organizationInfoCard}>
-                        <Text style={styles.organizationInfoTitle}>Información de la organización</Text>
-                        <View style={styles.organizationInfoRow}>
-                            <Ionicons name="business-outline" size={14} color={colors.textSecondary} />
-                            <Text style={styles.organizationInfoText}>{organizationInfo.name || orgName || 'Organización'}</Text>
-                        </View>
 
                         {(organizationInfo.contact_whatsapp || organizationInfo.social_links || organizationInfo.photos_drive_url) && (
                             <View style={styles.orgButtonsContainer}>
@@ -765,7 +760,6 @@ export default function TorneosScreen() {
                             <Ionicons name="trophy" size={40} color="#fff" />
                             <View>
                                 <Text style={styles.actionTitle}>Crear Torneo</Text>
-                                <Text style={styles.actionSubtitle}>Gestiona {orgName}</Text>
                             </View>
                         </TouchableOpacity>
                     </View>

@@ -8,6 +8,9 @@ interface FinalMatch {
     player2: { name: string; group: string; image?: string | null; id?: string | null };
     time: string;
     isGrandFinal?: boolean;
+    scheduledDate?: string | null;
+    scheduledTime?: string | null;
+    court?: string | null;
 }
 
 interface TournamentFinalsProps {
@@ -26,6 +29,12 @@ export const TournamentFinals = ({ summary, matches, onPlayerPress }: Tournament
     const styles = getStyles(colors);
 
     const getInitials = (name: string) => {
+        if (name.includes('/')) {
+            const parts = name.split('/');
+            const first = parts[0]?.trim() || '';
+            const second = parts[1]?.trim() || '';
+            return `${first[0] || ''}${second[0] || ''}`.toUpperCase();
+        }
         const chunks = String(name || '')
             .trim()
             .split(/\s+/)
@@ -121,6 +130,37 @@ export const TournamentFinals = ({ summary, matches, onPlayerPress }: Tournament
                                 <Text style={styles.matchPlayerGroup}>{match.player2.group}</Text>
                             </TouchableOpacity>
                         </View>
+
+                        {(match.scheduledDate || match.court) && (
+                            <View style={{ 
+                                backgroundColor: colors.background + '40', 
+                                borderTopWidth: 1, 
+                                borderTopColor: colors.border, 
+                                paddingVertical: spacing.sm, 
+                                paddingHorizontal: spacing.xl, 
+                                flexDirection: 'row', 
+                                justifyContent: 'space-between', 
+                                alignItems: 'center' 
+                            }}>
+                                <View style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'center' }}>
+                                    {match.scheduledDate && (
+                                        <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '600' }}>
+                                            📅 {match.scheduledDate}
+                                        </Text>
+                                    )}
+                                    {match.scheduledTime && (
+                                        <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '600' }}>
+                                            ⏰ {match.scheduledTime}
+                                        </Text>
+                                    )}
+                                </View>
+                                {match.court && (
+                                    <Text style={{ fontSize: 11, color: colors.primary[500], fontWeight: '800' }}>
+                                        📍 {match.court.toUpperCase()}
+                                    </Text>
+                                )}
+                            </View>
+                        )}
                     </View>
                 ))}
             </View>

@@ -292,7 +292,7 @@ export default function PlayersScreen() {
             previousRankMap[row.playerId] = row.rank;
         });
 
-        const hasHistory = completedTournaments.length > 1;
+        const hasHistory = completedTournaments.length >= 1;
         const rows = currentRows.map((row) => {
             const previousRank = hasHistory && Object.prototype.hasOwnProperty.call(previousRankMap, row.playerId)
                 ? previousRankMap[row.playerId]
@@ -499,6 +499,57 @@ export default function PlayersScreen() {
             manualPoints: nextManualPoints,
             onSuccess: () => closeRankingEditor(true),
         });
+    };
+
+    const deleteManualRankingPlayer = async () => {
+        if (!editingPlayer || !organizationId || !canEditRanking || savingManualPoints) return;
+
+        Alert.alert(
+            'Confirmar eliminación',
+            `¿Estás seguro de que quieres eliminar a ${editingPlayer.name} del ranking de esta categoría y organización? Esto borrará sus puntos manuales asociados.`,
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Eliminar',
+                    style: 'destructive',
+                    onPress: async () => {
+                        setSavingManualPoints(true);
+                        try {
+                            const previousSnapshot = await buildRankingSnapshot(organizationId, activeCategory, modality);
+
+                            const { error: deleteError } = await supabase
+                                .from('ranking_manual_adjustments')
+                                .delete()
+                                .eq('organization_id', organizationId)
+                                .eq('level', activeCategory)
+                                .eq('modality', modality)
+                                .eq('player_id', editingPlayer.playerId);
+
+                            if (deleteError) throw deleteError;
+
+                            const currentSnapshot = await buildRankingSnapshot(organizationId, activeCategory, modality);
+                            setRankingRows(currentSnapshot.rows);
+                            setPage(0);
+                            closeRankingEditor(true);
+
+                            await notifyRankingChangesForManualAdjustment({
+                                organizationId,
+                                level: activeCategory,
+                                modality,
+                                previousRows: previousSnapshot.baseRows,
+                                currentRows: currentSnapshot.baseRows,
+                                affectedPlayerId: editingPlayer.playerId,
+                            });
+                        } catch (error) {
+                            console.error('Error deleting manual ranking adjustment:', error);
+                            Alert.alert('Error', 'No se pudo eliminar al jugador del ranking.');
+                        } finally {
+                            setSavingManualPoints(false);
+                        }
+                    },
+                },
+            ]
+        );
     };
 
     const saveNewManualPlayer = async () => {
@@ -751,7 +802,7 @@ export default function PlayersScreen() {
                                         <View>
                                             <Text style={styles.listName}>{row.name}</Text>
                                             <Text style={styles.listPoints}>
-                                                {row.points} puntos{canEditRanking ? ` · ajuste ${row.manualPoints >= 0 ? '+' : ''}${row.manualPoints}` : ''}
+                                                {row.points} puntos{canEditRanking && row.manualPoints !== 0 ? ` · ajuste ${row.manualPoints > 0 ? '+' : ''}${row.manualPoints}` : ''}
                                             </Text>
                                         </View>
                                     </View>
@@ -851,6 +902,9 @@ export default function PlayersScreen() {
                         <View style={styles.modalActions}>
                             <TouchableOpacity style={styles.modalCancelBtn} onPress={() => closeRankingEditor()} disabled={savingManualPoints}>
                                 <Text style={styles.modalCancelText}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.modalDeleteBtn} onPress={deleteManualRankingPlayer} disabled={savingManualPoints}>
+                                <Text style={styles.modalDeleteText}>Eliminar</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.modalSaveBtn} onPress={saveManualRankingPoints} disabled={savingManualPoints}>
                                 <Text style={styles.modalSaveText}>{savingManualPoints ? 'Guardando...' : 'Guardar'}</Text>
@@ -1373,6 +1427,18 @@ const getStyles = (colors: any) => StyleSheet.create({
     modalCancelText: {
         color: colors.textSecondary,
         fontWeight: '700',
+    },
+    modalDeleteBtn: {
+        flex: 1,
+        height: 48,
+        borderRadius: borderRadius.full,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.error || '#ef4444',
+    },
+    modalDeleteText: {
+        color: '#fff',
+        fontWeight: '800',
     },
     modalSaveBtn: {
         flex: 1,

@@ -68,11 +68,13 @@ export default function LoginScreen() {
                                 showsVerticalScrollIndicator={false}
                             >
                                 <View style={styles.header}>
-                                    <Image 
-                                        source={require('../../assets/Logos/LogoLetrasHorizontalBlanco.png')}
-                                        style={styles.logo}
-                                        resizeMode="contain"
-                                    />
+                                    <View style={styles.logoWrapper}>
+                                        <Image 
+                                            source={require('../../assets/Logos/LogoAplicación.png')}
+                                            style={styles.logo}
+                                            resizeMode="contain"
+                                        />
+                                    </View>
                                     <Text style={styles.subtitle}>Tu próximo torneo comienza aquí</Text>
                                 </View>
 
@@ -157,10 +159,17 @@ const styles = StyleSheet.create({
         flex: 1,
         width: '100%',
     },
+    logoWrapper: {
+        backgroundColor: '#FFFFFF',
+        width: '100%',
+        paddingVertical: spacing.md,
+        alignItems: 'center',
+        borderRadius: borderRadius.lg,
+        marginBottom: spacing.md,
+    },
     logo: {
         width: 220,
-        height: 165,
-        marginBottom: spacing.xs,
+        height: 120,
     },
     overlay: {
         flex: 1,

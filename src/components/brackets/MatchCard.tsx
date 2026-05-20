@@ -14,6 +14,8 @@ interface Player {
 interface MatchCardProps {
   player1: Player;
   player2: Player;
+  player1Partner?: Player | null;
+  player2Partner?: Player | null;
   status?: string;
   scheduledAt?: string | null;
   court?: string | null;
@@ -23,9 +25,10 @@ interface MatchCardProps {
   width?: number;
 }
 
-export const MatchCard = ({ player1, player2, status, scheduledAt, court, onPlayerPress, canSubmitScore, onSubmitScore, width }: MatchCardProps) => {
+export const MatchCard = ({ player1, player2, player1Partner, player2Partner, status, scheduledAt, court, onPlayerPress, canSubmitScore, onSubmitScore, width }: MatchCardProps) => {
   const { colors } = useTheme();
   const styles = getStyles(colors);
+  const isDoubles = !!(player1Partner || player2Partner);
 
   const getInitials = (name: string) => {
     const chunks = String(name || '')
@@ -104,35 +107,93 @@ export const MatchCard = ({ player1, player2, status, scheduledAt, court, onPlay
 
   return (
     <View style={[styles.card, width !== undefined && { width }]}>
-      <View style={[styles.playerRow, player1.isWinner && styles.winnerRow]}>
-        <TouchableOpacity
-          style={styles.playerInfo}
-          onPress={() => handlePlayerPress(player1)}
-          disabled={!isTappable(player1)}
-          activeOpacity={0.6}
-        >
-          {renderAvatar(player1.name, player1.avatarUrl)}
-          <Text style={[styles.playerName, !player1.isWinner && player2.isWinner && styles.loserText, isTappable(player1) && styles.tappableName]} numberOfLines={1}>
-            {player1.name}
-          </Text>
-        </TouchableOpacity>
+      <View style={[styles.playerRow, player1.isWinner && styles.winnerRow, isDoubles && { height: 'auto', paddingVertical: 6 }]}>
+        {isDoubles ? (
+          <View style={styles.playerInfo}>
+            {renderAvatar(player1.name, player1.avatarUrl)}
+            <View style={{ flex: 1 }}>
+              <TouchableOpacity
+                onPress={() => handlePlayerPress(player1)}
+                disabled={!isTappable(player1)}
+                activeOpacity={0.6}
+              >
+                <Text style={[styles.playerName, !player1.isWinner && player2.isWinner && styles.loserText, isTappable(player1) && styles.tappableName, { fontSize: 12 }]} numberOfLines={1}>
+                  {player1.name}
+                </Text>
+              </TouchableOpacity>
+              {player1Partner && (
+                <TouchableOpacity
+                  onPress={() => handlePlayerPress(player1Partner)}
+                  disabled={!isTappable(player1Partner)}
+                  activeOpacity={0.6}
+                  style={{ marginTop: 2 }}
+                >
+                  <Text style={[styles.playerName, { fontSize: 11, fontWeight: '500' }, !player1.isWinner && player2.isWinner && styles.loserText, isTappable(player1Partner) && styles.tappableName]} numberOfLines={1}>
+                    {player1Partner.name}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.playerInfo}
+            onPress={() => handlePlayerPress(player1)}
+            disabled={!isTappable(player1)}
+            activeOpacity={0.6}
+          >
+            {renderAvatar(player1.name, player1.avatarUrl)}
+            <Text style={[styles.playerName, !player1.isWinner && player2.isWinner && styles.loserText, isTappable(player1) && styles.tappableName]} numberOfLines={1}>
+              {player1.name}
+            </Text>
+          </TouchableOpacity>
+        )}
         <View style={styles.scoresRow}>
           {renderScores(player1, player2)}
         </View>
       </View>
       
-      <View style={[styles.playerRow, player2.isWinner && styles.winnerRow, styles.bottomRow]}>
-        <TouchableOpacity
-          style={styles.playerInfo}
-          onPress={() => handlePlayerPress(player2)}
-          disabled={!isTappable(player2)}
-          activeOpacity={0.6}
-        >
-          {renderAvatar(player2.name, player2.avatarUrl)}
-          <Text style={[styles.playerName, !player2.isWinner && player1.isWinner && styles.loserText, isTappable(player2) && styles.tappableName]} numberOfLines={1}>
-            {player2.name}
-          </Text>
-        </TouchableOpacity>
+      <View style={[styles.playerRow, player2.isWinner && styles.winnerRow, styles.bottomRow, isDoubles && { height: 'auto', paddingVertical: 6 }]}>
+        {isDoubles ? (
+          <View style={styles.playerInfo}>
+            {renderAvatar(player2.name, player2.avatarUrl)}
+            <View style={{ flex: 1 }}>
+              <TouchableOpacity
+                onPress={() => handlePlayerPress(player2)}
+                disabled={!isTappable(player2)}
+                activeOpacity={0.6}
+              >
+                <Text style={[styles.playerName, !player2.isWinner && player1.isWinner && styles.loserText, isTappable(player2) && styles.tappableName, { fontSize: 12 }]} numberOfLines={1}>
+                  {player2.name}
+                </Text>
+              </TouchableOpacity>
+              {player2Partner && (
+                <TouchableOpacity
+                  onPress={() => handlePlayerPress(player2Partner)}
+                  disabled={!isTappable(player2Partner)}
+                  activeOpacity={0.6}
+                  style={{ marginTop: 2 }}
+                >
+                  <Text style={[styles.playerName, { fontSize: 11, fontWeight: '500' }, !player2.isWinner && player1.isWinner && styles.loserText, isTappable(player2Partner) && styles.tappableName]} numberOfLines={1}>
+                    {player2Partner.name}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.playerInfo}
+            onPress={() => handlePlayerPress(player2)}
+            disabled={!isTappable(player2)}
+            activeOpacity={0.6}
+          >
+            {renderAvatar(player2.name, player2.avatarUrl)}
+            <Text style={[styles.playerName, !player2.isWinner && player1.isWinner && styles.loserText, isTappable(player2) && styles.tappableName]} numberOfLines={1}>
+              {player2.name}
+            </Text>
+          </TouchableOpacity>
+        )}
         <View style={styles.scoresRow}>
           {renderScores(player2, player1)}
         </View>

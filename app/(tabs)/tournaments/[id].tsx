@@ -22,6 +22,7 @@ import {
 } from '@/services/registrationRequests';
 import { normalizeTournamentStatus } from '@/services/tournamentStatus';
 import { notifyTournamentUsers } from '@/services/pushNotifications';
+import { formatDateDDMMYYYY, formatTime24 } from '@/utils/datetime';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const { width } = Dimensions.get('window');
@@ -949,6 +950,18 @@ export default function TournamentDetailScreen() {
                     isWinner: m.winner_id === m.player_b_id && !!m.player_b_id,
                     id: m.player_b_id || null,
                 },
+                ...(IS_DOUBLES ? {
+                    player1Partner: {
+                        name: m.player_a2?.name || 'TBD',
+                        avatarUrl: m.player_a2?.avatar_url || null,
+                        id: m.player_a2_id || null,
+                    },
+                    player2Partner: {
+                        name: m.player_b2?.name || 'TBD',
+                        avatarUrl: m.player_b2?.avatar_url || null,
+                        id: m.player_b2_id || null,
+                    },
+                } : {}),
                 status: m.status === 'finished' ? 'Finalizado' : (m.status === 'live' ? 'En Vivo' : 'Pendiente'),
                 scheduledAt: m.scheduled_at,
                 court: m.court,
@@ -1458,23 +1471,33 @@ export default function TournamentDetailScreen() {
                                     groupALeader: standingsByGroup[roundRobinGroupNames[0] || 'A']?.[0]?.name || `Cupo ${roundRobinGroupNames[0] || 'A'}1`,
                                     groupBLeader: standingsByGroup[roundRobinGroupNames[1] || roundRobinGroupNames[0] || 'A']?.[0]?.name || `Cupo ${(roundRobinGroupNames[1] || roundRobinGroupNames[0] || 'A')}1`,
                                 }}
-                                matches={finalsMatches.map((match, index) => ({
+                                matches={finalsMatches.map((match, index) => {
+                                    const p1Name = IS_DOUBLES
+                                        ? `${match.player_a?.name || 'Por definir'} / ${match.player_a2?.name || 'Por definir'}`
+                                        : (match.player_a?.name || 'Por definir');
+                                    const p2Name = IS_DOUBLES
+                                        ? `${match.player_b?.name || 'Por definir'} / ${match.player_b2?.name || 'Por definir'}`
+                                        : (match.player_b?.name || 'Por definir');
+                                    return {
                                     title: match.round || `Final ${index + 1}`,
                                     player1: {
-                                        name: match.player_a?.name || 'Por definir',
+                                        name: p1Name,
                                         group: 'CLASIFICADO',
                                         image: match.player_a?.avatar_url || null,
                                         id: match.player_a_id || null,
                                     },
                                     player2: {
-                                        name: match.player_b?.name || 'Por definir',
+                                        name: p2Name,
                                         group: 'CLASIFICADO',
                                         image: match.player_b?.avatar_url || null,
                                         id: match.player_b_id || null,
                                     },
                                     time: match.score || 'Por definir',
                                     isGrandFinal: String(match.round || '').includes('Gran Final'),
-                                }))}
+                                    scheduledDate: match.scheduled_at ? formatDateDDMMYYYY(match.scheduled_at) : null,
+                                    scheduledTime: match.scheduled_at ? formatTime24(match.scheduled_at) : null,
+                                    court: match.court || null,
+                                }})}
                                 onPlayerPress={handlePlayerPress}
                             />
                         ) : (
@@ -1494,10 +1517,24 @@ export default function TournamentDetailScreen() {
                                         return (
                                             <View key={match.id} style={{ gap: 4 }}>
                                                 <View style={styles.groupMatchRow}>
-                                                    <TouchableOpacity style={styles.groupMatchPlayer} disabled={!match.player_a_id && (!match.player_a?.name || match.player_a?.name === 'Por definir' || match.player_a?.name === 'TBD')} onPress={() => handlePlayerPress(match.player_a_id)} activeOpacity={0.6}>
-                                                        {renderPlayerAvatar(match.player_a?.name || 'Por definir', match.player_a?.avatar_url || null)}
-                                                        <Text style={[styles.groupMatchName, (match.player_a_id || (match.player_a?.name && match.player_a?.name !== 'Por definir' && match.player_a?.name !== 'TBD')) && styles.tappableGroupName]} numberOfLines={1}>{match.player_a?.name || 'Por definir'}</Text>
-                                                    </TouchableOpacity>
+                                                    {IS_DOUBLES ? (
+                                                        <View style={styles.groupMatchPlayer}>
+                                                            {renderPlayerAvatar(match.player_a?.name || 'Por definir', match.player_a?.avatar_url || null)}
+                                                            <View style={{ flex: 1 }}>
+                                                                <TouchableOpacity disabled={!match.player_a_id && (!match.player_a?.name || match.player_a?.name === 'Por definir' || match.player_a?.name === 'TBD')} onPress={() => handlePlayerPress(match.player_a_id)} activeOpacity={0.6}>
+                                                                    <Text style={[styles.groupMatchName, (match.player_a_id || (match.player_a?.name && match.player_a?.name !== 'Por definir' && match.player_a?.name !== 'TBD')) && styles.tappableGroupName]} numberOfLines={1}>{match.player_a?.name || 'Por definir'}</Text>
+                                                                </TouchableOpacity>
+                                                                <TouchableOpacity disabled={!match.player_a2_id && (!match.player_a2?.name || match.player_a2?.name === 'Por definir' || match.player_a2?.name === 'TBD')} onPress={() => handlePlayerPress(match.player_a2_id)} activeOpacity={0.6}>
+                                                                    <Text style={[styles.groupMatchName, { fontSize: 10, fontWeight: '400', color: colors.textSecondary }, (match.player_a2_id || (match.player_a2?.name && match.player_a2?.name !== 'Por definir' && match.player_a2?.name !== 'TBD')) && styles.tappableGroupName]} numberOfLines={1}>{match.player_a2?.name || 'Por definir'}</Text>
+                                                                </TouchableOpacity>
+                                                            </View>
+                                                        </View>
+                                                    ) : (
+                                                        <TouchableOpacity style={styles.groupMatchPlayer} disabled={!match.player_a_id && (!match.player_a?.name || match.player_a?.name === 'Por definir' || match.player_a?.name === 'TBD')} onPress={() => handlePlayerPress(match.player_a_id)} activeOpacity={0.6}>
+                                                            {renderPlayerAvatar(match.player_a?.name || 'Por definir', match.player_a?.avatar_url || null)}
+                                                            <Text style={[styles.groupMatchName, (match.player_a_id || (match.player_a?.name && match.player_a?.name !== 'Por definir' && match.player_a?.name !== 'TBD')) && styles.tappableGroupName]} numberOfLines={1}>{match.player_a?.name || 'Por definir'}</Text>
+                                                        </TouchableOpacity>
+                                                    )}
                                                     
                                                     {canSubmitScoreForGroupMatch ? (
                                                         <TouchableOpacity 
@@ -1518,10 +1555,24 @@ export default function TournamentDetailScreen() {
                                                         <Text style={styles.groupMatchScore}>{match.score || 'VS'}</Text>
                                                     )}
 
-                                                    <TouchableOpacity style={[styles.groupMatchPlayer, { justifyContent: 'flex-end' }]} disabled={!match.player_b_id && (!match.player_b?.name || match.player_b?.name === 'Por definir' || match.player_b?.name === 'TBD')} onPress={() => handlePlayerPress(match.player_b_id)} activeOpacity={0.6}>
-                                                        <Text style={[styles.groupMatchName, { textAlign: 'right' }, (match.player_b_id || (match.player_b?.name && match.player_b?.name !== 'Por definir' && match.player_b?.name !== 'TBD')) && styles.tappableGroupName]} numberOfLines={1}>{match.player_b?.name || 'Por definir'}</Text>
-                                                        {renderPlayerAvatar(match.player_b?.name || 'Por definir', match.player_b?.avatar_url || null)}
-                                                    </TouchableOpacity>
+                                                    {IS_DOUBLES ? (
+                                                        <View style={[styles.groupMatchPlayer, { justifyContent: 'flex-end' }]}>
+                                                            <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                                                                <TouchableOpacity disabled={!match.player_b_id && (!match.player_b?.name || match.player_b?.name === 'Por definir' || match.player_b?.name === 'TBD')} onPress={() => handlePlayerPress(match.player_b_id)} activeOpacity={0.6}>
+                                                                    <Text style={[styles.groupMatchName, { textAlign: 'right' }, (match.player_b_id || (match.player_b?.name && match.player_b?.name !== 'Por definir' && match.player_b?.name !== 'TBD')) && styles.tappableGroupName]} numberOfLines={1}>{match.player_b?.name || 'Por definir'}</Text>
+                                                                </TouchableOpacity>
+                                                                <TouchableOpacity disabled={!match.player_b2_id && (!match.player_b2?.name || match.player_b2?.name === 'Por definir' || match.player_b2?.name === 'TBD')} onPress={() => handlePlayerPress(match.player_b2_id)} activeOpacity={0.6}>
+                                                                    <Text style={[styles.groupMatchName, { fontSize: 10, fontWeight: '400', textAlign: 'right', color: colors.textSecondary }, (match.player_b2_id || (match.player_b2?.name && match.player_b2?.name !== 'Por definir' && match.player_b2?.name !== 'TBD')) && styles.tappableGroupName]} numberOfLines={1}>{match.player_b2?.name || 'Por definir'}</Text>
+                                                                </TouchableOpacity>
+                                                            </View>
+                                                            {renderPlayerAvatar(match.player_b?.name || 'Por definir', match.player_b?.avatar_url || null)}
+                                                        </View>
+                                                    ) : (
+                                                        <TouchableOpacity style={[styles.groupMatchPlayer, { justifyContent: 'flex-end' }]} disabled={!match.player_b_id && (!match.player_b?.name || match.player_b?.name === 'Por definir' || match.player_b?.name === 'TBD')} onPress={() => handlePlayerPress(match.player_b_id)} activeOpacity={0.6}>
+                                                            <Text style={[styles.groupMatchName, { textAlign: 'right' }, (match.player_b_id || (match.player_b?.name && match.player_b?.name !== 'Por definir' && match.player_b?.name !== 'TBD')) && styles.tappableGroupName]} numberOfLines={1}>{match.player_b?.name || 'Por definir'}</Text>
+                                                            {renderPlayerAvatar(match.player_b?.name || 'Por definir', match.player_b?.avatar_url || null)}
+                                                        </TouchableOpacity>
+                                                    )}
                                                 </View>
                                                 {(match.scheduled_at || match.court) && (
                                                 <View style={{ flexDirection: 'row', justifyContent: 'center', gap: spacing.lg, marginBottom: spacing.sm }}>

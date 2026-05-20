@@ -1269,7 +1269,7 @@ export default function AdminTournamentDetailScreen() {
 
             if (isDoubleBye) {
                 const updatePayload: any = {
-                    score: 'W.O.',
+                    score: null,
                     status: 'finished',
                     winner_id: null,
                 };
@@ -1288,7 +1288,59 @@ export default function AdminTournamentDetailScreen() {
                         candidateMatch.id === m.id ? updatedCurrentMatch : candidateMatch
                     );
                     resolvedAnyBye = true;
-                    await propagateWinnerToNextMatch(updatedCurrentMatch, null, null, workingMatches, 'A');
+
+                    // Propagate BYE to the next match slot
+                    const nextLink = getNextMatchLink(updatedCurrentMatch, workingMatches);
+                    if (nextLink) {
+                        const { nextMatch, nextSlotField, nextSlotField2 } = nextLink;
+                        const byeUpdateData: any = { [nextSlotField]: 'BYE' };
+                        if (IS_DOUBLES) {
+                            byeUpdateData[nextSlotField2] = 'BYE';
+                        }
+
+                        const currentSlotValue = nextMatch?.[nextSlotField] || null;
+                        if (currentSlotValue !== 'BYE') {
+                            const { error: nextError } = await supabase
+                                .from('matches')
+                                .update(byeUpdateData)
+                                .eq('id', nextMatch.id);
+
+                            if (!nextError) {
+                                applyMatchPatchLocally(nextMatch.id, byeUpdateData);
+                                workingMatches = workingMatches.map((candidateMatch) =>
+                                    candidateMatch.id === nextMatch.id ? { ...candidateMatch, ...byeUpdateData } : candidateMatch
+                                );
+                            }
+                        }
+
+                        // Also propagate BYE manual name to the next match description
+                        const targetSide = nextSlotField.startsWith('player_a') ? 'A' : 'B';
+                        const targetOffsetStart = targetSide === 'A' ? 1 : 3;
+                        try {
+                            await updateTournamentDescription(current => {
+                                const nextMatchSlots = { ...(current.matchSlots?.[nextMatch.id] || {}) };
+                                const key1 = getMatchManualKey(targetOffsetStart as MatchSlot);
+                                if (!nextMatchSlots[key1]?.name || nextMatchSlots[key1]?.name?.toUpperCase() !== 'BYE') {
+                                    nextMatchSlots[key1] = { name: 'BYE' };
+                                }
+                                if (IS_DOUBLES) {
+                                    const key2 = getMatchManualKey((targetOffsetStart + 1) as MatchSlot);
+                                    if (!nextMatchSlots[key2]?.name || nextMatchSlots[key2]?.name?.toUpperCase() !== 'BYE') {
+                                        nextMatchSlots[key2] = { name: 'BYE' };
+                                    }
+                                }
+                                return {
+                                    ...current,
+                                    matchSlots: {
+                                        ...(current.matchSlots || {}),
+                                        [nextMatch.id]: nextMatchSlots
+                                    }
+                                };
+                            });
+                        } catch (_) {
+                            // Manual name propagation is best-effort
+                        }
+                    }
                 }
                 continue;
             }
@@ -4322,6 +4374,9 @@ export default function AdminTournamentDetailScreen() {
                 },
                 time: getScoreText(match.score) || 'Por definir',
                 isGrandFinal: String(match.round || '').includes('Gran Final'),
+                scheduledDate: formatScheduleDate(match.scheduled_at),
+                scheduledTime: formatScheduleTime(match.scheduled_at),
+                court: match.court || null,
             })),
         [finalRoundRobinMatches, playerAvatarById]
     );
@@ -5047,9 +5102,13 @@ export default function AdminTournamentDetailScreen() {
                                                                     <TouchableOpacity onPress={() => handleMatchPress(m)} style={{ flexDirection: 'row', gap: 4, paddingRight: spacing.md }}>
                                                                         {(scoreSetStrings.length ? scoreSetStrings : ['-']).map((setStr: string, sIdx: number) => {
                                                                             const setScores = setStr.split(/[ -]/);
+                                                                            const scoreA = parseInt(setScores[0] || '0', 10);
+                                                                            const scoreB = parseInt(setScores[1] || '0', 10);
+                                                                            const isSetWinner = !isNaN(scoreA) && !isNaN(scoreB) ? scoreA > scoreB : (m.winner_id === m.player_a_id || m.winner_2_id === m.player_a2_id);
+                                                                            
                                                                             return (
-                                                                                <View key={sIdx} style={{ backgroundColor: isUnplayed ? colors.background : colors.primary[500], paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm, minWidth: 24, alignItems: 'center' }}>
-                                                                                    <Text style={{ color: isUnplayed ? colors.textSecondary : '#fff', fontSize: 11, fontWeight: '700' }}>
+                                                                                <View key={sIdx} style={{ backgroundColor: isUnplayed ? colors.background : (isSetWinner ? colors.primary[500] : colors.surfaceSecondary), paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm, minWidth: 24, alignItems: 'center' }}>
+                                                                                    <Text style={{ color: isUnplayed ? colors.textSecondary : (isSetWinner ? '#fff' : colors.textTertiary), fontSize: 11, fontWeight: '700' }}>
                                                                                         {isUnplayed ? '-' : setScores[0]}
                                                                                     </Text>
                                                                                 </View>
@@ -5090,9 +5149,13 @@ export default function AdminTournamentDetailScreen() {
                                                                     <TouchableOpacity onPress={() => handleMatchPress(m)} style={{ flexDirection: 'row', gap: 4, paddingRight: spacing.md }}>
                                                                         {(scoreSetStrings.length ? scoreSetStrings : ['-']).map((setStr: string, sIdx: number) => {
                                                                             const setScores = setStr.split(/[ -]/);
+                                                                            const scoreA = parseInt(setScores[0] || '0', 10);
+                                                                            const scoreB = parseInt(setScores[1] || '0', 10);
+                                                                            const isSetWinner = !isNaN(scoreA) && !isNaN(scoreB) ? scoreB > scoreA : (m.winner_id === m.player_b_id || m.winner_2_id === m.player_b2_id);
+
                                                                             return (
-                                                                                <View key={sIdx} style={{ backgroundColor: isUnplayed ? colors.background : colors.primary[500], paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm, minWidth: 24, alignItems: 'center' }}>
-                                                                                    <Text style={{ color: isUnplayed ? colors.textSecondary : '#fff', fontSize: 11, fontWeight: '700' }}>
+                                                                                <View key={sIdx} style={{ backgroundColor: isUnplayed ? colors.background : (isSetWinner ? colors.primary[500] : colors.surfaceSecondary), paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm, minWidth: 24, alignItems: 'center' }}>
+                                                                                    <Text style={{ color: isUnplayed ? colors.textSecondary : (isSetWinner ? '#fff' : colors.textTertiary), fontSize: 11, fontWeight: '700' }}>
                                                                                         {isUnplayed ? '-' : setScores[1] || '0'}
                                                                                     </Text>
                                                                                 </View>
@@ -5157,7 +5220,7 @@ export default function AdminTournamentDetailScreen() {
                     >
                         <ImageBackground source={BRACKET_SHARE_BG} resizeMode="cover" style={styles.bracketSharePoster}>
                             <View style={styles.bracketShareOverlay} />
-                            <View style={styles.bracketShareInner}>
+                            <View style={[styles.bracketShareInner, isRoundRobin && { justifyContent: 'center', paddingTop: 0, paddingBottom: 0 }]}>
                                 <Image source={APP_SHARE_LOGO} style={styles.bracketShareLogo} resizeMode="contain" />
                                 <Text style={styles.bracketShareTitle}>{tournament.name}</Text>
                                 <Text style={styles.bracketShareSubtitle}>
@@ -5170,7 +5233,7 @@ export default function AdminTournamentDetailScreen() {
                                                 : `Cuadro Principal${currentSliceName ? ` - ${currentSliceName}` : ''}`}
                                 </Text>
 
-                                <View style={styles.bracketShareContent}>
+                                <View style={[styles.bracketShareContent, isRoundRobin && { flex: 0, flexGrow: 0 }]}>
                                     {isRoundRobin ? (
                                         activeTab === 'finales' ? (
                                             <TournamentFinals
@@ -5178,7 +5241,7 @@ export default function AdminTournamentDetailScreen() {
                                                 matches={shareFinalsMatches}
                                             />
                                         ) : (
-                                            <View style={{ flex: 1, padding: spacing.xl, gap: spacing.lg }}>
+                                            <View style={{ padding: spacing.xl, gap: spacing.lg }}>
                                                 {/* Tabla de Posiciones */}
                                                 <RoundRobinTable
                                                     groupName={`Grupo ${currentGroupName}`}
@@ -5195,7 +5258,7 @@ export default function AdminTournamentDetailScreen() {
                                                 />
                                                 
                                                 {/* Sección de Partidos */}
-                                                <View style={{ flex: 1, marginTop: spacing.md }}>
+                                                <View style={{ marginTop: spacing.md }}>
                                                     <View style={{ 
                                                         flexDirection: 'row', 
                                                         alignItems: 'center', 
@@ -5232,62 +5295,86 @@ export default function AdminTournamentDetailScreen() {
                                                                         borderColor: 'rgba(255, 255, 255, 0.08)', 
                                                                         paddingHorizontal: spacing.md,
                                                                         paddingVertical: spacing.lg,
-                                                                        flexDirection: 'row', 
+                                                                        flexDirection: 'column', 
                                                                         alignItems: 'center', 
-                                                                        justifyContent: 'space-between',
-                                                                        marginBottom: spacing.xs
+                                                                        marginBottom: spacing.xs,
+                                                                        overflow: 'hidden'
                                                                     }}
                                                                 >
-                                                                    {/* Jugador A */}
-                                                                    <View style={{ flex: 1, alignItems: 'center', gap: spacing.xs }}>
-                                                                        {renderPlayerAvatar(getDisplayName(m, 1), getDisplayAvatar(m, 1), 40)}
-                                                                        <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff', textAlign: 'center', marginTop: 2 }} numberOfLines={1}>
-                                                                            {getDisplayName(m, 1)}
-                                                                        </Text>
-                                                                        {IS_DOUBLES && (
-                                                                            <>
-                                                                                {renderPlayerAvatar(getDisplayName(m, 2), getDisplayAvatar(m, 2), 40)}
-                                                                                <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff', textAlign: 'center', marginTop: 1 }} numberOfLines={1}>
-                                                                                    {getDisplayName(m, 2)}
-                                                                                </Text>
-                                                                            </>
-                                                                        )}
-                                                                    </View>
-
-                                                                    {/* VS */}
-                                                                    <View style={{ alignItems: 'center', paddingHorizontal: spacing.xs, minWidth: 60 }}>
-                                                                        <Text style={{ fontSize: 12, fontWeight: '900', color: colors.primary[500], fontStyle: 'italic', marginBottom: 4 }}>
-                                                                            VS
-                                                                        </Text>
-                                                                        <View style={{ 
-                                                                            backgroundColor: isFinished ? colors.success + '20' : 'rgba(255, 255, 255, 0.08)', 
-                                                                            paddingHorizontal: 6, 
-                                                                            paddingVertical: 3, 
-                                                                            borderRadius: borderRadius.sm,
-                                                                            borderWidth: isFinished ? 1 : 0,
-                                                                            borderColor: colors.success + '40'
-                                                                        }}>
-                                                                            <Text style={{ fontSize: 10, fontWeight: '900', color: isFinished ? colors.success : '#aaa', textAlign: 'center' }}>
-                                                                                {scoreText || 'PRÓXIMO'}
+                                                                    {/* Players Row */}
+                                                                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                                                                        {/* Jugador A */}
+                                                                        <View style={{ flex: 1, alignItems: 'center', gap: spacing.xs }}>
+                                                                            {renderPlayerAvatar(getDisplayName(m, 1), getDisplayAvatar(m, 1), 40)}
+                                                                            <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff', textAlign: 'center', marginTop: 2 }} numberOfLines={1}>
+                                                                                {getDisplayName(m, 1)}
                                                                             </Text>
+                                                                            {IS_DOUBLES && (
+                                                                                <>
+                                                                                    {renderPlayerAvatar(getDisplayName(m, 2), getDisplayAvatar(m, 2), 40)}
+                                                                                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff', textAlign: 'center', marginTop: 1 }} numberOfLines={1}>
+                                                                                        {getDisplayName(m, 2)}
+                                                                                    </Text>
+                                                                                </>
+                                                                            )}
+                                                                        </View>
+
+                                                                        {/* VS */}
+                                                                        <View style={{ alignItems: 'center', paddingHorizontal: spacing.xs, minWidth: 60 }}>
+                                                                            <Text style={{ fontSize: 12, fontWeight: '900', color: colors.primary[500], fontStyle: 'italic', marginBottom: 4 }}>
+                                                                                VS
+                                                                            </Text>
+                                                                            <View style={{ 
+                                                                                backgroundColor: isFinished ? colors.success + '20' : 'rgba(255, 255, 255, 0.08)', 
+                                                                                paddingHorizontal: 6, 
+                                                                                paddingVertical: 3, 
+                                                                                borderRadius: borderRadius.sm,
+                                                                                borderWidth: isFinished ? 1 : 0,
+                                                                                borderColor: colors.success + '40'
+                                                                            }}>
+                                                                                <Text style={{ fontSize: 10, fontWeight: '900', color: isFinished ? colors.success : '#aaa', textAlign: 'center' }}>
+                                                                                    {scoreText || 'PRÓXIMO'}
+                                                                                </Text>
+                                                                            </View>
+                                                                        </View>
+
+                                                                        {/* Jugador B */}
+                                                                        <View style={{ flex: 1, alignItems: 'center', gap: spacing.xs }}>
+                                                                            {renderPlayerAvatar(getDisplayName(m, 3), getDisplayAvatar(m, 3), 40)}
+                                                                            <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff', textAlign: 'center', marginTop: 2 }} numberOfLines={1}>
+                                                                                {getDisplayName(m, 3)}
+                                                                            </Text>
+                                                                            {IS_DOUBLES && (
+                                                                                <>
+                                                                                    {renderPlayerAvatar(getDisplayName(m, 4), getDisplayAvatar(m, 4), 40)}
+                                                                                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff', textAlign: 'center', marginTop: 1 }} numberOfLines={1}>
+                                                                                        {getDisplayName(m, 4)}
+                                                                                    </Text>
+                                                                                </>
+                                                                            )}
                                                                         </View>
                                                                     </View>
 
-                                                                    {/* Jugador B */}
-                                                                    <View style={{ flex: 1, alignItems: 'center', gap: spacing.xs }}>
-                                                                        {renderPlayerAvatar(getDisplayName(m, 3), getDisplayAvatar(m, 3), 40)}
-                                                                        <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff', textAlign: 'center', marginTop: 2 }} numberOfLines={1}>
-                                                                            {getDisplayName(m, 3)}
-                                                                        </Text>
-                                                                        {IS_DOUBLES && (
-                                                                            <>
-                                                                                {renderPlayerAvatar(getDisplayName(m, 4), getDisplayAvatar(m, 4), 40)}
-                                                                                <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff', textAlign: 'center', marginTop: 1 }} numberOfLines={1}>
-                                                                                    {getDisplayName(m, 4)}
-                                                                                </Text>
-                                                                            </>
-                                                                        )}
-                                                                    </View>
+                                                                    {/* Schedule Info */}
+                                                                    {(m.scheduled_at || m.court) && (
+                                                                        <>
+                                                                            <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.08)', marginVertical: spacing.md, width: '100%' }} />
+                                                                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', alignItems: 'center', paddingHorizontal: spacing.xs }}>
+                                                                                <View style={{ flexDirection: 'row', gap: spacing.xs, alignItems: 'center' }}>
+                                                                                    {m.scheduled_at && (
+                                                                                        <Text style={{ fontSize: 10, color: 'rgba(255, 255, 255, 0.6)', fontWeight: '600' }}>
+                                                                                            📅 {formatScheduleDate(m.scheduled_at)} {formatScheduleTime(m.scheduled_at)}
+                                                                                        </Text>
+                                                                                    )}
+                                                                                </View>
+                                                                                {m.court && (
+                                                                                    <Text style={{ fontSize: 10, color: colors.primary[500], fontWeight: '800' }}>
+                                                                                        📍 {m.court.toUpperCase()}
+                                                                                    </Text>
+                                                                                )}
+                                                                            </View>
+                                                                        </>
+                                                                    )}
                                                                 </View>
                                                             );
                                                         })}

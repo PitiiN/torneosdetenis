@@ -11,6 +11,8 @@ interface SingleEliminationProps {
             id: string;
             player1: { name: string; avatarUrl?: string | null; scores?: (number | string)[]; isWinner?: boolean; id?: string | null };
             player2: { name: string; avatarUrl?: string | null; scores?: (number | string)[]; isWinner?: boolean; id?: string | null };
+            player1Partner?: { name: string; avatarUrl?: string | null; id?: string | null } | null;
+            player2Partner?: { name: string; avatarUrl?: string | null; id?: string | null } | null;
             status?: string;
             scheduledAt?: string | null;
             court?: string | null;
@@ -184,6 +186,8 @@ export const SingleEliminationBracket = ({
                                             <MatchCard 
                                                 player1={match.player1}
                                                 player2={match.player2}
+                                                player1Partner={match.player1Partner}
+                                                player2Partner={match.player2Partner}
                                                 status={match.status}
                                                 scheduledAt={match.scheduledAt}
                                                 court={match.court}
