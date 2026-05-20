@@ -1386,6 +1386,8 @@ export default function ProfileScreen() {
                     <Text style={styles.profileShareButtonText}>{sharingProfileCard ? 'Generando...' : 'Compartir perfil'}</Text>
                 </TouchableOpacity>
 
+                <View style={{ height: 1, backgroundColor: colors.border, opacity: 0.5, marginHorizontal: spacing.xl }} />
+
                 {/* Evolution Chart */}
                 <RankingEvolutionChart
                     rankingHistory={rankingHistory}
@@ -1395,11 +1397,13 @@ export default function ProfileScreen() {
 
                 {/* Achievements section */}
                 {achievements && achievements.length > 0 && (
-                    <View>
-                        <View style={styles.sectionHeader}>
-                            <Text style={styles.sectionTitle}>Logros</Text>
-                        </View>
-                        <View style={styles.achievementsList}>
+                    <View style={{ gap: spacing['2xl'] }}>
+                        <View style={{ height: 1, backgroundColor: colors.border, opacity: 0.5, marginHorizontal: spacing.xl }} />
+                        <View>
+                            <View style={styles.sectionHeader}>
+                                <Text style={styles.sectionTitle}>Logros</Text>
+                            </View>
+                            <View style={styles.achievementsList}>
                             {achievements.map((achievement) => {
                                 const achievementColor = getAchievementColor(achievement.tone || 'special');
                                 return (
@@ -1427,13 +1431,18 @@ export default function ProfileScreen() {
                                     </TouchableOpacity>
                                 );
                             })}
+                            </View>
                         </View>
                     </View>
                 )}
 
+                <View style={{ height: 1, backgroundColor: colors.border, opacity: 0.5, marginHorizontal: spacing.xl }} />
+
                 {/* Account Settings */}
                 <View style={styles.settingsSection}>
-                    <Text style={styles.settingsTitle}>{'Configuraci\u00f3n de Cuenta'}</Text>
+                    <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>{'Configuraci\u00f3n de Cuenta'}</Text>
+                    </View>
 
                     <View style={styles.settingsGrid}>
                         <TouchableOpacity style={styles.settingItem} onPress={handleToggleNotifications}>
