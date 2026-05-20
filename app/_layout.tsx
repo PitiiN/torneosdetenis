@@ -206,7 +206,7 @@ export default function RootLayout() {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF' }}>
         <Image
-          source={require('../assets/Logos/LogoAplicación.png')}
+          source={require('../assets/Logos/LogoAplicacion.png')}
           style={{ width: 440, height: 176, marginBottom: 24 }}
           resizeMode="contain"
         />
@@ -219,7 +219,7 @@ export default function RootLayout() {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24, backgroundColor: '#FFFFFF' }}>
         <Image
-          source={require('../assets/Logos/LogoAplicación.png')}
+          source={require('../assets/Logos/LogoAplicacion.png')}
           style={{ width: 320, height: 128, marginBottom: 20 }}
           resizeMode="contain"
         />

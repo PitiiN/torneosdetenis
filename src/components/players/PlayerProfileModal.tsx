@@ -51,7 +51,7 @@ const DEFAULT_HEAD_TO_HEAD: HeadToHeadStats = {
 };
 
 const HEAD_TO_HEAD_SHARE_BG = require('../../../assets/RRSS/FrenteAFrente.png');
-const APP_SHARE_LOGO = require('../../../assets/Logos/LogoAplicación.png');
+const APP_SHARE_LOGO = require('../../../assets/Logos/LogoAplicacion.png');
 
 const getScoreText = (scoreValue: any): string => {
   if (!scoreValue) return '';

@@ -70,7 +70,7 @@ export default function LoginScreen() {
                                 <View style={styles.header}>
                                     <View style={styles.logoWrapper}>
                                         <Image 
-                                            source={require('../../assets/Logos/LogoAplicación.png')}
+                                            source={require('../../assets/Logos/LogoAplicacion.png')}
                                             style={styles.logo}
                                             resizeMode="contain"
                                         />

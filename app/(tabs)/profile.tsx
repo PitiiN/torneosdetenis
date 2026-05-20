@@ -19,7 +19,7 @@ import { PlayerProfileModal } from '@/components/players/PlayerProfileModal';
 
 const { width } = Dimensions.get('window');
 const PROFILE_SHARE_BG = require('../../assets/RRSS/PerfilRRSS.png');
-const APP_SHARE_LOGO = require('../../assets/Logos/LogoAplicación.png');
+const APP_SHARE_LOGO = require('../../assets/Logos/LogoAplicacion.png');
 
 const formatDate = (dateString?: string) => {
     if (!dateString) return 'Fecha no disponible';
