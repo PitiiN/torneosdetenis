@@ -160,13 +160,7 @@ export default function TournamentMasterDetailScreen() {
   const [selectedProofMimeType, setSelectedProofMimeType] = useState<string | null>(null);
   const [isProofModalVisible, setIsProofModalVisible] = useState(false);
   const [isTransferModalVisible, setIsTransferModalVisible] = useState(false);
-  const [customAlert, setCustomAlert] = useState<{ title: string; message: string } | null>(null);
 
-  const Alert = {
-    alert: (title: string, message: string) => {
-      setCustomAlert({ title, message });
-    }
-  };
 
   const loadMasterData = useCallback(async () => {
     if (!masterTournamentId) return;
@@ -702,26 +696,7 @@ export default function TournamentMasterDetailScreen() {
           </View>
         </View>
       </Modal>
-      {/* Reusable Custom Alert Modal */}
-      <Modal
-        visible={!!customAlert}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setCustomAlert(null)}
-      >
-        <View style={styles.alertBackdrop}>
-          <View style={styles.alertCard}>
-            <Text style={styles.alertTitle}>{customAlert?.title}</Text>
-            <Text style={styles.alertMessage}>{customAlert?.message}</Text>
-            <TouchableOpacity
-              style={styles.alertButton}
-              onPress={() => setCustomAlert(null)}
-            >
-              <Text style={styles.alertButtonText}>Aceptar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+
     </View>
   );
 }

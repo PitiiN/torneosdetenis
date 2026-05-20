@@ -63,27 +63,7 @@ export default function AdminTournamentDetailScreen() {
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('main');
 
-    const [customAlert, setCustomAlert] = useState<{
-        visible: boolean;
-        title: string;
-        message: string;
-        buttons?: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'destructive' | 'default' }>;
-    } | null>(null);
 
-    const Alert = {
-        alert: (
-            title: string,
-            message: string,
-            buttons?: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'destructive' | 'default' }>
-        ) => {
-            setCustomAlert({
-                visible: true,
-                title,
-                message,
-                buttons,
-            });
-        }
-    };
 
     // Score Edit Modal
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
@@ -5943,59 +5923,7 @@ export default function AdminTournamentDetailScreen() {
                 />
             )}
 
-            {/* Reusable Custom Alert Modal with Button Support */}
-            <Modal
-                visible={!!customAlert}
-                transparent={true}
-                animationType="fade"
-                onRequestClose={() => setCustomAlert(null)}
-            >
-                <View style={styles.alertBackdrop}>
-                    <View style={styles.alertCard}>
-                        <Text style={styles.alertTitle}>{customAlert?.title}</Text>
-                        <Text style={styles.alertMessage}>{customAlert?.message}</Text>
-                        <View style={styles.alertActions}>
-                            {customAlert?.buttons && customAlert.buttons.length > 0 ? (
-                                <View style={{ flexDirection: customAlert.buttons.length > 2 ? 'column' : 'row', gap: spacing.sm, width: '100%' }}>
-                                    {customAlert.buttons.map((btn, index) => {
-                                        const isCancel = btn.style === 'cancel';
-                                        const isDestructive = btn.style === 'destructive';
-                                        return (
-                                            <TouchableOpacity
-                                                key={index}
-                                                style={[
-                                                    styles.alertActionButton,
-                                                    isCancel ? styles.alertCancelButton : styles.alertConfirmButton,
-                                                    isDestructive && { backgroundColor: colors.error },
-                                                    customAlert.buttons!.length > 2 && { width: '100%', marginBottom: spacing.xs }
-                                                ]}
-                                                onPress={() => {
-                                                    setCustomAlert(null);
-                                                    btn.onPress?.();
-                                                }}
-                                            >
-                                                <Text style={[
-                                                    styles.alertActionButtonText,
-                                                    isCancel ? styles.alertCancelButtonText : styles.alertConfirmButtonText
-                                                ]}>
-                                                    {btn.text}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        );
-                                    })}
-                                </View>
-                            ) : (
-                                <TouchableOpacity
-                                    style={styles.alertButton}
-                                    onPress={() => setCustomAlert(null)}
-                                >
-                                    <Text style={styles.alertButtonText}>Aceptar</Text>
-                                </TouchableOpacity>
-                            )}
-                        </View>
-                    </View>
-                </View>
-            </Modal>
+
     </View>
     );
 }

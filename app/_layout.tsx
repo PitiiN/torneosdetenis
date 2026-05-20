@@ -1,3 +1,4 @@
+import '@/utils/alertPatch';
 import { useEffect, useRef, useState } from 'react';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { clearSessionArtifacts, supabase, supabaseConfigError } from '@/services/supabase';
@@ -6,6 +7,7 @@ import { Image, Text, View } from 'react-native';
 import { ThemeProvider, darkTheme } from '@/theme';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { notificationService } from '@/services/notificationService';
+import { GlobalAlert } from '@/components/GlobalAlert';
 
 const MIN_BOOTSTRAP_LOADING_MS = 3000;
 
@@ -234,6 +236,7 @@ export default function RootLayout() {
   return (
     <ThemeProvider>
       <Slot />
+      <GlobalAlert />
     </ThemeProvider>
   );
 }
