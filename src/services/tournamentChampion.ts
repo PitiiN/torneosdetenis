@@ -287,7 +287,7 @@ export const syncTournamentChampion = async (
 
         // 2. Fetch matches and participants for this tournament
         const [matchesRes, participantsRes] = await Promise.all([
-            supabase.from('matches').select('*').eq('tournament_id', tournamentId),
+            supabase.from('matches').select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, round_number, match_order, score, status, scheduled_at, created_at').eq('tournament_id', tournamentId),
             supabase.from('tournament_participants').select('player_id, profiles(name)').eq('tournament_id', tournamentId)
         ]);
 

@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
-import { supabase } from '@/services/supabase';
+import { supabase, secureSignOut } from '@/services/supabase';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
@@ -573,7 +573,7 @@ export default function ProfileScreen() {
 
                 const tourData = await Promise.all(recentTournamentsBase.map(async (tournament: any) => {
                     if (tournament.status === 'completed' || tournament.status === 'finalized' || tournament.status === 'finished') {
-                        const { data: tMatches } = await supabase.from('matches').select('*').eq('tournament_id', tournament.id);
+                        const { data: tMatches } = await supabase.from('matches').select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, round_number, match_order, score, status, scheduled_at, created_at').eq('tournament_id', tournament.id);
                         const placements = getTournamentPlacements(tournament, tMatches || []);
                         const myPlacement = placements.find((placement: any) => placement.playerId === session.user.id || placement.playerId2 === session.user.id);
                         return { ...tournament, place: myPlacement ? `${myPlacement.place}\u00B0 LUGAR` : 'FINALIZADO' };
@@ -917,7 +917,7 @@ export default function ProfileScreen() {
             setShowDeleteConfirmModal(false);
             setShowPrivacyModal(false);
             setDeleteAccountPassword('');
-            await supabase.auth.signOut();
+            await secureSignOut();
             router.replace('/(auth)/login');
         } catch (error: any) {
             console.error('Error deleting account:', error);
@@ -1018,7 +1018,7 @@ export default function ProfileScreen() {
     };
 
     async function handleSignOut() {
-        const { error } = await supabase.auth.signOut();
+        const { error } = await secureSignOut();
         if (error) {
             Alert.alert('Error', error.message);
         } else {

@@ -1,5 +1,5 @@
-import { getScoreText, getTournamentPlacements, parseSetScore, resolveMatchWinnerSide } from '@/services/ranking';
 import { supabase } from '@/services/supabase';
+import { resolveCachedData } from './runtimeCache';
 
 export type ProfileModality = 'singles' | 'dobles';
 
@@ -46,25 +46,6 @@ export type PlayerAchievement = {
   dateEarned?: string;
 };
 
-type RankingAccumulator = {
-  points: number;
-  trophies: number;
-  matchesWon: number;
-  matchesPlayed: number;
-  setsWon: number;
-  gamesWon: number;
-};
-
-type MatchStats = {
-  setsWon: number;
-  setsLost: number;
-  gamesWon: number;
-  gamesLost: number;
-};
-
-const COMPLETED_STATUSES = new Set(['completed', 'finalized', 'finished']);
-const CANCELLED_REGISTRATION_STATUSES = new Set(['cancelled', 'rejected']);
-
 export const DEFAULT_PROFILE_STATS: PlayerProfileStats = {
   rank: '-',
   trophies: 0,
@@ -93,419 +74,71 @@ export const createEmptyRankingHistory = (): RankingHistoryPoint[] =>
     doblesRank: null,
   }));
 
-const normalizeKey = (value: unknown) =>
-  String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
-
-const isCompletedTournament = (tournament: any) =>
-  COMPLETED_STATUSES.has(String(tournament?.status || '').toLowerCase());
-
-const isFinishedMatch = (match: any) => String(match?.status || '').toLowerCase() === 'finished';
-
-const isValidRegistration = (registration: any) => {
-  const status = String(registration?.status || '').toLowerCase();
-  return !CANCELLED_REGISTRATION_STATUSES.has(status);
-};
-
-const isTournamentModality = (tournament: any, modality: ProfileModality) => {
-  if (modality === 'dobles') return tournament?.modality === 'dobles';
-  return !tournament?.modality || tournament.modality === 'singles';
-};
-
-const parseDateParts = (value: unknown): { year: number; month: number; time: number } | null => {
-  const raw = String(value || '').trim();
-  if (!raw) return null;
-
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-    const date = new Date(raw);
-    if (!Number.isNaN(date.getTime())) {
-      return { year: date.getFullYear(), month: date.getMonth(), time: date.getTime() };
-    }
+const getMedalSource = (filename: string | null) => {
+  switch(filename) {
+    case '10Triunfos.png': return require('../../assets/Medallas/10Triunfos.png');
+    case '25Triunfos.png': return require('../../assets/Medallas/25Triunfos.png');
+    case '50Triunfos.png': return require('../../assets/Medallas/50Triunfos.png');
+    case '100Triunfos.png': return require('../../assets/Medallas/100Triunfos.png');
+    case '150Triunfos.png': return require('../../assets/Medallas/150Triunfos.png');
+    case '200Triunfos.png': return require('../../assets/Medallas/200Triunfos.png');
+    case '250Triunfos.png': return require('../../assets/Medallas/250Triunfos.png');
+    case 'CampeonCuarta.png': return require('../../assets/Medallas/CampeonCuarta.png');
+    case 'CampeonEscalafon.png': return require('../../assets/Medallas/CampeonEscalafon.png');
+    case 'CampeonHonor.png': return require('../../assets/Medallas/CampeonHonor.png');
+    case 'CampeonInicial.png': return require('../../assets/Medallas/CampeonInicial.png');
+    case 'CampeónInvicto.png':
+    case 'CampeonInvicta.png': return require('../../assets/Medallas/CampeonInvicta.png');
+    case 'CampeonPrimera.png': return require('../../assets/Medallas/CampeonPrimera.png');
+    case 'CampeonQuinta.png': return require('../../assets/Medallas/CampeonQuinta.png');
+    case 'CampeonSegunda.png': return require('../../assets/Medallas/CampeonSegunda.png');
+    case 'CampeonSinCederGames.png': return require('../../assets/Medallas/CampeonSinCederGames.png');
+    case 'CampeonSinCederSets.png': return require('../../assets/Medallas/CampeonSinCederSets.png');
+    case 'CampeonTercera.png': return require('../../assets/Medallas/CampeonTercera.png');
+    case 'DiosDelTenis.png': return require('../../assets/Medallas/DiosDelTenis.png');
+    case 'Racha100Victorias.png': return require('../../assets/Medallas/Racha100Victorias.png');
+    case 'Racha10Victorias.png': return require('../../assets/Medallas/Racha10Victorias.png');
+    case 'Racha15Victorias.png': return require('../../assets/Medallas/Racha15Victorias.png');
+    case 'Racha20Victorias.png': return require('../../assets/Medallas/Racha20Victorias.png');
+    case 'Racha30Victorias.png': return require('../../assets/Medallas/Racha30Victorias.png');
+    case 'Racha40Victorias.png': return require('../../assets/Medallas/Racha40Victorias.png');
+    case 'Racha50Victorias.png': return require('../../assets/Medallas/Racha50Victorias.png');
+    case 'Racha5Victorias.png': return require('../../assets/Medallas/Racha5Victorias.png');
+    case 'Racha60Victorias.png': return require('../../assets/Medallas/Racha60Victorias.png');
+    case 'Racha70Victorias.png': return require('../../assets/Medallas/Racha70Victorias.png');
+    case 'Racha80Victorias.png': return require('../../assets/Medallas/Racha80Victorias.png');
+    case 'Racha90Victorias.png': return require('../../assets/Medallas/Racha90Victorias.png');
+    case 'Top10RankingCuarta.png': return require('../../assets/Medallas/Top10RankingCuarta.png');
+    case 'Top10RankingEscalafon.png': return require('../../assets/Medallas/Top10RankingEscalafon.png');
+    case 'Top10RankingHonor.png': return require('../../assets/Medallas/Top10RankingHonor.png');
+    case 'Top10RankingInicial.png': return require('../../assets/Medallas/Top10RankingInicial.png');
+    case 'Top10RankingPrimera.png': return require('../../assets/Medallas/Top10RankingPrimera.png');
+    case 'Top10RankingQuinta.png': return require('../../assets/Medallas/Top10RankingQuinta.png');
+    case 'Top10RankingSegunda.png': return require('../../assets/Medallas/Top10RankingSegunda.png');
+    case 'Top10RankingTercera.png': return require('../../assets/Medallas/Top10RankingTercera.png');
+    case 'Top1RankingCuarta.png': return require('../../assets/Medallas/Top1RankingCuarta.png');
+    case 'Top1RankingEscalafon.png': return require('../../assets/Medallas/Top1RankingEscalafon.png');
+    case 'Top1RankingHonor.png': return require('../../assets/Medallas/Top1RankingHonor.png');
+    case 'Top1RankingInicial.png': return require('../../assets/Medallas/Top1RankingInicial.png');
+    case 'Top1RankingPrimera.png': return require('../../assets/Medallas/Top1RankingPrimera.png');
+    case 'Top1RankingQuinta.png': return require('../../assets/Medallas/Top1RankingQuinta.png');
+    case 'Top1RankingSegunda.png': return require('../../assets/Medallas/Top1RankingSegunda.png');
+    case 'Top1RankingTercera.png': return require('../../assets/Medallas/Top1RankingTercera.png');
+    case 'Top5RankingCuarta.png': return require('../../assets/Medallas/Top5RankingCuarta.png');
+    case 'Top5RankingEscalafon.png': return require('../../assets/Medallas/Top5RankingEscalafon.png');
+    case 'Top5RankingHonor.png': return require('../../assets/Medallas/Top5RankingHonor.png');
+    case 'Top5RankingInicial.png': return require('../../assets/Medallas/Top5RankingInicial.png');
+    case 'Top5RankingPrimera.png': return require('../../assets/Medallas/Top5RankingPrimera.png');
+    case 'Top5RankingQuinta.png': return require('../../assets/Medallas/Top5RankingQuinta.png');
+    case 'Top5RankingSegunda.png': return require('../../assets/Medallas/Top5RankingSegunda.png');
+    case 'Top5RankingTercera.png': return require('../../assets/Medallas/Top5RankingTercera.png');
+    case 'NadaEsImposible.png': return require('../../assets/Medallas/NadaEsImposible.png');
+    case 'Bombardero.png': return require('../../assets/Medallas/Bombardero.png');
+    case 'NoEstoyNiAhi.png': return require('../../assets/Medallas/NoEstoyNiAhi.png');
+    case 'CeHacheI.png': return require('../../assets/Medallas/CeHacheI.png');
+    case 'PrimerTorneoJugado.png': return require('../../assets/Medallas/PrimerTorneoJugado.png');
+    default: return undefined;
   }
-
-  const isoDate = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (isoDate) {
-    const year = Number(isoDate[1]);
-    const month = Number(isoDate[2]) - 1;
-    const day = Number(isoDate[3]);
-    if (Number.isFinite(year) && Number.isFinite(month) && Number.isFinite(day)) {
-      return { year, month, time: new Date(year, month, day).getTime() };
-    }
-  }
-
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return null;
-  return { year: date.getFullYear(), month: date.getMonth(), time: date.getTime() };
-};
-
-const getTournamentDateParts = (tournament: any) =>
-  parseDateParts(tournament?.start_date) ||
-  parseDateParts(tournament?.end_date) ||
-  parseDateParts(tournament?.created_at);
-
-export const getTournamentYear = (tournament: any) => getTournamentDateParts(tournament)?.year || null;
-
-const getTournamentTime = (tournament: any) => getTournamentDateParts(tournament)?.time || 0;
-
-const getAvailableYears = (tournaments: any[]) =>
-  Array.from(
-    new Set(
-      tournaments
-        .map((tournament) => getTournamentYear(tournament))
-        .filter((year): year is number => Number.isFinite(year))
-    )
-  ).sort((left, right) => right - left);
-
-const isMainRoundName = (roundName: unknown) => {
-  const normalized = normalizeKey(roundName);
-  return !normalized.startsWith('grupo ') &&
-    !normalized.includes('consolaci') &&
-    !normalized.includes('repech') &&
-    !normalized.includes('puesto') &&
-    !/(^|\s)(3er|4to|5to|6to)\b/.test(normalized);
-};
-
-const isFinalRoundName = (roundName: unknown) => {
-  const normalized = normalizeKey(roundName);
-  if (!normalized) return false;
-  if (normalized.includes('gran final')) return true;
-  if (normalized.includes('semi') || normalized.includes('cuart') || normalized.includes('octav')) return false;
-  if (normalized.includes('puesto')) return false;
-  return /\bfinal\b/.test(normalized);
-};
-
-const getFinalMatch = (matches: any[]) => {
-  const mainMatches = (matches || [])
-    .filter((match) => isMainRoundName(match?.round))
-    .sort((left, right) => {
-      const roundDelta = Number(right?.round_number || 0) - Number(left?.round_number || 0);
-      if (roundDelta !== 0) return roundDelta;
-      return Number(right?.match_order || 0) - Number(left?.match_order || 0);
-    });
-
-  if (!mainMatches.length) return null;
-
-  const namedFinal = mainMatches.find((match) => isFinalRoundName(match?.round));
-  return namedFinal || mainMatches[0];
-};
-
-const isPlayerInMatch = (match: any, playerId: string) =>
-  match?.player_a_id === playerId ||
-  match?.player_a2_id === playerId ||
-  match?.player_b_id === playerId ||
-  match?.player_b2_id === playerId;
-
-const getPlayerSide = (match: any, playerId: string): 'A' | 'B' | null => {
-  if (match?.player_a_id === playerId || match?.player_a2_id === playerId) return 'A';
-  if (match?.player_b_id === playerId || match?.player_b2_id === playerId) return 'B';
-  return null;
-};
-
-const getSidePlayerIds = (match: any, side: 'A' | 'B') => {
-  const ids = side === 'A'
-    ? [match?.player_a_id, match?.player_a2_id]
-    : [match?.player_b_id, match?.player_b2_id];
-  return ids
-    .map((id) => String(id || '').trim())
-    .filter((id) => id && id !== 'BYE');
-};
-
-const isPlayerWinner = (match: any, playerId: string, tournamentMatches: any[] = []) => {
-  if (match?.winner_id === playerId || match?.winner_2_id === playerId) return true;
-  const winnerSide = resolveMatchWinnerSide(match, tournamentMatches);
-  const playerSide = getPlayerSide(match, playerId);
-  return !!winnerSide && winnerSide === playerSide;
-};
-
-const getMatchDateTime = (match: any, tournamentById: Record<string, any>) => {
-  const scheduled = parseDateParts(match?.scheduled_at)?.time;
-  if (scheduled) return scheduled;
-  const tournamentTime = getTournamentTime(tournamentById[match?.tournament_id]);
-  if (tournamentTime) return tournamentTime;
-  return parseDateParts(match?.created_at)?.time || 0;
-};
-
-const sortPlayerMatches = (matches: any[], tournamentById: Record<string, any>) =>
-  [...matches].sort((left, right) => {
-    const dateDelta = getMatchDateTime(left, tournamentById) - getMatchDateTime(right, tournamentById);
-    if (dateDelta !== 0) return dateDelta;
-    const roundDelta = Number(left?.round_number || 0) - Number(right?.round_number || 0);
-    if (roundDelta !== 0) return roundDelta;
-    const orderDelta = Number(left?.match_order || 0) - Number(right?.match_order || 0);
-    if (orderDelta !== 0) return orderDelta;
-    return String(left?.id || '').localeCompare(String(right?.id || ''));
-  });
-
-const getPlayerMatchStats = (match: any, playerId: string): MatchStats => {
-  const emptyStats = { setsWon: 0, setsLost: 0, gamesWon: 0, gamesLost: 0 };
-  const playerSide = getPlayerSide(match, playerId);
-  if (!playerSide) return emptyStats;
-
-  const scoreText = getScoreText(match?.score);
-  if (!scoreText || /^W\.?O\.?$/i.test(scoreText)) return emptyStats;
-
-  return scoreText
-    .split(/\s*,\s*/)
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .reduce((acc, setScore) => {
-      const parsed = parseSetScore(setScore);
-      if (!parsed) return acc;
-
-      const myGames = playerSide === 'A' ? parsed.leftValue : parsed.rightValue;
-      const opponentGames = playerSide === 'A' ? parsed.rightValue : parsed.leftValue;
-
-      acc.gamesWon += myGames;
-      acc.gamesLost += opponentGames;
-      if (myGames > opponentGames) acc.setsWon += 1;
-      if (opponentGames > myGames) acc.setsLost += 1;
-      return acc;
-    }, { ...emptyStats });
-};
-
-const hasRecordedScore = (match: any) => Boolean(getScoreText(match?.score));
-
-const getMostFacedRival = async (matches: any[], playerId: string) => {
-  const rivalCounts = new Map<string, number>();
-
-  matches.forEach((match) => {
-    const playerSide = getPlayerSide(match, playerId);
-    if (!playerSide) return;
-    const rivalSide = playerSide === 'A' ? 'B' : 'A';
-    getSidePlayerIds(match, rivalSide).forEach((rivalId) => {
-      rivalCounts.set(rivalId, (rivalCounts.get(rivalId) || 0) + 1);
-    });
-  });
-
-  const [rivalId, matchCount] = Array.from(rivalCounts.entries())
-    .sort((left, right) => {
-      const countDelta = right[1] - left[1];
-      if (countDelta !== 0) return countDelta;
-      return left[0].localeCompare(right[0]);
-    })[0] || [];
-
-  if (!rivalId || !matchCount) {
-    return { mostFacedRivalName: '-', mostFacedRivalMatches: 0, mostFacedRivalId: null };
-  }
-
-  const { data: rivalProfile } = await supabase
-    .from('public_profiles')
-    .select('name')
-    .eq('id', rivalId)
-    .maybeSingle();
-
-  return {
-    mostFacedRivalName: rivalProfile?.name || 'Jugador',
-    mostFacedRivalMatches: matchCount,
-    mostFacedRivalId: rivalId,
-  };
-};
-
-const getInitialRankingAccumulator = (): RankingAccumulator => ({
-  points: 0,
-  trophies: 0,
-  matchesWon: 0,
-  matchesPlayed: 0,
-  setsWon: 0,
-  gamesWon: 0,
-});
-
-const ensureRankingAccumulator = (ranking: Record<string, RankingAccumulator>, playerId: string) => {
-  if (!ranking[playerId]) ranking[playerId] = getInitialRankingAccumulator();
-  return ranking[playerId];
-};
-
-const buildRanking = (
-  tournaments: any[],
-  matchesByTournament: Record<string, any[]>,
-  registrationsByTournament: Record<string, any[]>
-) => {
-  const ranking: Record<string, RankingAccumulator> = {};
-
-  tournaments.forEach((tournament) => {
-    if (tournament?.is_tournament_master === true) return;
-
-    const tournamentMatches = matchesByTournament[tournament.id] || [];
-    const placements = getTournamentPlacements(tournament, tournamentMatches);
-
-    placements.forEach((placement) => {
-      const ids = [placement.playerId, placement.playerId2].filter(Boolean) as string[];
-      ids.forEach((id) => {
-        const playerRanking = ensureRankingAccumulator(ranking, id);
-        playerRanking.points += Number(placement.points) || 0;
-        if (String(placement.place) === '1') playerRanking.trophies += 1;
-      });
-    });
-
-    tournamentMatches
-      .filter(isFinishedMatch)
-      .forEach((match) => {
-        const winnerSide = resolveMatchWinnerSide(match, tournamentMatches);
-        (['A', 'B'] as const).forEach((side) => {
-          getSidePlayerIds(match, side).forEach((id) => {
-            const playerRanking = ensureRankingAccumulator(ranking, id);
-            const matchStats = getPlayerMatchStats(match, id);
-            playerRanking.matchesPlayed += 1;
-            playerRanking.setsWon += matchStats.setsWon;
-            playerRanking.gamesWon += matchStats.gamesWon;
-            if (winnerSide === side) playerRanking.matchesWon += 1;
-          });
-        });
-      });
-
-    (registrationsByTournament[tournament.id] || [])
-      .filter(isValidRegistration)
-      .forEach((registration) => {
-        const playerId = String(registration?.player_id || '').trim();
-        if (playerId) ensureRankingAccumulator(ranking, playerId);
-      });
-  });
-
-  Object.values(ranking).forEach((entry) => {
-    entry.points = Math.max(0, Number(entry.points) || 0);
-  });
-
-  const getWinRate = (entry: RankingAccumulator) =>
-    entry.matchesPlayed > 0 ? entry.matchesWon / entry.matchesPlayed : 0;
-
-  const isTie = (left: RankingAccumulator, right: RankingAccumulator) =>
-    left.points === right.points &&
-    left.trophies === right.trophies &&
-    getWinRate(left) === getWinRate(right) &&
-    left.setsWon === right.setsWon &&
-    left.gamesWon === right.gamesWon;
-
-  const rows = Object.entries(ranking)
-    .map(([playerId, entry]) => ({ playerId, ...entry }))
-    .sort((left, right) => {
-      if (right.points !== left.points) return right.points - left.points;
-      if (right.trophies !== left.trophies) return right.trophies - left.trophies;
-      const winRateDelta = getWinRate(right) - getWinRate(left);
-      if (winRateDelta !== 0) return winRateDelta;
-      if (right.setsWon !== left.setsWon) return right.setsWon - left.setsWon;
-      if (right.gamesWon !== left.gamesWon) return right.gamesWon - left.gamesWon;
-      return left.playerId.localeCompare(right.playerId);
-    });
-
-  let lastRank = 0;
-  let previousEntry: RankingAccumulator | null = null;
-  return rows.map((row, index) => {
-    const rank = previousEntry && isTie(previousEntry, row) ? lastRank : index + 1;
-    lastRank = rank;
-    previousEntry = row;
-    return { ...row, rank };
-  });
-};
-
-const getPlayerRank = (
-  playerId: string,
-  tournaments: any[],
-  matchesByTournament: Record<string, any[]>,
-  registrationsByTournament: Record<string, any[]>
-) => {
-  const rankingRows = buildRanking(tournaments, matchesByTournament, registrationsByTournament);
-  const playerRow = rankingRows.find((row) => row.playerId === playerId);
-  if (!playerRow) return null;
-  if (playerRow.points <= 0 && playerRow.matchesPlayed <= 0) return null;
-  return playerRow.rank;
-};
-
-const groupRowsByTournament = (rows: any[]) =>
-  (rows || []).reduce((acc: Record<string, any[]>, row: any) => {
-    const tournamentId = row?.tournament_id;
-    if (!tournamentId) return acc;
-    acc[tournamentId] = [...(acc[tournamentId] || []), row];
-    return acc;
-  }, {});
-
-const calculateStreaks = (
-  matches: any[],
-  playerId: string,
-  tournamentById: Record<string, any>,
-  matchesByTournament: Record<string, any[]> = {}
-) => {
-  let current = 0;
-  let best = 0;
-
-  sortPlayerMatches(matches.filter(isFinishedMatch), tournamentById).forEach((match) => {
-    const tournamentMatches = matchesByTournament[match.tournament_id] ||
-      matches.filter((candidate) => candidate.tournament_id === match.tournament_id);
-    if (isPlayerWinner(match, playerId, tournamentMatches)) {
-      current += 1;
-      best = Math.max(best, current);
-    } else {
-      current = 0;
-    }
-  });
-
-  return { current, best };
-};
-
-const buildRankingHistory = (
-  playerId: string,
-  contextTournaments: any[],
-  modality: ProfileModality,
-  selectedYear: number | null,
-  matchesByTournament: Record<string, any[]>,
-  registrationsByTournament: Record<string, any[]>
-) => {
-  if (!selectedYear) return createEmptyRankingHistory();
-
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
-
-  return createEmptyRankingHistory().map((point) => {
-    const isFutureMonth = selectedYear > currentYear ||
-      (selectedYear === currentYear && point.month > currentMonth);
-    if (isFutureMonth) return point;
-
-    const snapshotTime = new Date(selectedYear, point.month, 1).getTime();
-    const sourceTournaments = contextTournaments.filter((tournament) =>
-      isCompletedTournament(tournament) &&
-      isTournamentModality(tournament, modality) &&
-      getTournamentTime(tournament) < snapshotTime
-    );
-    const rank = sourceTournaments.length
-      ? getPlayerRank(playerId, sourceTournaments, matchesByTournament, registrationsByTournament)
-      : null;
-
-    return {
-      ...point,
-      singlesRank: modality === 'singles' ? rank : null,
-      doblesRank: modality === 'dobles' ? rank : null,
-    };
-  });
-};
-
-const getRankingRange = (
-  playerId: string,
-  contextTournaments: any[],
-  modality: ProfileModality,
-  years: number[],
-  matchesByTournament: Record<string, any[]>,
-  registrationsByTournament: Record<string, any[]>,
-  currentRank?: number | null
-) => {
-  const snapshotRanks = years
-    .flatMap((year) =>
-      buildRankingHistory(playerId, contextTournaments, modality, year, matchesByTournament, registrationsByTournament)
-    )
-    .map((point) => modality === 'dobles' ? point.doblesRank : point.singlesRank)
-    .filter((rank): rank is number => typeof rank === 'number' && Number.isFinite(rank));
-  const ranks = [
-    ...snapshotRanks,
-    ...(typeof currentRank === 'number' && Number.isFinite(currentRank) ? [currentRank] : []),
-  ];
-
-  if (!ranks.length) return { bestRanking: '-', worstRanking: '-' };
-  return {
-    bestRanking: `#${Math.min(...ranks)}`,
-    worstRanking: `#${Math.max(...ranks)}`,
-  };
 };
 
 export const loadProfileStatsBundle = async ({
@@ -519,775 +152,102 @@ export const loadProfileStatsBundle = async ({
   modality: ProfileModality;
   selectedYear: number | null;
 }) => {
-  const { data: scopedTournaments, error: scopedTournamentsError } = await supabase
-    .from('tournaments')
-    .select('id, name, status, format, description, modality, level, organization_id, start_date, end_date, created_at, is_tournament_master')
-    .eq('organization_id', context.org_id)
-    .eq('level', context.level)
-    .eq('is_tournament_master', false);
+  const cacheKey = `profileStats:${playerId}:${context.org_id}:${context.level}:${modality}:${selectedYear || 'all'}`;
 
-  if (scopedTournamentsError) throw scopedTournamentsError;
+  return resolveCachedData({
+    key: cacheKey,
+    ttlMs: 300_000, // 5 minutes standard
+    fetchFn: async () => {
+      const { data, error } = await supabase.rpc('get_player_profile_stats', {
+        p_player_id: playerId,
+        p_org_id: context.org_id,
+        p_level: context.level,
+        p_modality: modality,
+        p_selected_year: selectedYear,
+      });
 
-  const contextTournaments = scopedTournaments || [];
-  const tournamentById = contextTournaments.reduce((acc: Record<string, any>, tournament: any) => {
-    acc[tournament.id] = tournament;
-    return acc;
-  }, {});
-  const tournamentIds = contextTournaments.map((tournament: any) => tournament.id).filter(Boolean);
+      if (error) {
+        console.error('Error fetching player profile stats from RPC:', error);
+        throw error;
+      }
 
-  if (!tournamentIds.length) {
-    return {
-      stats: DEFAULT_PROFILE_STATS,
-      rankingHistory: createEmptyRankingHistory(),
-      availableYears: [],
-      effectiveYear: null,
-    };
-  }
+      if (!data) {
+        return {
+          stats: DEFAULT_PROFILE_STATS,
+          rankingHistory: createEmptyRankingHistory(),
+          availableYears: [],
+          effectiveYear: null,
+        };
+      }
 
-  const { data: allMatchesRows, error: allMatchesError } = await supabase
-    .from('matches')
-    .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, round_number, match_order, score, status, scheduled_at, created_at')
-    .in('tournament_id', tournamentIds);
+      const rawRankingHistory = (data.rankingHistory || []) as any[];
+      const rankingHistory = rawRankingHistory.map((point: any) => ({
+        month: Number(point.month),
+        singlesRank: point.singlesRank !== null ? Number(point.singlesRank) : null,
+        doblesRank: point.doblesRank !== null ? Number(point.doblesRank) : null,
+      }));
 
-  if (allMatchesError) throw allMatchesError;
+      const statsObj = data.stats || {};
+      const stats: PlayerProfileStats = {
+        rank: String(statsObj.rank || '-'),
+        trophies: Number(statsObj.trophies || 0),
+        wins: Number(statsObj.wins || 0),
+        winRate: String(statsObj.winRate || '0%'),
+        totalMatches: Number(statsObj.totalMatches || 0),
+        setsWon: Number(statsObj.setsWon || 0),
+        setsLost: Number(statsObj.setsLost || 0),
+        gamesWon: Number(statsObj.gamesWon || 0),
+        gamesLost: Number(statsObj.gamesLost || 0),
+        finalsPlayed: Number(statsObj.finalsPlayed || 0),
+        currentStreak: Number(statsObj.currentStreak || 0),
+        bestStreak: Number(statsObj.bestStreak || 0),
+        debutYear: String(statsObj.debutYear || '-'),
+        bestRanking: String(statsObj.bestRanking || '-'),
+        worstRanking: String(statsObj.worstRanking || '-'),
+        mostFacedRivalName: String(statsObj.mostFacedRivalName || '-'),
+        mostFacedRivalMatches: Number(statsObj.mostFacedRivalMatches || 0),
+        mostFacedRivalId: statsObj.mostFacedRivalId ? String(statsObj.mostFacedRivalId) : null,
+      };
 
-  const { data: registrationRows, error: registrationsError } = await supabase
-    .from('registrations')
-    .select('tournament_id, player_id, status')
-    .in('tournament_id', tournamentIds);
+      const availableYears = (data.availableYears || []) as number[];
+      const effectiveYear = data.effectiveYear !== null ? Number(data.effectiveYear) : null;
 
-  if (registrationsError) throw registrationsError;
-
-  const allMatches = allMatchesRows || [];
-  const registrations = registrationRows || [];
-  const matchesByTournament = groupRowsByTournament(allMatches);
-  const registrationsByTournament = groupRowsByTournament(registrations);
-
-  const playerTournamentIds = new Set<string>();
-  allMatches
-    .filter((match) => isPlayerInMatch(match, playerId))
-    .forEach((match) => playerTournamentIds.add(match.tournament_id));
-  registrations
-    .filter((registration) => registration.player_id === playerId && isValidRegistration(registration))
-    .forEach((registration) => playerTournamentIds.add(registration.tournament_id));
-
-  const playerContextTournaments = contextTournaments.filter((tournament: any) => playerTournamentIds.has(tournament.id));
-  const availableYears = getAvailableYears(playerContextTournaments.length ? playerContextTournaments : contextTournaments);
-  const effectiveYear = availableYears.includes(Number(selectedYear))
-    ? Number(selectedYear)
-    : availableYears[0] || null;
-
-  const modalityTournaments = contextTournaments.filter((tournament: any) => isTournamentModality(tournament, modality));
-  const selectedYearTournaments = effectiveYear
-    ? modalityTournaments.filter((tournament: any) => getTournamentYear(tournament) === effectiveYear)
-    : [];
-  const selectedCompletedTournaments = selectedYearTournaments.filter(isCompletedTournament);
-  const selectedTournamentIds = new Set(selectedYearTournaments.map((tournament: any) => tournament.id));
-
-  const selectedPlayerMatches = allMatches.filter((match: any) =>
-    selectedTournamentIds.has(match.tournament_id) &&
-    isFinishedMatch(match) &&
-    isPlayerInMatch(match, playerId)
-  );
-
-  const selectedStats = selectedPlayerMatches.reduce((acc, match) => {
-    const tournamentMatches = matchesByTournament[match.tournament_id] || [];
-    const matchStats = getPlayerMatchStats(match, playerId);
-    acc.totalMatches += 1;
-    acc.setsWon += matchStats.setsWon;
-    acc.setsLost += matchStats.setsLost;
-    acc.gamesWon += matchStats.gamesWon;
-    acc.gamesLost += matchStats.gamesLost;
-    if (isPlayerWinner(match, playerId, tournamentMatches)) acc.wins += 1;
-    return acc;
-  }, {
-    totalMatches: 0,
-    wins: 0,
-    setsWon: 0,
-    setsLost: 0,
-    gamesWon: 0,
-    gamesLost: 0,
-  });
-
-  const rankingRows = buildRanking(selectedCompletedTournaments, matchesByTournament, registrationsByTournament);
-  const playerRankingRow = rankingRows.find((row) => row.playerId === playerId);
-  const hasCompetitiveData = !!playerRankingRow && (playerRankingRow.points > 0 || playerRankingRow.matchesPlayed > 0 || selectedStats.totalMatches > 0);
-  const rank = playerRankingRow && hasCompetitiveData ? `#${playerRankingRow.rank}` : '-';
-
-  const finalsPlayed = selectedCompletedTournaments.reduce((count, tournament: any) => {
-    const finalMatch = getFinalMatch(matchesByTournament[tournament.id] || []);
-    if (!finalMatch || !isPlayerInMatch(finalMatch, playerId)) return count;
-    return count + 1;
-  }, 0);
-
-  const allModalityPlayerMatches = allMatches.filter((match: any) =>
-    isPlayerInMatch(match, playerId) &&
-    modalityTournaments.some((tournament: any) => tournament.id === match.tournament_id)
-  );
-  const selectedBestStreak = calculateStreaks(selectedPlayerMatches, playerId, tournamentById, matchesByTournament).best;
-  const currentStreak = calculateStreaks(allModalityPlayerMatches, playerId, tournamentById, matchesByTournament).current;
-
-  const debutTournament = [...modalityTournaments]
-    .filter((tournament: any) => {
-      const playerHadMatch = (matchesByTournament[tournament.id] || []).some((match) =>
-        isFinishedMatch(match) && isPlayerInMatch(match, playerId)
-      );
-      const playerRegistered = (registrationsByTournament[tournament.id] || []).some((registration) =>
-        registration.player_id === playerId && isValidRegistration(registration)
-      );
-      return playerHadMatch || playerRegistered;
-    })
-    .sort((left: any, right: any) => getTournamentTime(left) - getTournamentTime(right))[0];
-  const debutYear = debutTournament ? String(getTournamentYear(debutTournament) || '-') : '-';
-
-  const winRate = selectedStats.totalMatches > 0
-    ? `${Math.round((selectedStats.wins / selectedStats.totalMatches) * 100)}%`
-    : '0%';
-  const rankingRange = getRankingRange(
-    playerId,
-    contextTournaments,
-    modality,
-    availableYears,
-    matchesByTournament,
-    registrationsByTournament,
-    playerRankingRow?.rank || null
-  );
-  const mostFacedRival = await getMostFacedRival(selectedPlayerMatches, playerId);
-
-  return {
-    stats: {
-      ...DEFAULT_PROFILE_STATS,
-      rank,
-      trophies: playerRankingRow?.trophies || 0,
-      wins: selectedStats.wins,
-      winRate,
-      totalMatches: selectedStats.totalMatches,
-      setsWon: selectedStats.setsWon,
-      setsLost: selectedStats.setsLost,
-      gamesWon: selectedStats.gamesWon,
-      gamesLost: selectedStats.gamesLost,
-      finalsPlayed,
-      currentStreak,
-      bestStreak: selectedBestStreak,
-      debutYear,
-      bestRanking: rankingRange.bestRanking,
-      worstRanking: rankingRange.worstRanking,
-      mostFacedRivalName: mostFacedRival.mostFacedRivalName,
-      mostFacedRivalMatches: mostFacedRival.mostFacedRivalMatches,
-      mostFacedRivalId: mostFacedRival.mostFacedRivalId,
+      return {
+        stats,
+        rankingHistory,
+        availableYears,
+        effectiveYear,
+      };
     },
-    rankingHistory: buildRankingHistory(playerId, contextTournaments, modality, effectiveYear, matchesByTournament, registrationsByTournament),
-    availableYears,
-    effectiveYear,
-  };
+  });
 };
 
-const getContextKey = (tournament: any) =>
-  [
-    tournament?.organization_id || '',
-    tournament?.level || '',
-    tournament?.modality || 'singles',
-  ].join('|');
-
-const getYearContextKey = (tournament: any) => `${getContextKey(tournament)}|${getTournamentYear(tournament) || ''}`;
-
-const getChampionPlacements = (playerId: string, tournaments: any[], matchesByTournament: Record<string, any[]>) =>
-  tournaments.flatMap((tournament) => {
-    const placements = getTournamentPlacements(tournament, matchesByTournament[tournament.id] || []);
-    const championPlacement = placements.find((placement) =>
-      String(placement.place) === '1' &&
-      (placement.playerId === playerId || placement.playerId2 === playerId)
-    );
-    return championPlacement ? [{ tournament, placement: championPlacement }] : [];
-  });
-
 export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAchievement[]> => {
-  const { data: playerMatchRows, error: playerMatchesError } = await supabase
-    .from('matches')
-    .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, round_number, match_order, score, status, scheduled_at, created_at')
-    .or(`player_a_id.eq.${playerId},player_a2_id.eq.${playerId},player_b_id.eq.${playerId},player_b2_id.eq.${playerId}`);
-
-  if (playerMatchesError) throw playerMatchesError;
-
-  const { data: playerRegistrationsRows, error: playerRegistrationsError } = await supabase
-    .from('registrations')
-    .select('tournament_id, player_id, status')
-    .eq('player_id', playerId);
-
-  if (playerRegistrationsError) throw playerRegistrationsError;
-
-  const playerTournamentIds = Array.from(new Set([
-    ...(playerMatchRows || []).map((match: any) => match.tournament_id).filter(Boolean),
-    ...(playerRegistrationsRows || [])
-      .filter(isValidRegistration)
-      .map((registration: any) => registration.tournament_id)
-      .filter(Boolean),
-  ]));
-
-  if (!playerTournamentIds.length) return [];
-
-  const { data: playerTournamentsRows, error: playerTournamentsError } = await supabase
-    .from('tournaments')
-    .select('id, name, status, format, description, modality, level, organization_id, start_date, end_date, created_at, is_tournament_master')
-    .in('id', playerTournamentIds);
-
-  if (playerTournamentsError) throw playerTournamentsError;
-
-  const playerTournaments = playerTournamentsRows || [];
-  const playerTournamentById = playerTournaments.reduce((acc: Record<string, any>, tournament: any) => {
-    acc[tournament.id] = tournament;
-    return acc;
-  }, {});
-
-  const { data: allPlayerTournamentMatchesRows, error: allPlayerTournamentMatchesError } = await supabase
-    .from('matches')
-    .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, round_number, match_order, score, status, scheduled_at, created_at')
-    .in('tournament_id', playerTournamentIds);
-
-  if (allPlayerTournamentMatchesError) throw allPlayerTournamentMatchesError;
-
-  const { data: allPlayerTournamentRegistrationsRows, error: allPlayerTournamentRegistrationsError } = await supabase
-    .from('registrations')
-    .select('tournament_id, player_id, status')
-    .in('tournament_id', playerTournamentIds);
-
-  if (allPlayerTournamentRegistrationsError) throw allPlayerTournamentRegistrationsError;
-
-  const allPlayerTournamentMatches = allPlayerTournamentMatchesRows || [];
-  const matchesByPlayerTournament = groupRowsByTournament(allPlayerTournamentMatches);
-  const registrationsByPlayerTournament = groupRowsByTournament(allPlayerTournamentRegistrationsRows || []);
-  const achievements: PlayerAchievement[] = [];
-
-  const playedTournaments = [...playerTournaments]
-    .filter((tournament: any) => {
-      const playerHadMatch = (matchesByPlayerTournament[tournament.id] || []).some((match) =>
-        isFinishedMatch(match) && isPlayerInMatch(match, playerId)
-      );
-      const playerRegistered = (registrationsByPlayerTournament[tournament.id] || []).some((registration) =>
-        registration.player_id === playerId && isValidRegistration(registration)
-      );
-      return playerHadMatch || playerRegistered;
-    })
-    .sort((left: any, right: any) => getTournamentTime(left) - getTournamentTime(right));
-
-  if (playedTournaments[0]) {
-    achievements.push({
-      id: 'first-tournament',
-      title: 'Primer torneo jugado',
-      detail: [playedTournaments[0].name || 'Torneo', getTournamentYear(playedTournaments[0])]
-        .filter(Boolean)
-        .join(' - '),
-      icon: 'tennisball',
-      tone: 'silver',
-      imageSource: require('../../assets/Medallas/PrimerTorneoJugado.png'),
-      dateEarned: playedTournaments[0].start_date || playedTournaments[0].created_at || new Date().toISOString(),
-    });
-  }
-
-  const finishedPlayerMatches = (playerMatchRows || [])
-    .filter(isFinishedMatch)
-    .sort((left: any, right: any) => getMatchDateTime(left, playerTournamentById) - getMatchDateTime(right, playerTournamentById));
-  const firstWin = finishedPlayerMatches.find((match: any) =>
-    isPlayerWinner(match, playerId, matchesByPlayerTournament[match.tournament_id] || [])
-  );
-
-  if (firstWin) {
-    const tournament = playerTournamentById[firstWin.tournament_id];
-    achievements.push({
-      id: 'first-win',
-      title: 'Primer triunfo',
-      detail: tournament?.name || 'Partido ganado',
-      icon: 'tennisball',
-      tone: 'gold',
-      imageSource: require('../../assets/Medallas/PrimerTriunfo.png'),
-      dateEarned: firstWin.scheduled_at || firstWin.created_at || new Date().toISOString(),
-    });
-  }
-
-  const contextKeys = Array.from(new Set(playerTournaments.filter(isCompletedTournament).map(getContextKey)));
-  const orgIds = Array.from(new Set(playerTournaments.map((tournament: any) => tournament.organization_id).filter(Boolean)));
-  const levels = Array.from(new Set(playerTournaments.map((tournament: any) => tournament.level).filter(Boolean)));
-  const topTenLevels = new Set<string>();
-  const topFiveLevels = new Set<string>();
-  const topOneLevels = new Set<string>();
-  let rankingPoolTournaments: any[] = [];
-
-  if (contextKeys.length && orgIds.length && levels.length) {
-    const { data: rankingPoolTournamentsRows } = await supabase
-      .from('tournaments')
-      .select('id, name, status, format, description, modality, level, organization_id, start_date, end_date, created_at, is_tournament_master')
-      .in('organization_id', orgIds)
-      .in('level', levels)
-      .eq('is_tournament_master', false)
-      .in('status', Array.from(COMPLETED_STATUSES));
-
-    rankingPoolTournaments = (rankingPoolTournamentsRows || []).filter((tournament: any) =>
-      contextKeys.includes(getContextKey(tournament))
-    );
-
-    if (rankingPoolTournaments.length) {
-      const rankingTournamentIds = rankingPoolTournaments.map((tournament: any) => tournament.id);
-      const { data: rankingMatchesRows } = await supabase
-        .from('matches')
-        .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, round_number, match_order, score, status, scheduled_at, created_at')
-        .in('tournament_id', rankingTournamentIds);
-      const { data: rankingRegistrationsRows } = await supabase
-        .from('registrations')
-        .select('tournament_id, player_id, status')
-        .in('tournament_id', rankingTournamentIds);
-
-      const rankingMatchesByTournament = groupRowsByTournament(rankingMatchesRows || []);
-      const rankingRegistrationsByTournament = groupRowsByTournament(rankingRegistrationsRows || []);
-      const rankingGroups = new Map<string, any[]>();
-
-      rankingPoolTournaments.forEach((tournament: any) => {
-        [getContextKey(tournament), getYearContextKey(tournament)].forEach((key) => {
-          rankingGroups.set(key, [...(rankingGroups.get(key) || []), tournament]);
-        });
+  const cacheKey = `playerAchievements:${playerId}`;
+  return resolveCachedData({
+    key: cacheKey,
+    ttlMs: 300_000, // 5 minutes standard
+    fetchFn: async () => {
+      const { data, error } = await supabase.rpc('get_player_achievements', {
+        p_player_id: playerId,
       });
 
-      Array.from(rankingGroups.values()).forEach((groupTournaments) => {
-        const rank = getPlayerRank(playerId, groupTournaments, rankingMatchesByTournament, rankingRegistrationsByTournament);
-        if (!rank) return;
-        const level = String(groupTournaments[0]?.level || 'Categoria').trim();
-        const levelKey = level || 'Categoria';
-        if (rank <= 10) topTenLevels.add(levelKey);
-        if (rank <= 5) topFiveLevels.add(levelKey);
-        if (rank === 1) topOneLevels.add(levelKey);
-      });
-    }
-  }
-
-
-  const getLevelImageName = (type: string, level: string) => {
-    const l = normalizeKey(level);
-    if (l === 'primera' || l === '1ra') return `${type}Primera.png`;
-    if (l === 'segunda' || l === '2da') return `${type}Segunda.png`;
-    if (l === 'tercera' || l === '3ra') return `${type}Tercera.png`;
-    if (l === 'cuarta' || l === '4ta') return `${type}Cuarta.png`;
-    if (l === 'quinta' || l === '5ta') return `${type}Quinta.png`;
-    if (l === 'honor') return `${type}Honor.png`;
-    if (l === 'escalafon') return `${type}Escalafón.png`;
-    if (l === 'inicial') return `${type}Inicial.png`;
-    return null;
-  };
-
-  const getMedalSource = (filename: string | null) => {
-    switch(filename) {
-      case '10Triunfos.png': return require('../../assets/Medallas/10Triunfos.png');
-      case '25Triunfos.png': return require('../../assets/Medallas/25Triunfos.png');
-      case '50Triunfos.png': return require('../../assets/Medallas/50Triunfos.png');
-      case '100Triunfos.png': return require('../../assets/Medallas/100Triunfos.png');
-      case '150Triunfos.png': return require('../../assets/Medallas/150Triunfos.png');
-      case '200Triunfos.png': return require('../../assets/Medallas/200Triunfos.png');
-      case '250Triunfos.png': return require('../../assets/Medallas/250Triunfos.png');
-      case 'CampeónCuarta.png': return require('../../assets/Medallas/CampeónCuarta.png');
-      case 'CampeónEscalafón.png': return require('../../assets/Medallas/CampeónEscalafón.png');
-      case 'CampeónHonor.png': return require('../../assets/Medallas/CampeónHonor.png');
-      case 'CampeónInicial.png': return require('../../assets/Medallas/CampeónInicial.png');
-      case 'CampeónInvicto.png':
-      case 'CampeónInvicta.png': return require('../../assets/Medallas/CampeónInvicta.png');
-      case 'CampeónPrimera.png': return require('../../assets/Medallas/CampeónPrimera.png');
-      case 'CampeónQuinta.png': return require('../../assets/Medallas/CampeónQuinta.png');
-      case 'CampeónSegunda.png': return require('../../assets/Medallas/CampeónSegunda.png');
-      case 'CampeónSinCederGames.png': return require('../../assets/Medallas/CampeónSinCederGames.png');
-      case 'CampeónSinCederSets.png': return require('../../assets/Medallas/CampeónSinCederSets.png');
-      case 'CampeónTercera.png': return require('../../assets/Medallas/CampeónTercera.png');
-      case 'DiosDelTenis.png': return require('../../assets/Medallas/DiosDelTenis.png');
-      case 'Racha100Victorias.png': return require('../../assets/Medallas/Racha100Victorias.png');
-      case 'Racha10Victorias.png': return require('../../assets/Medallas/Racha10Victorias.png');
-      case 'Racha15Victorias.png': return require('../../assets/Medallas/Racha15Victorias.png');
-      case 'Racha20Victorias.png': return require('../../assets/Medallas/Racha20Victorias.png');
-      case 'Racha30Victorias.png': return require('../../assets/Medallas/Racha30Victorias.png');
-      case 'Racha40Victorias.png': return require('../../assets/Medallas/Racha40Victorias.png');
-      case 'Racha50Victorias.png': return require('../../assets/Medallas/Racha50Victorias.png');
-      case 'Racha5Victorias.png': return require('../../assets/Medallas/Racha5Victorias.png');
-      case 'Racha60Victorias.png': return require('../../assets/Medallas/Racha60Victorias.png');
-      case 'Racha70Victorias.png': return require('../../assets/Medallas/Racha70Victorias.png');
-      case 'Racha80Victorias.png': return require('../../assets/Medallas/Racha80Victorias.png');
-      case 'Racha90Victorias.png': return require('../../assets/Medallas/Racha90Victorias.png');
-      case 'Top10RankingCuarta.png': return require('../../assets/Medallas/Top10RankingCuarta.png');
-      case 'Top10RankingEscalafón.png': return require('../../assets/Medallas/Top10RankingEscalafón.png');
-      case 'Top10RankingHonor.png': return require('../../assets/Medallas/Top10RankingHonor.png');
-      case 'Top10RankingInicial.png': return require('../../assets/Medallas/Top10RankingInicial.png');
-      case 'Top10RankingPrimera.png': return require('../../assets/Medallas/Top10RankingPrimera.png');
-      case 'Top10RankingQuinta.png': return require('../../assets/Medallas/Top10RankingQuinta.png');
-      case 'Top10RankingSegunda.png': return require('../../assets/Medallas/Top10RankingSegunda.png');
-      case 'Top10RankingTercera.png': return require('../../assets/Medallas/Top10RankingTercera.png');
-      case 'Top1RankingCuarta.png': return require('../../assets/Medallas/Top1RankingCuarta.png');
-      case 'Top1RankingEscalafón.png': return require('../../assets/Medallas/Top1RankingEscalafón.png');
-      case 'Top1RankingHonor.png': return require('../../assets/Medallas/Top1RankingHonor.png');
-      case 'Top1RankingInicial.png': return require('../../assets/Medallas/Top1RankingInicial.png');
-      case 'Top1RankingPrimera.png': return require('../../assets/Medallas/Top1RankingPrimera.png');
-      case 'Top1RankingQuinta.png': return require('../../assets/Medallas/Top1RankingQuinta.png');
-      case 'Top1RankingSegunda.png': return require('../../assets/Medallas/Top1RankingSegunda.png');
-      case 'Top1RankingTercera.png': return require('../../assets/Medallas/Top1RankingTercera.png');
-      case 'Top5RankingCuarta.png': return require('../../assets/Medallas/Top5RankingCuarta.png');
-      case 'Top5RankingEscalafón.png': return require('../../assets/Medallas/Top5RankingEscalafón.png');
-      case 'Top5RankingHonor.png': return require('../../assets/Medallas/Top5RankingHonor.png');
-      case 'Top5RankingInicial.png': return require('../../assets/Medallas/Top5RankingInicial.png');
-      case 'Top5RankingPrimera.png': return require('../../assets/Medallas/Top5RankingPrimera.png');
-      case 'Top5RankingQuinta.png': return require('../../assets/Medallas/Top5RankingQuinta.png');
-      case 'Top5RankingSegunda.png': return require('../../assets/Medallas/Top5RankingSegunda.png');
-      case 'Top5RankingTercera.png': return require('../../assets/Medallas/Top5RankingTercera.png');
-      case 'NadaEsImposible.png': return require('../../assets/Medallas/NadaEsImposible.png');
-      case 'Bombardero.png': return require('../../assets/Medallas/Bombardero.png');
-      case 'NoEstoyNiAhi.png': return require('../../assets/Medallas/NoEstoyNiAhi.png');
-      case 'CeHacheI.png': return require('../../assets/Medallas/CeHacheI.png');
-      case 'PrimerTorneoJugado.png': return require('../../assets/Medallas/PrimerTorneoJugado.png');
-      default: return undefined;
-    }
-  };
-
-  Array.from(topOneLevels)
-    .sort((left, right) => left.localeCompare(right))
-    .forEach((level) => {
-      const normalizedLevel = normalizeKey(level) || 'categoria';
-      const key = contextKeys.find(ck => ck.includes(level)) || '';
-      const groupTournaments = rankingPoolTournaments.filter(t => getContextKey(t) === key);
-      const latestTourney = [...groupTournaments].sort((a, b) => getTournamentTime(b) - getTournamentTime(a))[0];
-      const dateEarned = latestTourney?.start_date || latestTourney?.created_at || new Date().toISOString();
-
-      achievements.push({
-        id: `top-one-${normalizedLevel}`,
-        title: `#1 ranking de ${level}`,
-        detail: `Alcanzó el #1 del ranking en ${level}`,
-        icon: 'podium',
-        tone: 'gold',
-        imageSource: getMedalSource(getLevelImageName('Top1Ranking', level)),
-        dateEarned,
-      });
-    });
-
-  Array.from(topFiveLevels)
-    .sort((left, right) => left.localeCompare(right))
-    .forEach((level) => {
-      const normalizedLevel = normalizeKey(level) || 'categoria';
-      const key = contextKeys.find(ck => ck.includes(level)) || '';
-      const groupTournaments = rankingPoolTournaments.filter(t => getContextKey(t) === key);
-      const latestTourney = [...groupTournaments].sort((a, b) => getTournamentTime(b) - getTournamentTime(a))[0];
-      const dateEarned = latestTourney?.start_date || latestTourney?.created_at || new Date().toISOString();
-
-      achievements.push({
-        id: `top-five-${normalizedLevel}`,
-        title: `Top 5 de ranking ${level}`,
-        detail: `Entro por primera vez entre los mejores 5 de ${level}`,
-        icon: 'tennisball',
-        tone: 'silver',
-        imageSource: getMedalSource(getLevelImageName('Top5Ranking', level)),
-        dateEarned,
-      });
-    });
-
-  Array.from(topTenLevels)
-    .sort((left, right) => left.localeCompare(right))
-    .forEach((level) => {
-      const normalizedLevel = normalizeKey(level) || 'categoria';
-      const key = contextKeys.find(ck => ck.includes(level)) || '';
-      const groupTournaments = rankingPoolTournaments.filter(t => getContextKey(t) === key);
-      const latestTourney = [...groupTournaments].sort((a, b) => getTournamentTime(b) - getTournamentTime(a))[0];
-      const dateEarned = latestTourney?.start_date || latestTourney?.created_at || new Date().toISOString();
-
-      achievements.push({
-        id: `top-ten-${normalizedLevel}`,
-        title: `Top 10 de ranking ${level}`,
-        detail: `Entro por primera vez entre los mejores 10 de ${level}`,
-        icon: 'tennisball',
-        tone: 'bronze',
-        imageSource: getMedalSource(getLevelImageName('Top10Ranking', level)),
-        dateEarned,
-      });
-    });
-
-  const totalWins = finishedPlayerMatches.filter((match: any) =>
-    isPlayerWinner(match, playerId, matchesByPlayerTournament[match.tournament_id] || [])
-  ).length;
-
-  [10, 25, 50, 100, 150, 200, 250].forEach((threshold) => {
-    if (totalWins >= threshold) {
-      const playerWinsMatches = finishedPlayerMatches.filter((match: any) =>
-        isPlayerWinner(match, playerId, matchesByPlayerTournament[match.tournament_id] || [])
-      );
-      const triggeringMatch = playerWinsMatches[threshold - 1];
-      const dateEarned = triggeringMatch?.scheduled_at || triggeringMatch?.created_at || new Date().toISOString();
-
-      achievements.push({
-        id: `wins-${threshold}`,
-        title: `${threshold} Triunfos`,
-        detail: `${threshold} partidos ganados en total`,
-        icon: 'tennisball',
-        tone: threshold >= 100 ? 'gold' : 'silver',
-        imageSource: getMedalSource(`${threshold}Triunfos.png`),
-        dateEarned,
-      });
-    }
-  });
-
-  const completedPlayerTournaments = playerTournaments.filter(isCompletedTournament);
-  const championEntries = getChampionPlacements(playerId, completedPlayerTournaments, matchesByPlayerTournament)
-    .sort((left, right) => getTournamentTime(left.tournament) - getTournamentTime(right.tournament));
-
-  const championLevels = new Set<string>();
-  championEntries.forEach(({ tournament }) => {
-    const level = String(tournament?.level || 'Categoria').trim();
-    const achievementId = `champion-${normalizeKey(level) || 'categoria'}`;
-    if (championLevels.has(achievementId)) return;
-    championLevels.add(achievementId);
-    achievements.push({
-      id: achievementId,
-      title: `Campeón ${level}`,
-      detail: tournament?.name || 'Campeonato ganado',
-      icon: 'trophy',
-      tone: 'gold',
-      imageSource: getMedalSource(getLevelImageName('Campeón', level)),
-      dateEarned: tournament?.start_date || tournament?.created_at || new Date().toISOString(),
-    });
-  });
-
-  const championCountByLevel = championEntries.reduce((acc: Record<string, number>, { tournament }) => {
-    const level = String(tournament?.level || 'Categoria').trim() || 'Categoria';
-    acc[level] = (acc[level] || 0) + 1;
-    return acc;
-  }, {});
-
-  Object.entries(championCountByLevel)
-    .sort(([leftLevel], [rightLevel]) => leftLevel.localeCompare(rightLevel))
-    .forEach(([level, count]) => {
-      [5, 10, 15, 20].forEach((threshold) => {
-        if (count < threshold) return;
-        const levelEntries = championEntries.filter(({ tournament }) => String(tournament?.level).trim() === level);
-        const triggeringEntry = levelEntries[threshold - 1];
-        const dateEarned = triggeringEntry?.tournament.start_date || triggeringEntry?.tournament.created_at || new Date().toISOString();
-
-        achievements.push({
-          id: `championships-${threshold}-${normalizeKey(level) || 'categoria'}`,
-          title: `${threshold} Campeonatos Logrados ${level}`,
-          detail: `${count} campeonatos ganados en ${level}`,
-          icon: threshold >= 15 ? 'trophy' : 'medal',
-          tone: threshold >= 10 ? 'gold' : 'silver',
-          dateEarned,
-        });
-      });
-    });
-
-  const allStreaks = calculateStreaks(finishedPlayerMatches, playerId, playerTournamentById, matchesByPlayerTournament);
-  [5, 10, 15, 20, 30, 40, 50, 60, 70, 80, 90, 100].forEach((threshold) => {
-    if (allStreaks.best >= threshold) {
-      let streakCount = 0;
-      let streakTriggerMatch: any = null;
-      for (const match of finishedPlayerMatches) {
-        if (isPlayerWinner(match, playerId, matchesByPlayerTournament[match.tournament_id] || [])) {
-          streakCount++;
-          if (streakCount === threshold) {
-            streakTriggerMatch = match;
-          }
-        } else {
-          streakCount = 0;
-        }
+      if (error) {
+        console.error('Error fetching player achievements from RPC:', error);
+        throw error;
       }
-      const dateEarned = streakTriggerMatch?.scheduled_at || streakTriggerMatch?.created_at || new Date().toISOString();
 
-      achievements.push({
-        id: `streak-${threshold}`,
-        title: `Racha de ${threshold} victorias`,
-        detail: `${allStreaks.best} victorias como mejor racha`,
-        icon: 'tennisball',
-        tone: threshold >= 30 ? 'gold' : threshold >= 15 ? 'silver' : 'bronze',
-        imageSource: getMedalSource(`Racha${threshold}Victorias.png`),
-        dateEarned,
-      });
-    }
+      const rawAchievements = (data || []) as any[];
+
+      return rawAchievements.map((ach: any) => ({
+        id: String(ach.id),
+        title: String(ach.title),
+        detail: String(ach.detail),
+        icon: String(ach.icon),
+        tone: ach.tone as any,
+        imageSource: getMedalSource(ach.imageName),
+        dateEarned: ach.dateEarned ? String(ach.dateEarned) : undefined,
+      }));
+    },
   });
-
-  const hasUndefeatedChampion = championEntries.some(({ tournament }) => {
-    const tournamentMatches = (matchesByPlayerTournament[tournament.id] || [])
-      .filter((match) => isFinishedMatch(match) && isPlayerInMatch(match, playerId));
-    return tournamentMatches.length > 0 &&
-      tournamentMatches.every((match) => isPlayerWinner(match, playerId, matchesByPlayerTournament[tournament.id] || []));
-  });
-
-  const hasNoSetLostChampion = championEntries.some(({ tournament }) => {
-    const tournamentMatches = (matchesByPlayerTournament[tournament.id] || [])
-      .filter((match) => isFinishedMatch(match) && isPlayerInMatch(match, playerId));
-    return tournamentMatches.length > 0 &&
-      tournamentMatches.every((match) => hasRecordedScore(match) && getPlayerMatchStats(match, playerId).setsLost === 0);
-  });
-
-  const hasNoGameLostChampion = championEntries.some(({ tournament }) => {
-    const tournamentMatches = (matchesByPlayerTournament[tournament.id] || [])
-      .filter((match) => isFinishedMatch(match) && isPlayerInMatch(match, playerId));
-    return tournamentMatches.length > 0 &&
-      tournamentMatches.every((match) => hasRecordedScore(match) && getPlayerMatchStats(match, playerId).gamesLost === 0);
-  });
-
-  const latestChampionTourney = championEntries[championEntries.length - 1]?.tournament;
-  const undefeatedDateEarned = latestChampionTourney?.start_date || latestChampionTourney?.created_at || new Date().toISOString();
-
-  if (hasUndefeatedChampion) {
-    achievements.push({
-      id: 'undefeated-champion',
-      title: 'Campeón invicto',
-      detail: 'Título ganado sin perder partidos',
-      icon: 'trophy',
-      tone: 'gold',
-      imageSource: getMedalSource('CampeónInvicto.png'),
-      dateEarned: undefeatedDateEarned,
-    });
-  }
-
-  if (hasNoSetLostChampion) {
-    achievements.push({
-      id: 'no-set-lost-champion',
-      title: 'Campeón sin ceder sets',
-      detail: 'Título ganado sin perder sets',
-      icon: 'ribbon',
-      tone: 'silver',
-      imageSource: getMedalSource('CampeónSinCederSets.png'),
-      dateEarned: undefeatedDateEarned,
-    });
-  }
-
-  if (hasNoGameLostChampion) {
-    achievements.push({
-      id: 'no-game-lost-champion',
-      title: 'Campeón sin ceder games',
-      detail: 'Título ganado sin perder games',
-      icon: 'medal',
-      tone: 'gold',
-      imageSource: getMedalSource('CampeónSinCederGames.png'),
-      dateEarned: undefeatedDateEarned,
-    });
-  }
-
-  if (hasUndefeatedChampion && hasNoSetLostChampion && hasNoGameLostChampion) {
-    achievements.push({
-      id: 'dios-del-tenis',
-      title: 'Dios del Tenis',
-      detail: 'Campeón invicto, sin perder sets y sin ceder games',
-      icon: 'star',
-      tone: 'gold',
-      imageSource: getMedalSource('DiosDelTenis.png'),
-      dateEarned: undefeatedDateEarned,
-    });
-  }
-
-  // --- NUEVOS LOGROS ---
-  let nadaEsImposibleMatch: any = null;
-  let bombarderoMatch: any = null;
-  let noEstoyNiAhiMatch: any = null;
-
-  for (const match of finishedPlayerMatches) {
-    const playerSide = getPlayerSide(match, playerId);
-    if (!playerSide) continue;
-
-    const scoreText = getScoreText(match?.score);
-    if (!scoreText || /^W\.?O\.?$/i.test(scoreText)) continue;
-
-    const sets = scoreText
-      .split(/\s*,\s*/)
-      .map((entry) => entry.trim())
-      .filter(Boolean);
-
-    const parsedSets = sets
-      .map((set) => {
-        const parsed = parseSetScore(set);
-        if (!parsed) return null;
-        const myGames = playerSide === 'A' ? parsed.leftValue : parsed.rightValue;
-        const opponentGames = playerSide === 'A' ? parsed.rightValue : parsed.leftValue;
-        return {
-          myGames,
-          opponentGames,
-          won: myGames > opponentGames,
-        };
-      })
-      .filter((s): s is { myGames: number; opponentGames: number; won: boolean } => s !== null);
-
-    if (parsedSets.length === 0) continue;
-
-    const isWinner = isPlayerWinner(match, playerId, matchesByPlayerTournament[match.tournament_id] || []);
-
-    // 1. Nada es imposible weon! Ni una wea!
-    if (!nadaEsImposibleMatch && isWinner) {
-      const setsLost = parsedSets.filter((s) => !s.won).length;
-      const isThreeSetComeback = parsedSets.length === 3 && !parsedSets[0].won && parsedSets[1].won && parsedSets[2].won;
-      const isFiveSetComeback = parsedSets.length === 5 && setsLost === 2;
-      if (isThreeSetComeback || isFiveSetComeback) {
-        nadaEsImposibleMatch = match;
-      }
-    }
-
-    // 2. Bombardero
-    if (!bombarderoMatch) {
-      const hasSixZeroSet = parsedSets.some((s) => s.myGames === 6 && s.opponentGames === 0);
-      if (hasSixZeroSet) {
-        bombarderoMatch = match;
-      }
-    }
-
-    // 3. No estoy ni ahí
-    if (!noEstoyNiAhiMatch && isWinner) {
-      const isNoLostGame = parsedSets.every((s) => s.myGames === 6 && s.opponentGames === 0);
-      if (isNoLostGame) {
-        noEstoyNiAhiMatch = match;
-      }
-    }
-  }
-
-  if (nadaEsImposibleMatch) {
-    achievements.push({
-      id: 'nada-es-imposible',
-      title: 'Nada es imposible weon! Ni una wea!',
-      detail: 'Ganar un partido de 3 sets habiendo perdido el primer set o ganar un partido de 5 sets habiendo perdido 2 sets',
-      icon: 'star',
-      tone: 'gold',
-      imageSource: getMedalSource('NadaEsImposible.png'),
-      dateEarned: nadaEsImposibleMatch.scheduled_at || nadaEsImposibleMatch.created_at || new Date().toISOString(),
-    });
-  }
-
-  if (bombarderoMatch) {
-    achievements.push({
-      id: 'bombardero',
-      title: 'Bombardero',
-      detail: 'Ganar un set 6-0',
-      icon: 'tennisball',
-      tone: 'gold',
-      imageSource: getMedalSource('Bombardero.png'),
-      dateEarned: bombarderoMatch.scheduled_at || bombarderoMatch.created_at || new Date().toISOString(),
-    });
-  }
-
-  if (noEstoyNiAhiMatch) {
-    achievements.push({
-      id: 'no-estoy-ni-ahi',
-      title: 'No estoy ni ahí',
-      detail: 'Ganar un partido de 3 o 5 sets sin perder ningún game',
-      icon: 'star',
-      tone: 'gold',
-      imageSource: getMedalSource('NoEstoyNiAhi.png'),
-      dateEarned: noEstoyNiAhiMatch.scheduled_at || noEstoyNiAhiMatch.created_at || new Date().toISOString(),
-    });
-  }
-
-  if (nadaEsImposibleMatch && bombarderoMatch && noEstoyNiAhiMatch) {
-    const dates = [
-      new Date(nadaEsImposibleMatch.scheduled_at || nadaEsImposibleMatch.created_at || 0).getTime(),
-      new Date(bombarderoMatch.scheduled_at || bombarderoMatch.created_at || 0).getTime(),
-      new Date(noEstoyNiAhiMatch.scheduled_at || noEstoyNiAhiMatch.created_at || 0).getTime(),
-    ];
-    const maxDate = new Date(Math.max(...dates));
-    const dateEarned = maxDate.getTime() > 0 ? maxDate.toISOString() : new Date().toISOString();
-
-    achievements.push({
-      id: 'ce-hache-i',
-      title: 'Ce Hache Í!!!',
-      detail: 'Obtener los logros "Nada es imposible weon! Ni una wea!", "Bombardero" y "No estoy ni ahí"',
-      icon: 'trophy',
-      tone: 'gold',
-      imageSource: getMedalSource('CeHacheI.png'),
-      dateEarned,
-    });
-  }
-
-  return achievements;
 };

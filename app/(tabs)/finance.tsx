@@ -8,7 +8,7 @@ import * as SecureStore from '@/utils/SecureStore';
 import { useRouter } from 'expo-router';
 import { canAccessAdminArea, getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
-import { getCachedValue, setCachedValue } from '@/services/runtimeCache';
+import { getCachedValue, setCachedValue, resolveCachedData } from '@/services/runtimeCache';
 
 type Tournament = {
     id: string;
@@ -62,19 +62,23 @@ export default function FinanceScreen() {
 
     const fetchAllOrganizations = async () => {
         const cacheKey = 'finance:allOrganizations';
-        const cached = getCachedValue<any[]>(cacheKey);
-        if (cached) {
-            setAllOrganizations(cached);
-            return;
-        }
-
-        const { data, error } = await supabase
-            .from('organizations_public')
-            .select('id, name')
-            .order('name');
-        if (data && !error) {
+        try {
+            const data = await resolveCachedData<any[]>({
+                key: cacheKey,
+                ttlMs: 5 * 60_000,
+                fetchFn: async () => {
+                    const { data: orgs, error } = await supabase
+                        .from('organizations_public')
+                        .select('id, name')
+                        .order('name');
+                    if (error) throw error;
+                    return orgs || [];
+                },
+                persist: true
+            });
             setAllOrganizations(data);
-            setCachedValue(cacheKey, data, 5 * 60_000);
+        } catch (error) {
+            console.error('Error fetching all organizations for finance:', error);
         }
     };
 
@@ -207,32 +211,37 @@ export default function FinanceScreen() {
             }
 
             const cacheKey = `finance:tournaments:${storedOrgId}:${selectedYear}:${selectedMonth}`;
-            const cachedTournaments = getCachedValue<Tournament[]>(cacheKey);
-            if (cachedTournaments) {
-                setTournaments(cachedTournaments);
-                setLoading(false);
+            const cachedVal = getCachedValue<Tournament[]>(cacheKey);
+            if (cachedVal) {
+                setTournaments(cachedVal);
             }
 
-            let query = supabase
-                .from('tournaments')
-                .select('id, name, start_date')
-                .eq('organization_id', storedOrgId)
-                .eq('is_tournament_master', false)
-                .order('start_date', { ascending: false });
+            const nextTournaments = await resolveCachedData<Tournament[]>({
+                key: cacheKey,
+                ttlMs: 5 * 60_000,
+                fetchFn: async () => {
+                    let query = supabase
+                        .from('tournaments')
+                        .select('id, name, start_date')
+                        .eq('organization_id', storedOrgId)
+                        .eq('is_tournament_master', false)
+                        .order('start_date', { ascending: false });
 
-            query = query.gte('start_date', yearStart).lte('start_date', yearEnd);
+                    query = query.gte('start_date', yearStart).lte('start_date', yearEnd);
 
-            const monthStart = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-01`;
-            const monthEndDate = new Date(selectedYear, selectedMonth + 1, 0);
-            const monthEnd = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(monthEndDate.getDate()).padStart(2, '0')}`;
-            query = query.gte('start_date', monthStart).lte('start_date', monthEnd);
+                    const monthStart = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-01`;
+                    const monthEndDate = new Date(selectedYear, selectedMonth + 1, 0);
+                    const monthEnd = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(monthEndDate.getDate()).padStart(2, '0')}`;
+                    query = query.gte('start_date', monthStart).lte('start_date', monthEnd);
 
-            const { data, error } = await query;
+                    const { data, error } = await query;
+                    if (error) throw error;
+                    return data || [];
+                },
+                persist: true
+            });
 
-            if (error) throw error;
-            const nextTournaments = data || [];
             setTournaments(nextTournaments);
-            setCachedValue(cacheKey, nextTournaments, 60_000);
 
             const tournamentIds = nextTournaments.map((tournament) => tournament.id);
             if (tournamentIds.length === 0) {
@@ -255,6 +264,7 @@ export default function FinanceScreen() {
                 setPendingRequestCountByTournament(nextPendingMap);
             }
         } catch (error) {
+            console.error('Error loading finance tournaments:', error);
             setTournaments([]);
             setPendingRequestCountByTournament({});
             setPendingRequestCountByMonth({});

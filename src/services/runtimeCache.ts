@@ -1,3 +1,5 @@
+import { getPersistedValue, setPersistedValue } from './persistentCache';
+
 type CacheEntry<T> = {
   value: T;
   expiresAt: number;
@@ -25,3 +27,51 @@ export function setCachedValue<T>(key: string, value: T, ttlMs: number) {
 export function clearCachedValue(key: string) {
   runtimeCache.delete(key);
 }
+
+export function clearAllCachedValues() {
+  runtimeCache.clear();
+}
+
+/**
+ * Resolves data from the fastest available cache layer (memory -> persistent -> network).
+ */
+export async function resolveCachedData<T>({
+  key,
+  ttlMs,
+  fetchFn,
+  persist = true,
+}: {
+  key: string;
+  ttlMs: number;
+  fetchFn: () => Promise<T>;
+  persist?: boolean;
+}): Promise<T> {
+  // 1. Check in-memory runtime cache first
+  const memoryValue = getCachedValue<T>(key);
+  if (memoryValue !== null) {
+    return memoryValue;
+  }
+
+  // 2. Check persistent cache if enabled
+  if (persist) {
+    const persistedValue = await getPersistedValue<T>(key);
+    if (persistedValue !== null) {
+      // Warm up the runtime cache in memory
+      setCachedValue(key, persistedValue, ttlMs);
+      return persistedValue;
+    }
+  }
+
+  // 3. Fallback to executing the fetch function (network call)
+  const freshData = await fetchFn();
+
+  // Save to caches
+  setCachedValue(key, freshData, ttlMs);
+  if (persist) {
+    await setPersistedValue(key, freshData, ttlMs);
+  }
+
+  return freshData;
+}
+
+

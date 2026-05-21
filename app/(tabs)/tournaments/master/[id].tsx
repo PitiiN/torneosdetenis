@@ -55,8 +55,6 @@ type LatestRequest = {
 };
 
 const OPEN_STATUSES = new Set(['open', 'in_progress']);
-const MASTER_POSTER_URL_CACHE = new Map<string, { url: string | null; expiresAt: number }>();
-const POSTER_URL_CACHE_TTL_MS = 50 * 60 * 1000;
 
 const formatStatus = (status?: string | null) => {
   const normalizedStatus = normalizeTournamentStatus(status);
@@ -104,7 +102,7 @@ function ChampionName({ championship }: { championship: Championship }) {
     const resolve = async () => {
       try {
         const [matchesRes, participantsRes] = await Promise.all([
-          supabase.from('matches').select('*').eq('tournament_id', championship.id),
+          supabase.from('matches').select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, round_number, match_order, score, status, scheduled_at, created_at').eq('tournament_id', championship.id),
           supabase.from('tournament_participants').select('player_id, profiles(name)').eq('tournament_id', championship.id)
         ]);
 
@@ -187,23 +185,8 @@ export default function TournamentMasterDetailScreen() {
       setMasterTournament(masterRow);
 
       if (masterRow.poster_url) {
-        const posterKey = String(masterRow.poster_url);
-        const cachedPoster = MASTER_POSTER_URL_CACHE.get(posterKey);
-        const now = Date.now();
-        if (cachedPoster && cachedPoster.expiresAt > now) {
-          setPosterUrl(cachedPoster.url);
-        } else {
-          const resolvedPosterUrl = await resolveStorageAssetUrlWithRetry(masterRow.poster_url);
-          if (resolvedPosterUrl) {
-            MASTER_POSTER_URL_CACHE.set(posterKey, {
-              url: resolvedPosterUrl,
-              expiresAt: now + POSTER_URL_CACHE_TTL_MS,
-            });
-            setPosterUrl(resolvedPosterUrl);
-          } else {
-            setPosterUrl(null);
-          }
-        }
+        const resolvedPosterUrl = await resolveStorageAssetUrlWithRetry(masterRow.poster_url);
+        setPosterUrl(resolvedPosterUrl);
       } else {
         setPosterUrl(null);
       }

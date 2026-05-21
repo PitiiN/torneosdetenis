@@ -10,7 +10,7 @@ import * as SecureStore from '@/utils/SecureStore';
 import { getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { extractChampionFromDescription, resolveChampionFromMatches } from '@/services/tournamentChampion';
-import { getCachedValue, setCachedValue } from '@/services/runtimeCache';
+import { getCachedValue, setCachedValue, resolveCachedData } from '@/services/runtimeCache';
 import { getEffectiveTournamentStatus, normalizeTournamentStatus } from '@/services/tournamentStatus';
 import { formatDateDDMMYYYY } from '@/utils/datetime';
 
@@ -134,7 +134,7 @@ const resolveTournamentChampionName = async (tournament: Tournament) => {
 
     try {
         const [matchesRes, participantsRes] = await Promise.all([
-            supabase.from('matches').select('*').eq('tournament_id', tournament.id),
+            supabase.from('matches').select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, round_number, match_order, score, status, scheduled_at, created_at').eq('tournament_id', tournament.id),
             supabase.from('tournament_participants').select('player_id, profiles(name)').eq('tournament_id', tournament.id)
         ]);
 
@@ -311,66 +311,66 @@ export default function TorneosScreen() {
 
     async function fetchOrgDetails(targetOrgId: string) {
         const orgCacheKey = `org:details:${targetOrgId}`;
-        const cachedInfo = getCachedValue<OrganizationInfo>(orgCacheKey);
-        if (cachedInfo) {
-            const normalizedOrgName = cachedInfo.name || 'Torneos';
-            setOrgName(normalizedOrgName);
-            setOrganizationInfo(cachedInfo);
-            await SecureStore.setItemAsync('selected_org_id', String(targetOrgId));
-            await SecureStore.setItemAsync('selected_org_name', normalizedOrgName || '');
-            return;
-        }
+        try {
+            const info = await resolveCachedData<OrganizationInfo | null>({
+                key: orgCacheKey,
+                ttlMs: 5 * 60_000,
+                fetchFn: async () => {
+                    let fetchedInfo: OrganizationInfo | null = null;
+                    const { data: organizationData } = await supabase
+                        .from('organizations')
+                        .select('name, contact_email, contact_whatsapp, social_links, photos_drive_url')
+                        .eq('id', targetOrgId)
+                        .maybeSingle();
 
-        let info: OrganizationInfo | null = null;
+                    if (organizationData) {
+                        fetchedInfo = {
+                            name: decodeEscapedUnicode(organizationData.name || ''),
+                            contact_email: decodeEscapedUnicode(organizationData.contact_email || '') || null,
+                            contact_whatsapp: decodeEscapedUnicode(organizationData.contact_whatsapp || '') || null,
+                            social_links: decodeEscapedUnicode(organizationData.social_links || '') || null,
+                            photos_drive_url: decodeEscapedUnicode(organizationData.photos_drive_url || '') || null,
+                        };
+                    } else {
+                        const { data: publicDataWithContact, error: publicDataWithContactError } = await supabase
+                            .from('organizations_public')
+                            .select('name, contact_email, contact_whatsapp, social_links, photos_drive_url')
+                            .eq('id', targetOrgId)
+                            .single();
 
-        const { data: organizationData } = await supabase
-            .from('organizations')
-            .select('name, contact_email, contact_whatsapp, social_links, photos_drive_url')
-            .eq('id', targetOrgId)
-            .maybeSingle();
+                        const publicData = publicDataWithContactError
+                            ? (await supabase
+                                .from('organizations_public')
+                                .select('name')
+                                .eq('id', targetOrgId)
+                                .single()).data
+                            : publicDataWithContact;
 
-        if (organizationData) {
-            info = {
-                name: decodeEscapedUnicode(organizationData.name || ''),
-                contact_email: decodeEscapedUnicode(organizationData.contact_email || '') || null,
-                contact_whatsapp: decodeEscapedUnicode(organizationData.contact_whatsapp || '') || null,
-                social_links: decodeEscapedUnicode(organizationData.social_links || '') || null,
-                photos_drive_url: decodeEscapedUnicode(organizationData.photos_drive_url || '') || null,
-            };
-        } else {
-            const { data: publicDataWithContact, error: publicDataWithContactError } = await supabase
-                .from('organizations_public')
-                .select('name, contact_email, contact_whatsapp, social_links, photos_drive_url')
-                .eq('id', targetOrgId)
-                .single();
+                        if (publicData) {
+                            fetchedInfo = {
+                                name: decodeEscapedUnicode(publicData.name || ''),
+                                contact_email: decodeEscapedUnicode((publicData as any).contact_email || '') || null,
+                                contact_whatsapp: decodeEscapedUnicode((publicData as any).contact_whatsapp || '') || null,
+                                social_links: decodeEscapedUnicode((publicData as any).social_links || '') || null,
+                                photos_drive_url: decodeEscapedUnicode((publicData as any).photos_drive_url || '') || null,
+                            };
+                        }
+                    }
+                    return fetchedInfo;
+                },
+                persist: true
+            });
 
-            const publicData = publicDataWithContactError
-                ? (await supabase
-                    .from('organizations_public')
-                    .select('name')
-                    .eq('id', targetOrgId)
-                    .single()).data
-                : publicDataWithContact;
-
-            if (publicData) {
-                info = {
-                    name: decodeEscapedUnicode(publicData.name || ''),
-                    contact_email: decodeEscapedUnicode((publicData as any).contact_email || '') || null,
-                    contact_whatsapp: decodeEscapedUnicode((publicData as any).contact_whatsapp || '') || null,
-                    social_links: decodeEscapedUnicode((publicData as any).social_links || '') || null,
-                    photos_drive_url: decodeEscapedUnicode((publicData as any).photos_drive_url || '') || null,
-                };
+            if (info) {
+                const normalizedOrgName = info.name || 'Torneos';
+                setOrgName(normalizedOrgName);
+                setOrganizationInfo(info);
+                await SecureStore.setItemAsync('selected_org_id', String(targetOrgId));
+                await SecureStore.setItemAsync('selected_org_name', normalizedOrgName || '');
             }
+        } catch (error) {
+            console.error('Error fetching org details:', error);
         }
-
-        if (!info) return;
-
-        const normalizedOrgName = info.name || 'Torneos';
-        setOrgName(normalizedOrgName);
-        setOrganizationInfo(info);
-        setCachedValue(orgCacheKey, info, 60_000);
-        await SecureStore.setItemAsync('selected_org_id', String(targetOrgId));
-        await SecureStore.setItemAsync('selected_org_name', normalizedOrgName || '');
     }
     async function fetchUserData() {
         const access = await getCurrentUserAccessContext();
@@ -431,86 +431,94 @@ export default function TorneosScreen() {
     async function fetchTournaments(targetOrgId: string, canManageOrg: boolean) {
         try {
             const tournamentsCacheKey = `tournaments:${targetOrgId}:${canManageOrg ? 'manage' : 'player'}`;
-            const cachedTournaments = getCachedValue<Tournament[]>(tournamentsCacheKey);
-            if (cachedTournaments) {
-                setTournaments(cachedTournaments);
+            const cachedVal = getCachedValue<Tournament[]>(tournamentsCacheKey);
+            if (cachedVal) {
+                setTournaments(cachedVal);
             }
 
-            let query = supabase
-                .from('tournaments')
-                .select('id, name, description, status, surface, format, start_date, end_date, organization_id, registration_fee, address, comuna, modality, is_tournament_master, parent_tournament_id, registration_close_at, registration_close_time')
-                .eq('organization_id', targetOrgId)
-                .is('parent_tournament_id', null)
-                .order('start_date', { ascending: false });
+            const hydratedTournaments = await resolveCachedData<Tournament[]>({
+                key: tournamentsCacheKey,
+                ttlMs: 5 * 60_000,
+                fetchFn: async () => {
+                    let query = supabase
+                        .from('tournaments')
+                        .select('id, name, description, status, surface, format, start_date, end_date, organization_id, registration_fee, address, comuna, modality, is_tournament_master, parent_tournament_id, registration_close_at, registration_close_time')
+                        .eq('organization_id', targetOrgId)
+                        .is('parent_tournament_id', null)
+                        .order('start_date', { ascending: false });
 
-            if (!canManageOrg) {
-                query = query.in('status', ['open', 'ongoing', 'in_progress', 'completed', 'finalized', 'finished']);
-            }
+                    if (!canManageOrg) {
+                        query = query.in('status', ['open', 'ongoing', 'in_progress', 'completed', 'finalized', 'finished']);
+                    }
 
-            const { data, error } = await query;
-            if (error) throw error;
+                    const { data, error } = await query;
+                    if (error) throw error;
 
-            if (canManageOrg) {
-                const minYear = Math.min(...YEARS);
-                const maxYear = Math.max(...YEARS);
+                    if (canManageOrg) {
+                        const minYear = Math.min(...YEARS);
+                        const maxYear = Math.max(...YEARS);
 
-                const { data: childTournaments, error: childTournamentsError } = await supabase
-                    .from('tournaments')
-                    .select('id, start_date')
-                    .eq('organization_id', targetOrgId)
-                    .eq('is_tournament_master', false)
-                    .gte('start_date', `${minYear}-01-01`)
-                    .lte('start_date', `${maxYear}-12-31`);
+                        const { data: childTournaments, error: childTournamentsError } = await supabase
+                            .from('tournaments')
+                            .select('id, start_date')
+                            .eq('organization_id', targetOrgId)
+                            .eq('is_tournament_master', false)
+                            .gte('start_date', `${minYear}-01-01`)
+                            .lte('start_date', `${maxYear}-12-31`);
 
-                if (childTournamentsError) throw childTournamentsError;
+                        if (childTournamentsError) throw childTournamentsError;
 
-                const tournamentIds = (childTournaments || [])
-                    .map((row: any) => String(row?.id || ''))
-                    .filter(Boolean);
+                        const tournamentIds = (childTournaments || [])
+                            .map((row: any) => String(row?.id || ''))
+                            .filter(Boolean);
 
-                const monthKeyByTournamentId = (childTournaments || []).reduce((acc: Record<string, string>, row: any) => {
-                    const tournamentId = String(row?.id || '');
-                    const rawDate = String(row?.start_date || '').trim();
-                    if (!tournamentId || !rawDate) return acc;
+                        const monthKeyByTournamentId = (childTournaments || []).reduce((acc: Record<string, string>, row: any) => {
+                            const tournamentId = String(row?.id || '');
+                            const rawDate = String(row?.start_date || '').trim();
+                            if (!tournamentId || !rawDate) return acc;
 
-                    const parsedDate = new Date(`${rawDate}T00:00:00`);
-                    if (Number.isNaN(parsedDate.getTime())) return acc;
+                            const parsedDate = new Date(`${rawDate}T00:00:00`);
+                            if (Number.isNaN(parsedDate.getTime())) return acc;
 
-                    acc[tournamentId] = `${parsedDate.getFullYear()}-${parsedDate.getMonth()}`;
-                    return acc;
-                }, {});
+                            acc[tournamentId] = `${parsedDate.getFullYear()}-${parsedDate.getMonth()}`;
+                            return acc;
+                        }, {});
 
-                if (tournamentIds.length === 0) {
-                    setPendingRequestCountByMonth({});
-                } else {
-                    const { data: pendingRows, error: pendingRowsError } = await supabase
-                        .from('tournament_registration_requests')
-                        .select('tournament_id')
-                        .eq('status', 'pending')
-                        .in('tournament_id', tournamentIds);
+                        if (tournamentIds.length === 0) {
+                            setPendingRequestCountByMonth({});
+                        } else {
+                            const { data: pendingRows, error: pendingRowsError } = await supabase
+                                .from('tournament_registration_requests')
+                                .select('tournament_id')
+                                .eq('status', 'pending')
+                                .in('tournament_id', tournamentIds);
 
-                    if (pendingRowsError) throw pendingRowsError;
+                            if (pendingRowsError) throw pendingRowsError;
 
-                    const nextMonthMap = (pendingRows || []).reduce((acc: Record<string, number>, row: any) => {
-                        const tournamentId = String(row?.tournament_id || '');
-                        const monthKey = monthKeyByTournamentId[tournamentId];
-                        if (!monthKey) return acc;
+                            const nextMonthMap = (pendingRows || []).reduce((acc: Record<string, number>, row: any) => {
+                                const tournamentId = String(row?.tournament_id || '');
+                                const monthKey = monthKeyByTournamentId[tournamentId];
+                                if (!monthKey) return acc;
 
-                        acc[monthKey] = (acc[monthKey] || 0) + 1;
-                        return acc;
-                    }, {});
+                                acc[monthKey] = (acc[monthKey] || 0) + 1;
+                                return acc;
+                            }, {});
 
-                    setPendingRequestCountByMonth(nextMonthMap);
-                }
-            } else {
-                setPendingRequestCountByMonth({});
-            }
+                            setPendingRequestCountByMonth(nextMonthMap);
+                        }
+                    } else {
+                        setPendingRequestCountByMonth({});
+                    }
 
-            const normalizedTournaments = (data || []).map(normalizeTournamentRecord);
-            const hydratedTournaments = await hydrateTournamentChampionNames(normalizedTournaments);
+                    const normalizedTournaments = (data || []).map(normalizeTournamentRecord);
+                    return await hydrateTournamentChampionNames(normalizedTournaments);
+                },
+                persist: true
+            });
+
             setTournaments(hydratedTournaments);
-            setCachedValue(tournamentsCacheKey, hydratedTournaments, 60_000);
         } catch (error) {
+            console.error('Error fetching tournaments:', error);
             setPendingRequestCountByMonth({});
         }
     }

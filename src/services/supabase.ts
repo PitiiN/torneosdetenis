@@ -1,9 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import * as SecureStore from '@/utils/SecureStore';
+import * as ExpoSecureStore from 'expo-secure-store';
+import { clearAllCachedValues } from './runtimeCache';
+import { clearAllPersistedValues } from './persistentCache';
 
-const SECURE_STORE_OPTIONS: SecureStore.SecureStoreOptions = {
-    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+const SECURE_STORE_OPTIONS: ExpoSecureStore.SecureStoreOptions = {
+    keychainAccessible: ExpoSecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
 };
 
 const ExpoSecureStoreAdapter = {
@@ -66,5 +69,7 @@ export async function clearSessionArtifacts() {
 export async function secureSignOut() {
     const response = await supabase.auth.signOut();
     await clearSessionArtifacts();
+    await clearAllPersistedValues();
+    clearAllCachedValues();
     return response;
 }

@@ -1,6 +1,9 @@
 import { supabase } from './supabase';
+import { getCachedValue, setCachedValue } from './runtimeCache';
 
 const STORAGE_BUCKET = 'organizations';
+const inflightUrlResolutions = new Map<string, Promise<string | null>>();
+
 const ALLOWED_ASSET_PREFIXES = new Set(['avatars', 'logos', 'payment-proofs', 'posters']);
 const ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -107,17 +110,41 @@ export async function resolveStorageAssetUrl(pathOrUrl?: string | null, expiresI
     if (!isAllowedStorageAssetPath(storagePath)) return null;
 
     const clampedExpiry = Math.max(60, Math.min(expiresInSeconds, 86400));
+    const cacheKey = `storage:url:${storagePath}`;
+    const cached = getCachedValue<string>(cacheKey);
+    if (cached) return cached;
 
-    const { data, error } = await supabase.storage
-        .from(STORAGE_BUCKET)
-        .createSignedUrl(storagePath, clampedExpiry);
+    const inflightKey = `${storagePath}:${clampedExpiry}`;
+    let promise = inflightUrlResolutions.get(inflightKey);
+    if (!promise) {
+        promise = (async () => {
+            try {
+                const { data, error } = await supabase.storage
+                    .from(STORAGE_BUCKET)
+                    .createSignedUrl(storagePath, clampedExpiry);
 
-    if (error || !data?.signedUrl) {
-        return null;
+                if (error || !data?.signedUrl) {
+                    return null;
+                }
+
+                // Cache with safety margin of 10 minutes (600s)
+                const ttlMs = Math.max(30000, (clampedExpiry - 600) * 1000);
+                setCachedValue(cacheKey, data.signedUrl, ttlMs);
+                return data.signedUrl;
+            } catch {
+                return null;
+            }
+        })();
+
+        promise.finally(() => {
+            inflightUrlResolutions.delete(inflightKey);
+        });
+        inflightUrlResolutions.set(inflightKey, promise);
     }
 
-    return data.signedUrl;
+    return promise;
 }
+
 
 type ResolveWithRetryOptions = {
     expiresInSeconds?: number;

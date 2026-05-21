@@ -137,7 +137,7 @@ export const PlayerProfileModal = ({
       .find(Boolean) || 'Tú';
   };
 
-  const loadCurrentUserProfile = async (viewerId: string, session: any) => {
+  const loadCurrentUserProfile = async (viewerId: string, session: any): Promise<string> => {
     setCurrentUserName(getSessionDisplayName(session));
     setCurrentUserAvatarUrl(null);
 
@@ -157,8 +157,10 @@ export const PlayerProfileModal = ({
         const signed = await resolveStorageAssetUrlWithRetry(viewerProfile.avatar_url, { attempts: 3, baseDelayMs: 300 });
         setCurrentUserAvatarUrl(signed || null);
       }
+      return resolvedName;
     } catch (error) {
       console.error('Error loading current user profile:', error);
+      return getSessionDisplayName(session);
     }
   };
 
@@ -499,7 +501,7 @@ export const PlayerProfileModal = ({
                         style={styles.headToHeadLabel}
                         adjustsFontSizeToFit
                         numberOfLines={2}
-                        minimumScaleFactor={0.7}
+                        {...({ minimumScaleFactor: 0.7 } as any)}
                       >
                         PARTIDOS JUGADOS
                       </Text>
@@ -511,7 +513,7 @@ export const PlayerProfileModal = ({
                         style={styles.headToHeadLabel}
                         adjustsFontSizeToFit
                         numberOfLines={2}
-                        minimumScaleFactor={0.7}
+                        {...({ minimumScaleFactor: 0.7 } as any)}
                       >
                         TU GANASTE
                       </Text>
@@ -523,7 +525,7 @@ export const PlayerProfileModal = ({
                         style={styles.headToHeadLabel}
                         adjustsFontSizeToFit
                         numberOfLines={2}
-                        minimumScaleFactor={0.7}
+                        {...({ minimumScaleFactor: 0.7 } as any)}
                       >
                         {`${profile.name} gan\u00f3`.toUpperCase()}
                       </Text>

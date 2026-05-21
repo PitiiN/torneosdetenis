@@ -8,7 +8,7 @@
     "userInterfaceStyle": "light",
     "scheme": "torneosdetenis",
     "splash": {
-      "image": "./assets/Logos/LogoAplicación.png",
+      "image": "./assets/Logos/LogoAplicacion.png",
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
@@ -18,7 +18,7 @@
       "buildNumber": "11",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSPhotoLibraryUsageDescription": "SweetSpot necesita acceso a tu galería para que puedas seleccionar una foto de perfil, subir comprobantes de pago y adjuntar imágenes relacionadas con tu participación en torneos.",
+        "NSPhotoLibraryUsageDescription": "SweetSpot necesita acceso a tu galeria para que puedas seleccionar una foto de perfil, subir comprobantes de pago y adjuntar imagenes relacionadas con tu participacion en torneos.",
         "NSUserNotificationsUsageDescription": "Usamos notificaciones para avisarte de cambios en torneos y partidos."
       }
     },
@@ -30,7 +30,7 @@
       "package": "com.pitin.torneosdetenis",
       "googleServicesFile": "./google-services.json",
       "notification": {
-        "icon": "./assets/Logos/LogoNotificación.png",
+        "icon": "./assets/Logos/LogoNotificacion.png",
         "color": "#FFFFFF"
       },
       "versionCode": 10,
@@ -57,13 +57,13 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "SweetSpot necesita acceso a tu galería para que puedas seleccionar una foto de perfil, subir comprobantes de pago y adjuntar imágenes relacionadas con tu participación en torneos."
+          "photosPermission": "SweetSpot necesita acceso a tu galeria para que puedas seleccionar una foto de perfil, subir comprobantes de pago y adjuntar imagenes relacionadas con tu participacion en torneos."
         }
       ],
       [
         "expo-notifications",
         {
-          "icon": "./assets/Logos/LogoNotificación.png",
+          "icon": "./assets/Logos/LogoNotificacion.png",
           "color": "#FFFFFF"
         }
       ],

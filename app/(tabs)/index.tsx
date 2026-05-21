@@ -11,7 +11,8 @@ import { CHILEAN_COMUNAS } from '@/constants/tournamentOptions';
 import { Modal } from 'react-native';
 import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
 import { TennisSpinner } from '@/components/TennisSpinner';
-import { getCachedValue, setCachedValue } from '@/services/runtimeCache';
+import { getCachedValue, setCachedValue, resolveCachedData } from '@/services/runtimeCache';
+import { setPersistedValue } from '@/services/persistentCache';
 
 interface Organization {
     id: string;
@@ -154,6 +155,8 @@ export default function InicioScreen() {
         let filtered = sourceOrganizations;
         if (selectedComuna || selectedDate) {
             filtered = sourceOrganizations.filter((org) => {
+
+
                 const orgTournaments = tournamentsByOrg[org.id] || [];
                 if (orgTournaments.length === 0) return false;
                 return orgTournaments.some((tournament) => {
@@ -195,15 +198,23 @@ export default function InicioScreen() {
                     };
                 });
 
+                const payload = {
+                    savedAt: Date.now(),
+                    organizations: nextOrganizations,
+                    openTournaments,
+                };
+
                 setCachedValue<HomeCachePayload>(
                     HOME_RUNTIME_CACHE_KEY,
-                    {
-                        savedAt: Date.now(),
-                        organizations: nextOrganizations,
-                        openTournaments,
-                    },
+                    payload,
                     HOME_CACHE_TTL_MS
                 );
+
+                setPersistedValue<HomeCachePayload>(
+                    HOME_RUNTIME_CACHE_KEY,
+                    payload,
+                    HOME_CACHE_TTL_MS
+                ).catch((err) => console.error('Error updating persisted logo cache:', err));
 
                 return nextOrganizations;
             });
@@ -217,93 +228,92 @@ export default function InicioScreen() {
         if (shouldShowSpinner) {
             setLoading(true);
         }
-        let hydratedFromCache = false;
         try {
-            let cachedPayload = getCachedValue<HomeCachePayload>(HOME_RUNTIME_CACHE_KEY);
+            const fetchHomeData = async (): Promise<HomeCachePayload> => {
+                const { data: { session } } = await supabase.auth.getSession();
+                const currentUserId = session?.user?.id || null;
 
-            if (cachedPayload && !forceRefresh) {
-                const preparedCachedOrganizations = await prepareOrganizationsForRender(cachedPayload.organizations);
-                setSourceOrganizations(preparedCachedOrganizations);
-                setOpenTournaments(cachedPayload.openTournaments);
-                hydratedFromCache = true;
-                setLoading(false);
-                const isCacheFresh = Date.now() - cachedPayload.savedAt < HOME_CACHE_TTL_MS;
-                if (isCacheFresh) {
-                    return;
+                let followedOrgIds = new Set<string>();
+                if (currentUserId) {
+                    const { data: followData } = await supabase
+                        .from('organization_followers')
+                        .select('organization_id')
+                        .eq('user_id', currentUserId);
+
+                    if (followData) {
+                        followedOrgIds = new Set(followData.map(f => f.organization_id));
+                    }
                 }
-            }
 
-            // Retrieve current user and followed organizations
-            const { data: { session } } = await supabase.auth.getSession();
-            const currentUserId = session?.user?.id || null;
+                const { data: orgData, error: orgError } = await supabase
+                    .from('organizations_public')
+                    .select('id, name, slug, created_at, logo_url');
+                if (orgError) throw orgError;
 
-            let followedOrgIds = new Set<string>();
-            if (currentUserId) {
-                const { data: followData } = await supabase
-                    .from('organization_followers')
-                    .select('organization_id')
-                    .eq('user_id', currentUserId);
+                const { data: tournamentData, error: tournamentsError } = await supabase
+                    .from('tournaments')
+                    .select('organization_id, comuna, start_date, status')
+                    .eq('status', 'open');
 
-                if (followData) {
-                    followedOrgIds = new Set(followData.map(f => f.organization_id));
-                }
-            }
+                const baseOrganizations = ((orgData || []) as Organization[]).map((organization) => {
+                    const rawLogoUrl = String(organization.logo_url || '').trim();
+                    const externalLogoUrl = /^https?:\/\//i.test(rawLogoUrl)
+                        ? rawLogoUrl
+                        : null;
 
-            const { data: orgData, error: orgError } = await supabase
-                .from('organizations_public')
-                .select('id, name, slug, created_at, logo_url');
-            if (orgError) throw orgError;
+                    return {
+                        ...organization,
+                        logo_signed_url: externalLogoUrl,
+                        logo_ready: Boolean(externalLogoUrl || !rawLogoUrl),
+                    };
+                });
 
-            const { data: tournamentData, error: tournamentsError } = await supabase
-                .from('tournaments')
-                .select('organization_id, comuna, start_date, status')
-                .eq('status', 'open');
+                baseOrganizations.sort((a, b) => {
+                    const aFollowed = followedOrgIds.has(a.id);
+                    const bFollowed = followedOrgIds.has(b.id);
 
-            const baseOrganizations = ((orgData || []) as Organization[]).map((organization) => {
-                const rawLogoUrl = String(organization.logo_url || '').trim();
-                const externalLogoUrl = /^https?:\/\//i.test(rawLogoUrl)
-                    ? rawLogoUrl
-                    : null;
+                    if (aFollowed && !bFollowed) return -1;
+                    if (!aFollowed && bFollowed) return 1;
+
+                    if (aFollowed && bFollowed) {
+                        return a.name.localeCompare(b.name, 'es', { sensitivity: 'base' });
+                    }
+
+                    const dateA = new Date(a.created_at || 0).getTime();
+                    const dateB = new Date(b.created_at || 0).getTime();
+                    return dateA - dateB;
+                });
+
+                const preparedOrganizations = await prepareOrganizationsForRender(baseOrganizations);
 
                 return {
-                    ...organization,
-                    logo_signed_url: externalLogoUrl,
-                    logo_ready: Boolean(externalLogoUrl || !rawLogoUrl),
+                    savedAt: Date.now(),
+                    organizations: preparedOrganizations,
+                    openTournaments: tournamentsError ? [] : ((tournamentData || []) as OpenTournamentRef[]),
                 };
-            });
-
-            // Sort logic: 
-            // 1st criterion: followed by user (alphabetically by name if multiple)
-            // 2nd criterion: not followed (by creation date ascending - oldest first)
-            baseOrganizations.sort((a, b) => {
-                const aFollowed = followedOrgIds.has(a.id);
-                const bFollowed = followedOrgIds.has(b.id);
-
-                if (aFollowed && !bFollowed) return -1;
-                if (!aFollowed && bFollowed) return 1;
-
-                if (aFollowed && bFollowed) {
-                    return a.name.localeCompare(b.name, 'es', { sensitivity: 'base' });
-                }
-
-                const dateA = new Date(a.created_at || 0).getTime();
-                const dateB = new Date(b.created_at || 0).getTime();
-                return dateA - dateB;
-            });
-
-            const preparedOrganizations = await prepareOrganizationsForRender(baseOrganizations);
-
-            const nextPayload: HomeCachePayload = {
-                savedAt: Date.now(),
-                organizations: preparedOrganizations,
-                openTournaments: tournamentsError ? [] : ((tournamentData || []) as OpenTournamentRef[]),
             };
 
-            setSourceOrganizations(nextPayload.organizations);
-            setOpenTournaments(nextPayload.openTournaments);
-            setCachedValue(HOME_RUNTIME_CACHE_KEY, nextPayload, HOME_CACHE_TTL_MS);
+            let payload: HomeCachePayload;
+
+            if (forceRefresh) {
+                payload = await fetchHomeData();
+                setCachedValue(HOME_RUNTIME_CACHE_KEY, payload, HOME_CACHE_TTL_MS);
+                await setPersistedValue(HOME_RUNTIME_CACHE_KEY, payload, HOME_CACHE_TTL_MS);
+            } else {
+                payload = await resolveCachedData<HomeCachePayload>({
+                    key: HOME_RUNTIME_CACHE_KEY,
+                    ttlMs: HOME_CACHE_TTL_MS,
+                    fetchFn: fetchHomeData,
+                    persist: true,
+                });
+            }
+
+            const renderedOrgs = await prepareOrganizationsForRender(payload.organizations);
+            setSourceOrganizations(renderedOrgs);
+            setOpenTournaments(payload.openTournaments);
         } catch (error) {
-            if (!hydratedFromCache) {
+            console.error('Error loading home data:', error);
+            if (!sourceOrganizations.length) {
                 setOrganizations([]);
             }
         } finally {

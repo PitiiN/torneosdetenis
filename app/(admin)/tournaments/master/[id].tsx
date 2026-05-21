@@ -30,8 +30,6 @@ import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB for posters
 const BASE64_CHAR_MAP = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-const ADMIN_MASTER_POSTER_URL_CACHE = new Map<string, { url: string | null; expiresAt: number }>();
-const POSTER_URL_CACHE_TTL_MS = 50 * 60 * 1000;
 
 const sanitizeBase64Payload = (value: string) => value.replace(/\s/g, '');
 
@@ -147,7 +145,7 @@ function ChampionName({ championship }: { championship: Championship }) {
     const resolve = async () => {
       try {
         const [matchesRes, participantsRes] = await Promise.all([
-          supabase.from('matches').select('*').eq('tournament_id', championship.id),
+          supabase.from('matches').select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, round, round_number, match_order, score, status, scheduled_at, created_at').eq('tournament_id', championship.id),
           supabase.from('tournament_participants').select('player_id, profiles(name)').eq('tournament_id', championship.id)
         ]);
 
@@ -266,23 +264,8 @@ export default function MasterTournamentAdminScreen() {
       setChampionships(championships);
 
       if (masterRow.poster_url) {
-        const posterKey = String(masterRow.poster_url);
-        const cachedPoster = ADMIN_MASTER_POSTER_URL_CACHE.get(posterKey);
-        const now = Date.now();
-        if (cachedPoster && cachedPoster.expiresAt > now) {
-          setPosterUrl(cachedPoster.url);
-        } else {
-          const resolvedPosterUrl = await resolveStorageAssetUrlWithRetry(masterRow.poster_url);
-          if (resolvedPosterUrl) {
-            ADMIN_MASTER_POSTER_URL_CACHE.set(posterKey, {
-              url: resolvedPosterUrl,
-              expiresAt: now + POSTER_URL_CACHE_TTL_MS,
-            });
-            setPosterUrl(resolvedPosterUrl);
-          } else {
-            setPosterUrl(null);
-          }
-        }
+        const resolvedPosterUrl = await resolveStorageAssetUrlWithRetry(masterRow.poster_url);
+        setPosterUrl(resolvedPosterUrl);
       } else {
         setPosterUrl(null);
       }
@@ -576,10 +559,6 @@ export default function MasterTournamentAdminScreen() {
       if (updateError) throw updateError;
 
       const signedUrl = await resolveStorageAssetUrlWithRetry(filePath);
-      ADMIN_MASTER_POSTER_URL_CACHE.set(filePath, {
-        url: signedUrl || uri,
-        expiresAt: Date.now() + POSTER_URL_CACHE_TTL_MS,
-      });
       setPosterUrl(signedUrl || uri);
       setMasterTournament(prev => prev ? { ...prev, poster_url: filePath } : null);
       Alert.alert('Exito', 'Afiche subido correctamente.');
