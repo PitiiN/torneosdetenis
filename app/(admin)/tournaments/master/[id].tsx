@@ -471,7 +471,7 @@ export default function MasterTournamentAdminScreen() {
         if (matchError) throw matchError;
       }
 
-      Alert.alert('Exito', 'Campeonato creado correctamente.');
+      Alert.alert('Éxito', 'Campeonato creado correctamente.');
       resetCreateForm();
       setShowCreateModal(false);
       await loadData();
@@ -561,7 +561,7 @@ export default function MasterTournamentAdminScreen() {
       const signedUrl = await resolveStorageAssetUrlWithRetry(filePath);
       setPosterUrl(signedUrl || uri);
       setMasterTournament(prev => prev ? { ...prev, poster_url: filePath } : null);
-      Alert.alert('Exito', 'Afiche subido correctamente.');
+      Alert.alert('Éxito', 'Afiche subido correctamente.');
     } catch (error: any) {
       console.error('Error uploading poster:', error);
       Alert.alert('Error', 'No se pudo subir el afiche: ' + (error.message || 'Error desconocido'));

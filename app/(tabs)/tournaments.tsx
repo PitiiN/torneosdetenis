@@ -10,7 +10,7 @@ import * as SecureStore from '@/utils/SecureStore';
 import { getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { extractChampionFromDescription, resolveChampionFromMatches } from '@/services/tournamentChampion';
-import { getCachedValue, setCachedValue, resolveCachedData } from '@/services/runtimeCache';
+import { getCachedValue, setCachedValue, resolveCachedData, clearCachedValue, clearCachedValuesByPrefix } from '@/services/runtimeCache';
 import { getEffectiveTournamentStatus, normalizeTournamentStatus } from '@/services/tournamentStatus';
 import { formatDateDDMMYYYY } from '@/utils/datetime';
 
@@ -549,6 +549,15 @@ export default function TorneosScreen() {
                                                 });
 
                                             if (error) throw error;
+
+                                            // Clear caches
+                                            if (activeOrgId) {
+                                                await clearCachedValuesByPrefix(`tournaments:${activeOrgId}`);
+                                                await clearCachedValuesByPrefix(`finance:tournaments:${activeOrgId}`);
+                                                await clearCachedValuesByPrefix(`finance:overview:${activeOrgId}`);
+                                            }
+                                            await clearCachedValue('home:organizations:v1');
+
                                             await bootstrapScreen();
                                         } catch (error) {
                                             Alert.alert('Error', 'No se pudo eliminar el torneo completo.');

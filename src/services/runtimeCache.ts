@@ -1,4 +1,4 @@
-import { getPersistedValue, setPersistedValue } from './persistentCache';
+import { getPersistedValue, setPersistedValue, deletePersistedValue, deletePersistedValuesByPrefix } from './persistentCache';
 
 type CacheEntry<T> = {
   value: T;
@@ -24,8 +24,18 @@ export function setCachedValue<T>(key: string, value: T, ttlMs: number) {
   });
 }
 
-export function clearCachedValue(key: string) {
+export async function clearCachedValue(key: string) {
   runtimeCache.delete(key);
+  await deletePersistedValue(key);
+}
+
+export async function clearCachedValuesByPrefix(prefix: string) {
+  for (const k of runtimeCache.keys()) {
+    if (k.startsWith(prefix)) {
+      runtimeCache.delete(k);
+    }
+  }
+  await deletePersistedValuesByPrefix(prefix);
 }
 
 export function clearAllCachedValues() {

@@ -1471,33 +1471,32 @@ export default function TournamentDetailScreen() {
                                     groupALeader: standingsByGroup[roundRobinGroupNames[0] || 'A']?.[0]?.name || `Cupo ${roundRobinGroupNames[0] || 'A'}1`,
                                     groupBLeader: standingsByGroup[roundRobinGroupNames[1] || roundRobinGroupNames[0] || 'A']?.[0]?.name || `Cupo ${(roundRobinGroupNames[1] || roundRobinGroupNames[0] || 'A')}1`,
                                 }}
-                                matches={finalsMatches.map((match, index) => {
-                                    const p1Name = IS_DOUBLES
-                                        ? `${match.player_a?.name || 'Por definir'} / ${match.player_a2?.name || 'Por definir'}`
-                                        : (match.player_a?.name || 'Por definir');
-                                    const p2Name = IS_DOUBLES
-                                        ? `${match.player_b?.name || 'Por definir'} / ${match.player_b2?.name || 'Por definir'}`
-                                        : (match.player_b?.name || 'Por definir');
-                                    return {
+                                matches={finalsMatches.map((match, index) => ({
                                     title: match.round || `Final ${index + 1}`,
                                     player1: {
-                                        name: p1Name,
-                                        group: 'CLASIFICADO',
+                                        name: match.player_a?.name || 'Por definir',
+                                        group: '',
                                         image: match.player_a?.avatar_url || null,
                                         id: match.player_a_id || null,
+                                        name2: IS_DOUBLES ? (match.player_a2?.name || undefined) : undefined,
+                                        image2: IS_DOUBLES ? (match.player_a2?.avatar_url || null) : undefined,
+                                        id2: IS_DOUBLES ? (match.player_a2_id || null) : undefined,
                                     },
                                     player2: {
-                                        name: p2Name,
-                                        group: 'CLASIFICADO',
+                                        name: match.player_b?.name || 'Por definir',
+                                        group: '',
                                         image: match.player_b?.avatar_url || null,
                                         id: match.player_b_id || null,
+                                        name2: IS_DOUBLES ? (match.player_b2?.name || undefined) : undefined,
+                                        image2: IS_DOUBLES ? (match.player_b2?.avatar_url || null) : undefined,
+                                        id2: IS_DOUBLES ? (match.player_b2_id || null) : undefined,
                                     },
                                     time: match.score || 'Por definir',
                                     isGrandFinal: String(match.round || '').includes('Gran Final'),
                                     scheduledDate: match.scheduled_at ? formatDateDDMMYYYY(match.scheduled_at) : null,
                                     scheduledTime: match.scheduled_at ? formatTime24(match.scheduled_at) : null,
                                     court: match.court || null,
-                                }})}
+                                }))}
                                 onPlayerPress={handlePlayerPress}
                             />
                         ) : (

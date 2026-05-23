@@ -27,6 +27,7 @@ import ViewShot from 'react-native-view-shot';
 import { SingleEliminationBracket } from '@/components/brackets/SingleEliminationBracket';
 import { RoundRobinTable } from '@/components/brackets/RoundRobinTable';
 import { TournamentFinals } from '@/components/brackets/TournamentFinals';
+import { clearCachedValue, clearCachedValuesByPrefix } from '@/services/runtimeCache';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const COURT_OPTIONS = Array.from({ length: 20 }, (_current, index) => `Cancha ${index + 1}`);
@@ -3590,6 +3591,15 @@ export default function AdminTournamentDetailScreen() {
 
                             if (error) throw error;
 
+                            // Clear caches
+                            const orgId = tournament?.organization_id;
+                            if (orgId) {
+                                await clearCachedValuesByPrefix(`tournaments:${orgId}`);
+                                await clearCachedValuesByPrefix(`finance:tournaments:${orgId}`);
+                                await clearCachedValuesByPrefix(`finance:overview:${orgId}`);
+                            }
+                            await clearCachedValue('home:organizations:v1');
+
                             router.replace({
                                 pathname: '/(tabs)/tournaments',
                                 params: { orgId: tournament?.organization_id }
@@ -4362,15 +4372,21 @@ export default function AdminTournamentDetailScreen() {
                 title: match.round || `Final ${index + 1}`,
                 player1: {
                     name: getDisplayName(match, 1),
-                    group: 'CLASIFICADO',
+                    group: '',
                     image: getDisplayAvatar(match, 1),
                     id: getPlayerIdBySlot(match, 1) || null,
+                    name2: IS_DOUBLES ? getDisplayName(match, 2) : undefined,
+                    image2: IS_DOUBLES ? getDisplayAvatar(match, 2) : undefined,
+                    id2: IS_DOUBLES ? (getPlayerIdBySlot(match, 2) || null) : undefined,
                 },
                 player2: {
                     name: getDisplayName(match, 3),
-                    group: 'CLASIFICADO',
+                    group: '',
                     image: getDisplayAvatar(match, 3),
                     id: getPlayerIdBySlot(match, 3) || null,
+                    name2: IS_DOUBLES ? getDisplayName(match, 4) : undefined,
+                    image2: IS_DOUBLES ? getDisplayAvatar(match, 4) : undefined,
+                    id2: IS_DOUBLES ? (getPlayerIdBySlot(match, 4) || null) : undefined,
                 },
                 time: getScoreText(match.score) || 'Por definir',
                 isGrandFinal: String(match.round || '').includes('Gran Final'),
@@ -4401,7 +4417,7 @@ export default function AdminTournamentDetailScreen() {
         if (!canShareBracket || sharingBracket) return;
 
         // If the tournament bracket is too large, let the user select which section to share
-        if (numRound1Matches > 8) {
+        if (!isRoundRobin && numRound1Matches > 8) {
             setIsShareSliceModalVisible(true);
             return;
         }
@@ -5050,6 +5066,36 @@ export default function AdminTournamentDetailScreen() {
                                                     const isUnplayed = !scoreText;
                                                     const isTBD = !m.player_a_id || !m.player_b_id;
 
+                                                    let isMatchWinnerA = false;
+                                                    let isMatchWinnerB = false;
+                                                    if (!isUnplayed && scoreSetStrings.length > 0) {
+                                                        let setsA = 0;
+                                                        let setsB = 0;
+                                                        scoreSetStrings.forEach((setStr: string) => {
+                                                            const setScores = setStr.split(/[ -]/);
+                                                            const scoreA = parseInt(setScores[0] || '0', 10);
+                                                            const scoreB = parseInt(setScores[1] || '0', 10);
+                                                            if (!isNaN(scoreA) && !isNaN(scoreB)) {
+                                                                if (scoreA > scoreB) setsA++;
+                                                                else if (scoreB > scoreA) setsB++;
+                                                            }
+                                                        });
+                                                        if (setsA > setsB) isMatchWinnerA = true;
+                                                        else if (setsB > setsA) isMatchWinnerB = true;
+                                                        else {
+                                                            isMatchWinnerA = m.winner_id === m.player_a_id || m.winner_2_id === m.player_a2_id;
+                                                            isMatchWinnerB = m.winner_id === m.player_b_id || m.winner_2_id === m.player_b2_id;
+                                                        }
+                                                    } else {
+                                                        isMatchWinnerA = m.winner_id === m.player_a_id || m.winner_2_id === m.player_a2_id;
+                                                        isMatchWinnerB = m.winner_id === m.player_b_id || m.winner_2_id === m.player_b2_id;
+                                                    }
+
+                                                    const colorA = isTBD ? colors.textTertiary : (isMatchWinnerA ? colors.text : (isMatchWinnerB ? colors.textSecondary : colors.text));
+                                                    const colorB = isTBD ? colors.textTertiary : (isMatchWinnerB ? colors.text : (isMatchWinnerA ? colors.textSecondary : colors.text));
+                                                    const weightA = isTBD ? '400' : (isMatchWinnerA ? '900' : (isMatchWinnerB ? '500' : '600'));
+                                                    const weightB = isTBD ? '400' : (isMatchWinnerB ? '900' : (isMatchWinnerA ? '500' : '600'));
+
                                                     // Special positioning for 3rd place match
                                                     const is3rdPlace = m.round?.includes('3er y 4to');
                                                     const currentMatchGap = is3rdPlace ? spacing.xl : matchGap;
@@ -5071,7 +5117,7 @@ export default function AdminTournamentDetailScreen() {
                                                                     <Text style={{ textAlign: 'center', fontSize: 10, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase' }}>{formatRoundLabel(m.round)}</Text>
                                                                 </View>
                                                             )}
-                                                            <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: colors.background, backgroundColor: (m.winner_id === m.player_a_id || m.winner_2_id === m.player_a2_id) ? colors.primary[500] + '15' : colors.surface }}>
+                                                            <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: colors.background, backgroundColor: isMatchWinnerA ? colors.primary[500] + '15' : colors.surface }}>
                                                                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flex: 1 }}>
                                                                     <View style={{ flex: 1 }}>
                                                                         <TouchableOpacity
@@ -5082,7 +5128,7 @@ export default function AdminTournamentDetailScreen() {
                                                                         >
                                                                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                                                                 {renderPlayerAvatar(getDisplayName(m, 1), getDisplayAvatar(m, 1), 22)}
-                                                                                <Text style={{ flex: 1, fontSize: IS_DOUBLES ? 11 : 13, fontWeight: m.winner_id === m.player_a_id ? '800' : (isTBD ? '400' : '600'), color: isTBD ? colors.textTertiary : colors.text }} numberOfLines={1}>{getDisplayName(m, 1)}</Text>
+                                                                                <Text style={{ flex: 1, fontSize: IS_DOUBLES ? 11 : 13, fontWeight: weightA, color: colorA }} numberOfLines={1}>{getDisplayName(m, 1)}</Text>
                                                                             </View>
                                                                         </TouchableOpacity>
                                                                         {IS_DOUBLES && (
@@ -5094,7 +5140,7 @@ export default function AdminTournamentDetailScreen() {
                                                                             >
                                                                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                                                                     {renderPlayerAvatar(getDisplayName(m, 2), getDisplayAvatar(m, 2), 22)}
-                                                                                    <Text style={{ flex: 1, fontSize: 11, fontWeight: m.winner_2_id === m.player_a2_id ? '800' : (isTBD ? '400' : '600'), color: isTBD ? colors.textTertiary : colors.text }} numberOfLines={1}>{getDisplayName(m, 2)}</Text>
+                                                                                    <Text style={{ flex: 1, fontSize: 11, fontWeight: weightA, color: colorA }} numberOfLines={1}>{getDisplayName(m, 2)}</Text>
                                                                                 </View>
                                                                             </TouchableOpacity>
                                                                         )}
@@ -5118,7 +5164,7 @@ export default function AdminTournamentDetailScreen() {
                                                                 </View>
                                                             </View>
 
-                                                            <View style={{ flex: 1, opacity: isTBD ? 0.6 : 1, backgroundColor: (m.winner_id === m.player_b_id || m.winner_2_id === m.player_b2_id) ? colors.primary[500] + '15' : colors.surface }}>
+                                                            <View style={{ flex: 1, opacity: isTBD ? 0.6 : 1, backgroundColor: isMatchWinnerB ? colors.primary[500] + '15' : colors.surface }}>
                                                                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flex: 1 }}>
                                                                     <View style={{ flex: 1 }}>
                                                                         <TouchableOpacity
@@ -5129,7 +5175,7 @@ export default function AdminTournamentDetailScreen() {
                                                                         >
                                                                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                                                                 {renderPlayerAvatar(getDisplayName(m, 3), getDisplayAvatar(m, 3), 22)}
-                                                                                <Text style={{ flex: 1, fontSize: IS_DOUBLES ? 11 : 13, fontWeight: m.winner_id === m.player_b_id ? '800' : (isTBD ? '400' : '500'), color: isTBD ? colors.textTertiary : colors.text }} numberOfLines={1}>{getDisplayName(m, 3)}</Text>
+                                                                                <Text style={{ flex: 1, fontSize: IS_DOUBLES ? 11 : 13, fontWeight: weightB, color: colorB }} numberOfLines={1}>{getDisplayName(m, 3)}</Text>
                                                                             </View>
                                                                         </TouchableOpacity>
                                                                         {IS_DOUBLES && (
@@ -5141,7 +5187,7 @@ export default function AdminTournamentDetailScreen() {
                                                                             >
                                                                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                                                                     {renderPlayerAvatar(getDisplayName(m, 4), getDisplayAvatar(m, 4), 22)}
-                                                                                    <Text style={{ flex: 1, fontSize: 11, fontWeight: m.winner_2_id === m.player_b2_id ? '800' : (isTBD ? '400' : '500'), color: isTBD ? colors.textTertiary : colors.text }} numberOfLines={1}>{getDisplayName(m, 4)}</Text>
+                                                                                    <Text style={{ flex: 1, fontSize: 11, fontWeight: weightB, color: colorB }} numberOfLines={1}>{getDisplayName(m, 4)}</Text>
                                                                                 </View>
                                                                             </TouchableOpacity>
                                                                         )}
@@ -5220,8 +5266,17 @@ export default function AdminTournamentDetailScreen() {
                     >
                         <ImageBackground source={BRACKET_SHARE_BG} resizeMode="cover" style={styles.bracketSharePoster}>
                             <View style={styles.bracketShareOverlay} />
+                            
+                            {/* Franja blanca superior con LogoAplicacion */}
+                            <View style={{ backgroundColor: '#ffffff', width: '100%', paddingVertical: 8, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 4, borderBottomColor: 'rgba(0,0,0,0.05)' }}>
+                                <Image 
+                                    source={require('../../../assets/Logos/LogoAplicacion.png')} 
+                                    style={{ width: 800, height: 240 }} 
+                                    resizeMode="contain" 
+                                />
+                            </View>
+
                             <View style={[styles.bracketShareInner, isRoundRobin && { justifyContent: 'center', paddingTop: 0, paddingBottom: 0 }]}>
-                                <Image source={APP_SHARE_LOGO} style={styles.bracketShareLogo} resizeMode="contain" />
                                 <Text style={styles.bracketShareTitle}>{tournament.name}</Text>
                                 <Text style={styles.bracketShareSubtitle}>
                                     {activeTab.startsWith('group:') 
@@ -5246,7 +5301,7 @@ export default function AdminTournamentDetailScreen() {
                                                 <RoundRobinTable
                                                     groupName={`Grupo ${currentGroupName}`}
                                                     standings={currentGroupStandings.map((s: any) => ({
-                                                        name: s.p1Name || s.name || 'Por definir',
+                                                        name: (s.p1Name || s.name || 'Por definir') + (IS_DOUBLES && s.p2Name ? ` / ${s.p2Name}` : ''),
                                                         pj: s.played ?? 0,
                                                         pg: s.won ?? 0,
                                                         pp: s.lost ?? 0,
@@ -5359,16 +5414,17 @@ export default function AdminTournamentDetailScreen() {
                                                                     {(m.scheduled_at || m.court) && (
                                                                         <>
                                                                             <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.08)', marginVertical: spacing.md, width: '100%' }} />
-                                                                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', alignItems: 'center', paddingHorizontal: spacing.xs }}>
-                                                                                <View style={{ flexDirection: 'row', gap: spacing.xs, alignItems: 'center' }}>
-                                                                                    {m.scheduled_at && (
-                                                                                        <Text style={{ fontSize: 10, color: 'rgba(255, 255, 255, 0.6)', fontWeight: '600' }}>
-                                                                                            📅 {formatScheduleDate(m.scheduled_at)} {formatScheduleTime(m.scheduled_at)}
-                                                                                        </Text>
-                                                                                    )}
-                                                                                </View>
+                                                                            <View style={{ flexDirection: 'row', justifyContent: 'center', gap: spacing.md, alignItems: 'center', width: '100%' }}>
+                                                                                {m.scheduled_at && (
+                                                                                    <Text style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.6)', fontWeight: '600' }}>
+                                                                                        📅 {formatScheduleDate(m.scheduled_at)} {formatScheduleTime(m.scheduled_at)}
+                                                                                    </Text>
+                                                                                )}
+                                                                                {m.scheduled_at && m.court && (
+                                                                                    <Text style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.3)' }}>|</Text>
+                                                                                )}
                                                                                 {m.court && (
-                                                                                    <Text style={{ fontSize: 10, color: colors.primary[500], fontWeight: '800' }}>
+                                                                                    <Text style={{ fontSize: 11, color: colors.primary[500], fontWeight: '800' }}>
                                                                                         📍 {m.court.toUpperCase()}
                                                                                     </Text>
                                                                                 )}
@@ -6296,14 +6352,14 @@ const getStyles = (colors: any) => {
         bracketShareInner: {
             flex: 1,
             paddingHorizontal: spacing['3xl'],
-            paddingTop: 72,
+            paddingTop: 10,
             paddingBottom: 60,
         },
         bracketShareLogo: {
-            width: 320,
-            height: 58,
+            width: 900,
+            height: 200,
             alignSelf: 'center',
-            marginBottom: spacing.lg,
+            marginBottom: spacing.xl,
         },
         bracketShareTitle: {
             color: '#fff',

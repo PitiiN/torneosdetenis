@@ -13,6 +13,7 @@ import { TennisSpinner } from '@/components/TennisSpinner';
 import { normalizeTournamentStatus } from '@/services/tournamentStatus';
 import { buildDescriptionWithRankingPoints, DEFAULT_RANKING_POINTS, parseRankingPoints } from '@/services/ranking';
 import { notifyOrganizationFollowersOnNewTournament } from '@/services/pushNotifications';
+import { clearCachedValue, clearCachedValuesByPrefix } from '@/services/runtimeCache';
 
 const formatCloseTimeInput = (value: string) => {
     const digits = value.replace(/\D/g, '').slice(0, 4);
@@ -304,6 +305,15 @@ export default function EditTournamentScreen() {
                 .eq('id', id);
 
             if (error) throw error;
+
+            // Clear caches
+            const orgId = tournamentData?.organization_id;
+            if (orgId) {
+                await clearCachedValuesByPrefix(`tournaments:${orgId}`);
+                await clearCachedValuesByPrefix(`finance:tournaments:${orgId}`);
+                await clearCachedValuesByPrefix(`finance:overview:${orgId}`);
+            }
+            await clearCachedValue('home:organizations:v1');
 
             if (isMasterTournament && updatePayload.status) {
                 const { error: syncChildrenStatusError } = await supabase

@@ -11,6 +11,7 @@ import { canManageOrganization, getCurrentUserAccessContext } from '@/services/a
 import { TennisSpinner } from '@/components/TennisSpinner';
 import * as SecureStore from '@/utils/SecureStore';
 import { notifyOrganizationFollowersOnNewTournament } from '@/services/pushNotifications';
+import { clearCachedValue, clearCachedValuesByPrefix } from '@/services/runtimeCache';
 
 const STATUS_OPTIONS = ['Publicado', 'No Publicado'];
 const STATUS_MAP: Record<string, string> = {
@@ -146,6 +147,14 @@ export default function CreateTournamentScreen() {
       });
 
       if (error || !createdTournamentId) throw error || new Error('No se obtuvo id del torneo creado.');
+
+      // Clear caches
+      if (activeOrgId) {
+        await clearCachedValuesByPrefix(`tournaments:${activeOrgId}`);
+        await clearCachedValuesByPrefix(`finance:tournaments:${activeOrgId}`);
+        await clearCachedValuesByPrefix(`finance:overview:${activeOrgId}`);
+      }
+      await clearCachedValue('home:organizations:v1');
 
       // Guardar datos de transferencia si se proporcionaron
       if (transferInfo.trim()) {

@@ -4,8 +4,24 @@ import { useTheme, spacing, borderRadius } from '@/theme';
 
 interface FinalMatch {
     title: string;
-    player1: { name: string; group: string; image?: string | null; id?: string | null };
-    player2: { name: string; group: string; image?: string | null; id?: string | null };
+    player1: { 
+        name: string; 
+        group: string; 
+        image?: string | null; 
+        id?: string | null;
+        name2?: string; 
+        image2?: string | null; 
+        id2?: string | null;
+    };
+    player2: { 
+        name: string; 
+        group: string; 
+        image?: string | null; 
+        id?: string | null;
+        name2?: string; 
+        image2?: string | null; 
+        id2?: string | null;
+    };
     time: string;
     isGrandFinal?: boolean;
     scheduledDate?: string | null;
@@ -101,16 +117,37 @@ export const TournamentFinals = ({ summary, matches, onPlayerPress }: Tournament
                         )}
 
                         <View style={styles.matchContent}>
-                            <TouchableOpacity
-                                style={styles.playerWrapper}
-                                disabled={!isTappable(match.player1)}
-                                onPress={() => onPlayerPress?.(match.player1.id || 'non_registered')}
-                                activeOpacity={0.6}
-                            >
-                                {renderAvatar(match.player1.name, match.player1.image, 60)}
-                                <Text style={[styles.matchPlayerName, isTappable(match.player1) && styles.tappableName]}>{match.player1.name}</Text>
-                                <Text style={styles.matchPlayerGroup}>{match.player1.group}</Text>
-                            </TouchableOpacity>
+                            <View style={styles.playerWrapper}>
+                                <TouchableOpacity
+                                    style={{ alignItems: 'center', gap: 4 }}
+                                    disabled={!isTappable(match.player1)}
+                                    onPress={() => onPlayerPress?.(match.player1.id || 'non_registered')}
+                                    activeOpacity={0.6}
+                                >
+                                    {renderAvatar(match.player1.name, match.player1.image, 50)}
+                                    <Text style={[styles.matchPlayerName, isTappable(match.player1) && styles.tappableName]} numberOfLines={1}>
+                                        {match.player1.name}
+                                    </Text>
+                                </TouchableOpacity>
+
+                                {match.player1.name2 ? (
+                                    <TouchableOpacity
+                                        style={{ alignItems: 'center', gap: 4, marginTop: spacing.xs }}
+                                        disabled={!match.player1.id2 || match.player1.name2 === 'Por definir' || match.player1.name2 === 'TBD'}
+                                        onPress={() => onPlayerPress?.(match.player1.id2 || 'non_registered')}
+                                        activeOpacity={0.6}
+                                    >
+                                        {renderAvatar(match.player1.name2, match.player1.image2, 50)}
+                                        <Text style={[styles.matchPlayerName, !!match.player1.id2 && styles.tappableName]} numberOfLines={1}>
+                                            {match.player1.name2}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ) : null}
+
+                                {!!match.player1.group && (
+                                    <Text style={styles.matchPlayerGroup}>{match.player1.group}</Text>
+                                )}
+                            </View>
 
                             <View style={styles.vsWrapper}>
                                 <Text style={styles.vsText}>VS</Text>
@@ -119,16 +156,37 @@ export const TournamentFinals = ({ summary, matches, onPlayerPress }: Tournament
                                 </View>
                             </View>
 
-                            <TouchableOpacity
-                                style={styles.playerWrapper}
-                                disabled={!isTappable(match.player2)}
-                                onPress={() => onPlayerPress?.(match.player2.id || 'non_registered')}
-                                activeOpacity={0.6}
-                            >
-                                {renderAvatar(match.player2.name, match.player2.image, 60)}
-                                <Text style={[styles.matchPlayerName, isTappable(match.player2) && styles.tappableName]}>{match.player2.name}</Text>
-                                <Text style={styles.matchPlayerGroup}>{match.player2.group}</Text>
-                            </TouchableOpacity>
+                            <View style={styles.playerWrapper}>
+                                <TouchableOpacity
+                                    style={{ alignItems: 'center', gap: 4 }}
+                                    disabled={!isTappable(match.player2)}
+                                    onPress={() => onPlayerPress?.(match.player2.id || 'non_registered')}
+                                    activeOpacity={0.6}
+                                >
+                                    {renderAvatar(match.player2.name, match.player2.image, 50)}
+                                    <Text style={[styles.matchPlayerName, isTappable(match.player2) && styles.tappableName]} numberOfLines={1}>
+                                        {match.player2.name}
+                                    </Text>
+                                </TouchableOpacity>
+
+                                {match.player2.name2 ? (
+                                    <TouchableOpacity
+                                        style={{ alignItems: 'center', gap: 4, marginTop: spacing.xs }}
+                                        disabled={!match.player2.id2 || match.player2.name2 === 'Por definir' || match.player2.name2 === 'TBD'}
+                                        onPress={() => onPlayerPress?.(match.player2.id2 || 'non_registered')}
+                                        activeOpacity={0.6}
+                                    >
+                                        {renderAvatar(match.player2.name2, match.player2.image2, 50)}
+                                        <Text style={[styles.matchPlayerName, !!match.player2.id2 && styles.tappableName]} numberOfLines={1}>
+                                            {match.player2.name2}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ) : null}
+
+                                {!!match.player2.group && (
+                                    <Text style={styles.matchPlayerGroup}>{match.player2.group}</Text>
+                                )}
+                            </View>
                         </View>
 
                         {(match.scheduledDate || match.court) && (
@@ -139,21 +197,18 @@ export const TournamentFinals = ({ summary, matches, onPlayerPress }: Tournament
                                 paddingVertical: spacing.sm, 
                                 paddingHorizontal: spacing.xl, 
                                 flexDirection: 'row', 
-                                justifyContent: 'space-between', 
+                                justifyContent: 'center', 
+                                gap: spacing.md,
                                 alignItems: 'center' 
                             }}>
-                                <View style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'center' }}>
-                                    {match.scheduledDate && (
-                                        <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '600' }}>
-                                            📅 {match.scheduledDate}
-                                        </Text>
-                                    )}
-                                    {match.scheduledTime && (
-                                        <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '600' }}>
-                                            ⏰ {match.scheduledTime}
-                                        </Text>
-                                    )}
-                                </View>
+                                {match.scheduledDate && (
+                                    <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '600' }}>
+                                        📅 {match.scheduledDate} {match.scheduledTime ? `${match.scheduledTime}` : ''}
+                                    </Text>
+                                )}
+                                {match.scheduledDate && match.court && (
+                                    <Text style={{ fontSize: 11, color: colors.border }}>|</Text>
+                                )}
                                 {match.court && (
                                     <Text style={{ fontSize: 11, color: colors.primary[500], fontWeight: '800' }}>
                                         📍 {match.court.toUpperCase()}

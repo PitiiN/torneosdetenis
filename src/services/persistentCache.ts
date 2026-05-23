@@ -62,6 +62,33 @@ export async function deletePersistedValue(key: string): Promise<void> {
   }
 }
 
+export async function deletePersistedValuesByPrefix(prefix: string): Promise<void> {
+  const fullPrefix = CACHE_KEY_PREFIX + prefix;
+  try {
+    if (Platform.OS === 'web') {
+      const keysToClear: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(fullPrefix)) {
+          keysToClear.push(k);
+        }
+      }
+      for (const k of keysToClear) {
+        localStorage.removeItem(k);
+      }
+    } else {
+      const allKeys = await (AsyncStorage as any).getAllKeys();
+      const appKeys = allKeys.filter((k: string) => k.startsWith(fullPrefix));
+      if (appKeys.length > 0) {
+        await (AsyncStorage as any).multiRemove(appKeys);
+      }
+    }
+  } catch (error) {
+    console.error(`Error deleting persistent cache keys with prefix ${prefix}:`, error);
+  }
+}
+
+
 export async function clearAllPersistedValues(): Promise<void> {
   try {
     if (Platform.OS === 'web') {
