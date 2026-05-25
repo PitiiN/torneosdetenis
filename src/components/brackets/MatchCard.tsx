@@ -268,7 +268,6 @@ const getStyles = (colors: any) => StyleSheet.create({
   },
   tappableName: {
     textDecorationLine: 'underline',
-    textDecorationStyle: 'dotted',
   },
   playerInfo: {
     flexDirection: 'row',

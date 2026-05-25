@@ -681,7 +681,7 @@ export default function PlayersScreen() {
                 </Text>
                 {organizationId && rankingRows.length > 0 ? (
                     <TouchableOpacity style={styles.shareRankingButton} onPress={handleShareRankingPage} disabled={sharingRankingPage}>
-                        <Ionicons name="share-social-outline" size={18} color="#fff" />
+                        <Ionicons name="share-social-outline" size={18} color={colors.background} />
                         <Text style={styles.shareRankingButtonText}>{sharingRankingPage ? 'Generando...' : 'Compartir página'}</Text>
                     </TouchableOpacity>
                 ) : null}
@@ -1088,7 +1088,7 @@ const getStyles = (colors: any) => StyleSheet.create({
         backgroundColor: colors.text,
     },
     shareRankingButtonText: {
-        color: '#fff',
+        color: colors.background,
         fontWeight: '800',
     },
     scrollContent: {

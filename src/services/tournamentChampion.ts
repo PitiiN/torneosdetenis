@@ -84,6 +84,26 @@ export const parseManualAssignments = (description?: string | null) => {
 };
 
 export const resolveWinnerIds = (match: any, scoreValue: any) => {
+    // 1. Primary: if winner_id is populated in the database, trust it 100%
+    if (match.winner_id) {
+        const isSideA = match.winner_id === match.player_a_id || (match.player_a2_id && match.winner_id === match.player_a2_id);
+        const isSideB = match.winner_id === match.player_b_id || (match.player_b2_id && match.winner_id === match.player_b2_id);
+        if (isSideA) {
+            return { 
+                w1: match.player_a_id || match.winner_id, 
+                w2: match.player_a2_id || match.winner_2_id || null, 
+                side: 'A' 
+            };
+        }
+        if (isSideB) {
+            return { 
+                w1: match.player_b_id || match.winner_id, 
+                w2: match.player_b2_id || match.winner_2_id || null, 
+                side: 'B' 
+            };
+        }
+    }
+
     const getScoreText = (val: any): string => {
         if (!val) return '';
         if (typeof val === 'string') return val.trim();
@@ -98,9 +118,8 @@ export const resolveWinnerIds = (match: any, scoreValue: any) => {
 
     const scoreText = getScoreText(scoreValue);
     if (!scoreText || /^W\.?O\.?$/i.test(scoreText)) {
-        // If it's W.O., we might need to check which side won if winner_id is set
         if (match.winner_id) {
-            const isSideA = match.winner_id === match.player_a_id;
+            const isSideA = match.winner_id === match.player_a_id || (match.player_a2_id && match.winner_id === match.player_a2_id);
             return { 
                 w1: match.winner_id, 
                 w2: isSideA ? match.player_a2_id : match.player_b2_id, 
@@ -125,7 +144,7 @@ export const resolveWinnerIds = (match: any, scoreValue: any) => {
 
     if (playerAWins === playerBWins) {
         if (match.winner_id) {
-             const isSideA = match.winner_id === match.player_a_id;
+             const isSideA = match.winner_id === match.player_a_id || (match.player_a2_id && match.winner_id === match.player_a2_id);
              return { w1: match.winner_id, w2: isSideA ? match.player_a2_id : match.player_b2_id, side: isSideA ? 'A' : 'B' };
         }
         return { w1: null, w2: null, side: null };
@@ -153,7 +172,17 @@ export const getDisplayName = (
         if (!pId) return 'Por definir';
         if (pId === 'BYE') return 'BYE';
         const player = players.find(p => p.player_id === pId || p.id === pId);
-        return player ? (player.profiles?.name || player.name || 'Desconocido') : 'Por definir';
+        if (!player) return 'Por definir';
+        
+        let name = player.name;
+        if (!name && player.profiles) {
+            if (Array.isArray(player.profiles)) {
+                name = player.profiles[0]?.name;
+            } else {
+                name = player.profiles.name;
+            }
+        }
+        return name || player.player_name || 'Desconocido';
     };
 
     const getMatchManualKey = (s: MatchSlot) => {
@@ -186,7 +215,8 @@ export const getDisplayName = (
 export const resolveChampionFromMatches = (
     matches: any[],
     participants: any[],
-    description?: string | null
+    description?: string | null,
+    championshipModalityOrName?: string | null
 ): string | null => {
     if (!matches || matches.length === 0) return null;
 
@@ -200,13 +230,26 @@ export const resolveChampionFromMatches = (
     });
 
     if (bracketMatches.length === 0) {
-        // Fallback for Round Robin only tournaments - highest match_order in the last group?
-        // For now let's focus on Elimination as per user request
         return null;
     }
 
-    const sorted = [...bracketMatches].sort((a, b) => (b.round_number || 0) - (a.round_number || 0));
-    const finalMatch = sorted[0];
+    // Prefer explicitly named final matches first (e.g. 'Gran Final' or 'Gran Final RR')
+    let finalMatch = bracketMatches.find(m => {
+        const roundText = String(m.round || '').toLowerCase();
+        return roundText === 'gran final' || roundText === 'gran final rr';
+    });
+
+    if (!finalMatch) {
+        finalMatch = bracketMatches.find(m => {
+            const roundText = String(m.round || '').toLowerCase();
+            return roundText.includes('gran final') || (roundText.includes('final') && !roundText.includes('consolaci') && !roundText.includes('puesto'));
+        });
+    }
+
+    if (!finalMatch) {
+        const sorted = [...bracketMatches].sort((a, b) => (b.round_number || 0) - (a.round_number || 0));
+        finalMatch = sorted[0];
+    }
 
     // Verify if it has a score or is finished
     const hasScore = !!finalMatch.score && String(finalMatch.score).trim().length > 0;
@@ -221,8 +264,17 @@ export const resolveChampionFromMatches = (
         const participant = participants.find(
             (candidate: any) => candidate?.player_id === playerId || candidate?.id === playerId
         );
-        const candidateName = participant?.profiles?.name || participant?.name || null;
-        const normalized = String(candidateName || '').trim();
+        if (!participant) return null;
+        
+        let candidateName = participant.name;
+        if (!candidateName && participant.profiles) {
+            if (Array.isArray(participant.profiles)) {
+                candidateName = participant.profiles[0]?.name;
+            } else {
+                candidateName = participant.profiles.name;
+            }
+        }
+        const normalized = String(candidateName || participant.player_name || '').trim();
         if (!normalized || normalized === 'Por definir' || normalized === 'BYE') return null;
         return normalized;
     };
@@ -232,7 +284,10 @@ export const resolveChampionFromMatches = (
         const winnerPrimaryName = getDisplayName(finalMatch, winnerStartSlot, manualAssignments, participants);
         if (winnerPrimaryName === 'Por definir') return null;
 
-        const isDoublesFinal = !!(
+        const modalityText = String(championshipModalityOrName || '').toLowerCase();
+        const isDoublesChampionship = modalityText.includes('doble') || modalityText.includes('double');
+
+        const isDoublesFinal = isDoublesChampionship || !!(
             finalMatch.player_a2_id ||
             finalMatch.player_b2_id ||
             manualAssignments.matchSlots?.[finalMatch.id]?.player_a2 ||
@@ -240,22 +295,24 @@ export const resolveChampionFromMatches = (
             w2
         );
 
-        if (!isDoublesFinal) return winnerPrimaryName;
+        const primaryFromDB = getParticipantNameById(w1);
+        const finalPrimary = (primaryFromDB && primaryFromDB !== 'Desconocido') ? primaryFromDB : winnerPrimaryName;
+
+        if (!isDoublesFinal) return finalPrimary;
 
         const winnerSecondarySlot = (winnerStartSlot + 1) as MatchSlot;
         const winnerSecondaryName = getDisplayName(finalMatch, winnerSecondarySlot, manualAssignments, participants);
-        if (!winnerSecondaryName || winnerSecondaryName === 'Por definir' || winnerSecondaryName === 'BYE') {
-            // Fallback: when the second slot is missing in the final match row, resolve by winner_2_id.
-            const fallbackSecondary = getParticipantNameById(w2);
-            if (fallbackSecondary) {
-                return winnerPrimaryName.includes('/')
-                    ? winnerPrimaryName
-                    : `${winnerPrimaryName} / ${fallbackSecondary}`;
+        const secondaryFromDB = getParticipantNameById(w2);
+        const finalSecondary = (secondaryFromDB && secondaryFromDB !== 'Desconocido') ? secondaryFromDB : winnerSecondaryName;
+
+        if (!finalSecondary || finalSecondary === 'Por definir' || finalSecondary === 'BYE') {
+            if (finalPrimary.includes('/')) {
+                return finalPrimary;
             }
-            return winnerPrimaryName;
+            return finalPrimary;
         }
 
-        return `${winnerPrimaryName} / ${winnerSecondaryName}`;
+        return `${finalPrimary} / ${finalSecondary}`;
     }
 
     return null;
@@ -273,7 +330,7 @@ export const syncTournamentChampion = async (
         // 1. Fetch tournament data
         const { data: tourData, error: tourError } = await supabase
             .from('tournaments')
-            .select('id, description, status, modality')
+            .select('id, description, status, modality, name')
             .eq('id', tournamentId)
             .single();
 
@@ -296,7 +353,8 @@ export const syncTournamentChampion = async (
         const championName = resolveChampionFromMatches(
             matchesRes.data,
             participantsRes.data || [],
-            tourData.description
+            tourData.description,
+            tourData.modality || tourData.name
         );
 
         if (!championName) return null;

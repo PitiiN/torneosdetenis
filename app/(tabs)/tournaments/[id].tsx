@@ -23,6 +23,7 @@ import {
 import { normalizeTournamentStatus } from '@/services/tournamentStatus';
 import { notifyTournamentUsers } from '@/services/pushNotifications';
 import { formatDateDDMMYYYY, formatTime24 } from '@/utils/datetime';
+import { EditScoreModal } from '@/components/tournaments/EditScoreModal';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const { width } = Dimensions.get('window');
@@ -854,18 +855,13 @@ export default function TournamentDetailScreen() {
         setScoreModalVisible(true);
     };
 
-    const saveMatchScore = async () => {
+    const saveMatchScore = async (finalScore: string) => {
         if (!selectedScoreMatch) return;
         if (!hasOpponentAssignedForCurrentUser(selectedScoreMatch)) {
             Alert.alert('Aviso', 'No puedes ingresar un resultado hasta que exista un rival asignado en este enfrentamiento.');
             return;
         }
         setSavingScore(true);
-
-        const finalScore = setScores
-            .filter(set => set.s1 !== '' || set.s2 !== '')
-            .map(set => `${set.s1}-${set.s2}`)
-            .join(', ');
 
         try {
             const { w1, w2, side } = resolveWinnerIds(selectedScoreMatch, finalScore);
@@ -1665,99 +1661,18 @@ export default function TournamentDetailScreen() {
             />
 
             {/* Score Submission Modal for Players */}
-            <Modal
-                visible={scoreModalVisible}
-                transparent={true}
-                animationType="fade"
-                onRequestClose={() => {
-                    if (savingScore) return;
-                    setScoreModalVisible(false);
-                }}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.scoreModalContent}>
-                        <View style={styles.scoreModalHeader}>
-                            <Text style={styles.scoreModalTitle}>Ingresar Resultado</Text>
-                            <TouchableOpacity disabled={savingScore} onPress={() => setScoreModalVisible(false)}>
-                                <Ionicons name="close" size={24} color={colors.textSecondary} />
-                            </TouchableOpacity>
-                        </View>
-
-                        <Text style={styles.scoreModalSubtitle}>
-                            Ingresa el resultado de tu partido set por set.
-                        </Text>
-
-                        {selectedScoreMatch && (
-                            <View style={{ gap: spacing.md, marginVertical: spacing.md }}>
-                                {/* Column Headers pointing to the players/teams */}
-                                <View style={{ flexDirection: 'row', paddingLeft: 60, gap: spacing.md, marginBottom: -spacing.sm }}>
-                                    <Text style={{ flex: 1, color: colors.textSecondary, fontSize: 11, fontWeight: '700', textAlign: 'center' }} numberOfLines={2}>
-                                        {getDisplayName(selectedScoreMatch, 1)}{IS_DOUBLES ? ` / ${getDisplayName(selectedScoreMatch, 2)}` : ''}
-                                    </Text>
-                                    <View style={{ width: 10 }} />
-                                    <Text style={{ flex: 1, color: colors.textSecondary, fontSize: 11, fontWeight: '700', textAlign: 'center' }} numberOfLines={2}>
-                                        {getDisplayName(selectedScoreMatch, 3)}{IS_DOUBLES ? ` / ${getDisplayName(selectedScoreMatch, 4)}` : ''}
-                                    </Text>
-                                </View>
-
-                                {setScores.map((set, idx) => (
-                                    <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.md }}>
-                                        <Text style={{ color: colors.textSecondary, fontWeight: '700', width: 44 }}>Set {idx + 1}</Text>
-                                        <TextInput
-                                            style={[styles.scoreInput, { width: 80, color: colors.text, textAlign: 'center' }]}
-                                            keyboardType="number-pad"
-                                            maxLength={2}
-                                            value={set.s1}
-                                            ref={ref => { scoreInputRefs.current[idx * 2] = ref; }}
-                                            onChangeText={(val) => {
-                                                const newSets = [...setScores];
-                                                newSets[idx] = { ...newSets[idx], s1: val };
-                                                setSetScores(newSets);
-                                                if (val && scoreInputRefs.current[(idx * 2) + 1]) {
-                                                    scoreInputRefs.current[(idx * 2) + 1]?.focus();
-                                                }
-                                            }}
-                                        />
-                                        <Text style={{ color: colors.textTertiary }}>-</Text>
-                                        <TextInput
-                                            style={[styles.scoreInput, { width: 80, color: colors.text, textAlign: 'center' }]}
-                                            keyboardType="number-pad"
-                                            maxLength={2}
-                                            value={set.s2}
-                                            ref={ref => { scoreInputRefs.current[(idx * 2) + 1] = ref; }}
-                                            onChangeText={(val) => {
-                                                const newSets = [...setScores];
-                                                newSets[idx] = { ...newSets[idx], s2: val };
-                                                setSetScores(newSets);
-                                                if (val && scoreInputRefs.current[(idx * 2) + 2]) {
-                                                    scoreInputRefs.current[(idx * 2) + 2]?.focus();
-                                                }
-                                            }}
-                                        />
-                                    </View>
-                                ))}
-                            </View>
-                        )}
-
-                        <View style={styles.scoreModalButtons}>
-                            <TouchableOpacity 
-                                style={[styles.scoreModalBtn, styles.scoreModalBtnCancel]} 
-                                onPress={() => setScoreModalVisible(false)}
-                                disabled={savingScore}
-                            >
-                                <Text style={styles.scoreModalBtnCancelText}>Cancelar</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity 
-                                style={[styles.scoreModalBtn, styles.scoreModalBtnSave]} 
-                                onPress={saveMatchScore}
-                                disabled={savingScore}
-                            >
-                                {savingScore ? <TennisSpinner size={18} color="#fff" /> : <Text style={styles.scoreModalBtnSaveText}>Guardar</Text>}
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
+            {selectedScoreMatch && (
+                <EditScoreModal
+                    visible={scoreModalVisible}
+                    playerALabel={`${getDisplayName(selectedScoreMatch, 1)}${IS_DOUBLES ? ` / ${getDisplayName(selectedScoreMatch, 2)}` : ''}`}
+                    playerBLabel={`${getDisplayName(selectedScoreMatch, 3)}${IS_DOUBLES ? ` / ${getDisplayName(selectedScoreMatch, 4)}` : ''}`}
+                    setsToShow={getSetsToShow(tournament?.set_type)}
+                    initialScores={setScores}
+                    saving={savingScore}
+                    onSave={saveMatchScore}
+                    onClose={() => setScoreModalVisible(false)}
+                />
+            )}
         </View>
     );
 }
@@ -1933,7 +1848,6 @@ const getStyles = (colors: any) => StyleSheet.create({
     },
     tappableGroupName: {
         textDecorationLine: 'underline',
-        textDecorationStyle: 'dotted',
     },
     footerActions: {
         position: 'absolute',

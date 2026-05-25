@@ -106,18 +106,15 @@ function RankingEvolutionChart({
 
     const chartHeight = 160;
     const paddingLeft = 40;
-    const paddingRight = 20;
+    const paddingRight = 30;
     const paddingTop = 20;
     const paddingBottom = 30;
 
     const ranks = validPoints.map(p => p.rank);
-    let minRank = Math.min(...ranks);
-    let maxRank = Math.max(...ranks);
-
-    if (minRank === maxRank) {
-        minRank = Math.max(1, minRank - 1);
-        maxRank = maxRank + 1;
-    }
+    let minRank = 1;
+    let maxRank = Math.max(...ranks, 10);
+    // Expand maxRank to make the 4 grid lines (0, 1/3, 2/3, 3/3) exact integers
+    maxRank = Math.ceil((maxRank - 1) / 3) * 3 + 1;
 
     const getCoordinate = (month: number, rank: number, containerWidth: number) => {
         const x = paddingLeft + (month / 11) * (containerWidth - paddingLeft - paddingRight);
@@ -222,26 +219,25 @@ function RankingEvolutionChart({
                         key={`dot-${idx}`}
                         style={{
                             position: 'absolute',
-                            left: pt.x - 5,
-                            top: pt.y - 5,
-                            width: 10,
-                            height: 10,
-                            borderRadius: 5,
-                            backgroundColor: '#fff',
-                            borderWidth: 3,
-                            borderColor: colors.primary[500],
+                            left: pt.x - 6,
+                            top: pt.y - 6,
+                            width: 12,
+                            height: 12,
+                            borderRadius: 6,
+                            backgroundColor: colors.primary[500],
                             justifyContent: 'center',
                             alignItems: 'center',
-                            shadowColor: '#000',
-                            shadowOffset: { width: 0, height: 2 },
-                            shadowOpacity: 0.15,
-                            shadowRadius: 3,
-                            elevation: 2,
                         }}
                     >
                         <View style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: 3,
+                            backgroundColor: colors.background,
+                        }} />
+                        <View style={{
                             position: 'absolute',
-                            top: -22,
+                            top: -24,
                             backgroundColor: colors.surfaceSecondary,
                             paddingHorizontal: 6,
                             paddingVertical: 2,
@@ -249,7 +245,7 @@ function RankingEvolutionChart({
                             borderWidth: 0.5,
                             borderColor: colors.border,
                         }}>
-                            <Text style={{ fontSize: 8, fontWeight: '800', color: colors.text }}>
+                            <Text style={{ fontSize: 9, fontWeight: '800', color: colors.text }}>
                                 #{pt.rank}
                             </Text>
                         </View>
@@ -852,7 +848,7 @@ export default function ProfileScreen() {
         }
     };
 
-    const handleDeleteAccount = () => {
+    const triggerDeleteAlerts = () => {
         Alert.alert(
             'Eliminar Cuenta',
             '\u00bfEst\u00e1s seguro de que deseas eliminar tu cuenta?\n\nEsta acci\u00f3n es IRREVERSIBLE. Se eliminar\u00e1n todos tus datos, registros en torneos, estad\u00edsticas e historial de partidos de forma permanente.',
@@ -880,6 +876,17 @@ export default function ProfileScreen() {
                 },
             ]
         );
+    };
+
+    const handleDeleteAccount = () => {
+        if (Platform.OS === 'ios') {
+            setShowPrivacyModal(false);
+            setTimeout(() => {
+                triggerDeleteAlerts();
+            }, 550); // Safe duration for slide-down animation on iOS
+        } else {
+            triggerDeleteAlerts();
+        }
     };
 
     const executeAccountDeletion = async () => {

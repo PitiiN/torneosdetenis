@@ -153,7 +153,8 @@ function ChampionName({ championship }: { championship: Championship }) {
         const championName = resolveChampionFromMatches(
           matchesRes.data,
           participantsRes.data || [],
-          championship.description
+          championship.description,
+          championship.modality || championship.name
         );
         if (championName) setResolvedName(championName);
       } catch (error) {

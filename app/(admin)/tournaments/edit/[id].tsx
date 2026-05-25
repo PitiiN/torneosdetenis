@@ -7,7 +7,7 @@ import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { DateField } from '@/components/DateField';
 import { buildTournamentDescription, buildTournamentFormatLabel, createInitialMatches, getRoundRobinGroupCount, normalizeTournamentFormat } from '@/services/tournamentStructure';
-import { TOURNAMENT_CATEGORIES, CHILEAN_COMUNAS, TOURNAMENT_SURFACES, TOURNAMENT_SET_TYPES } from '@/constants/tournamentOptions';
+import { TOURNAMENT_CATEGORIES, CHILEAN_COMUNAS, CHILEAN_REGIONS, CHILEAN_REGIONS_WITH_COMUNAS, TOURNAMENT_SURFACES, TOURNAMENT_SET_TYPES } from '@/constants/tournamentOptions';
 import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { normalizeTournamentStatus } from '@/services/tournamentStatus';
@@ -113,6 +113,8 @@ export default function EditTournamentScreen() {
     const [registrationFee, setRegistrationFee] = useState('0');
     const [address, setAddress] = useState('');
     const [comuna, setComuna] = useState('');
+    const [transferInfo, setTransferInfo] = useState('');
+    const [selectedRegion, setSelectedRegion] = useState('Región Metropolitana de Santiago');
     const [tournamentData, setTournamentData] = useState<any>(null);
     const [rankingPointRows, setRankingPointRows] = useState<RankingPointRow[]>(() => DEFAULT_RANKING_ROWS());
 
@@ -120,12 +122,19 @@ export default function EditTournamentScreen() {
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Modal states
+    const [showRegionModal, setShowRegionModal] = useState(false);
     const [showComunaModal, setShowComunaModal] = useState(false);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [showSurfaceModal, setShowSurfaceModal] = useState(false);
     const [showSetTypeModal, setShowSetTypeModal] = useState(false);
     const [showStatusModal, setShowStatusModal] = useState(false);
     const [showFormatModal, setShowFormatModal] = useState(false);
+
+    const availableComunas = React.useMemo(() => {
+        const regionData = CHILEAN_REGIONS_WITH_COMUNAS.find(r => r.name === selectedRegion);
+        const comunas = regionData ? regionData.comunas : [];
+        return ['Libre', ...comunas.slice().sort()];
+    }, [selectedRegion]);
 
     const STATUS_OPTIONS = ['No Publicado', 'Publicado', 'En Progreso', 'Finalizado'];
     const STATUS_MAP_TO_UI: { [key: string]: string } = {
@@ -170,7 +179,7 @@ export default function EditTournamentScreen() {
 
             const { data, error } = await supabase
                 .from('tournaments')
-                .select('id, organization_id, parent_tournament_id, is_tournament_master, name, status, level, modality, surface, max_players, format, set_type, description, start_date, end_date, registration_fee, registration_close_at, registration_close_time, address, comuna')
+                .select('id, organization_id, parent_tournament_id, is_tournament_master, name, status, level, modality, surface, max_players, format, set_type, description, start_date, end_date, registration_fee, registration_close_at, registration_close_time, address, comuna, transfer_info')
                 .eq('id', id)
                 .single();
             if (error) throw error;
@@ -195,7 +204,17 @@ export default function EditTournamentScreen() {
             setRegistrationCloseTime(String(data.registration_close_time || '').slice(0, 5));
             setRegistrationFee(String(data.registration_fee || '0'));
             setAddress(data.address || '');
-            setComuna(data.comuna || '');
+            setTransferInfo(data.transfer_info || '');
+            const loadedComuna = data.comuna || '';
+            setComuna(loadedComuna);
+            if (loadedComuna && loadedComuna !== 'Libre') {
+                const foundRegion = CHILEAN_REGIONS_WITH_COMUNAS.find(r => r.comunas.includes(loadedComuna));
+                if (foundRegion) {
+                    setSelectedRegion(foundRegion.name);
+                }
+            } else {
+                setSelectedRegion('Región Metropolitana de Santiago');
+            }
             setRankingPointRows(buildRankingRowsFromDescription(data.description));
         } catch (error) {
             Alert.alert('Error', 'No se pudo cargar el torneo');
@@ -256,6 +275,7 @@ export default function EditTournamentScreen() {
                 updatePayload.registration_close_time = normalizedCloseTime;
                 updatePayload.address = address;
                 updatePayload.comuna = comuna;
+                updatePayload.transfer_info = transferInfo;
             } else {
                 const rankingPoints: Record<string, number> = {};
                 const usedPlaces = new Set<string>();
@@ -484,6 +504,18 @@ export default function EditTournamentScreen() {
                                 />
                             </View>
 
+                            {/* Región */}
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>
+                                    <Ionicons name="map-outline" size={18} color={colors.primary[500]} />
+                                    {' '}Región
+                                </Text>
+                                <TouchableOpacity style={styles.dropdown} onPress={() => setShowRegionModal(true)}>
+                                    <Text style={styles.dropdownText}>{selectedRegion || 'Seleccionar región...'}</Text>
+                                    <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+                                </TouchableOpacity>
+                            </View>
+
                             {/* Comuna */}
                             <View style={styles.inputGroup}>
                                 <Text style={styles.label}>
@@ -515,6 +547,24 @@ export default function EditTournamentScreen() {
                                     placeholder="Ej. 21:30"
                                     placeholderTextColor={colors.textTertiary}
                                     maxLength={5}
+                                />
+                            </View>
+
+                            {/* Transfer Info */}
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>
+                                    <Ionicons name="card-outline" size={18} color={colors.primary[500]} />
+                                    {' '}Datos de Transferencia (opcional)
+                                </Text>
+                                <TextInput
+                                    style={[styles.textInput, styles.textArea]}
+                                    value={transferInfo}
+                                    onChangeText={setTransferInfo}
+                                    placeholder={'Ej:\nBanco: Banco Estado\nCuenta Corriente: 12345678\nRUT: 12.345.678-9\nNombre: Juan Pérez\nCorreo: correo@email.com'}
+                                    placeholderTextColor={colors.textTertiary}
+                                    multiline
+                                    numberOfLines={5}
+                                    textAlignVertical="top"
                                 />
                             </View>
                         </>
@@ -703,9 +753,26 @@ export default function EditTournamentScreen() {
 
             {/* Modals */}
             <SelectionModal
+                visible={showRegionModal}
+                title="Seleccionar Región"
+                options={CHILEAN_REGIONS}
+                onSelect={(val: string) => {
+                    setSelectedRegion(val);
+                    setShowRegionModal(false);
+                    
+                    // Sincronizar comuna
+                    const regionData = CHILEAN_REGIONS_WITH_COMUNAS.find(r => r.name === val);
+                    const comunas = regionData ? regionData.comunas : [];
+                    if (comuna !== 'Libre' && !comunas.includes(comuna)) {
+                        setComuna('Libre');
+                    }
+                }}
+                onClose={() => setShowRegionModal(false)}
+            />
+            <SelectionModal
                 visible={showComunaModal}
                 title="Seleccionar Comuna"
-                options={CHILEAN_COMUNAS}
+                options={availableComunas}
                 onSelect={(val: string) => { setComuna(val); setShowComunaModal(false); }}
                 onClose={() => setShowComunaModal(false)}
             />
@@ -800,6 +867,11 @@ function getStyles(colors: any) {
         padding: spacing.md,
         color: colors.text,
         fontSize: 16,
+    },
+    textArea: {
+        minHeight: 110,
+        textAlignVertical: 'top',
+        paddingTop: spacing.md,
     },
     dropdown: {
         height: 56,

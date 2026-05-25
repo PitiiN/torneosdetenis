@@ -114,6 +114,7 @@ export default function SettingsScreen() {
     const [contactWhatsapp, setContactWhatsapp] = useState('');
     const [socialLinks, setSocialLinks] = useState('');
     const [photosDriveUrl, setPhotosDriveUrl] = useState('');
+    const [basesUrl, setBasesUrl] = useState('');
     const [isAdmin, setIsAdmin] = useState(false);
     const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
 
@@ -133,6 +134,7 @@ export default function SettingsScreen() {
     const [newOrgWhatsapp, setNewOrgWhatsapp] = useState('');
     const [newOrgSocial, setNewOrgSocial] = useState('');
     const [newOrgDrive, setNewOrgDrive] = useState('');
+    const [newOrgBases, setNewOrgBases] = useState('');
 
     const notifyOrganizationDataChanged = async (orgId?: string | null) => {
         clearCachedValue(HOME_ORGANIZATIONS_CACHE_KEY);
@@ -195,7 +197,7 @@ export default function SettingsScreen() {
     const fetchOrgDetails = async (orgId: string) => {
         const { data: org, error: orgErr } = await supabase
             .from('organizations')
-            .select('id, name, logo_url, contact_email, contact_whatsapp, social_links, photos_drive_url')
+            .select('id, name, logo_url, contact_email, contact_whatsapp, social_links, photos_drive_url, bases_url')
             .eq('id', orgId)
             .single();
 
@@ -204,7 +206,7 @@ export default function SettingsScreen() {
         if (!resolvedOrg || orgErr) {
             const { data: publicOrgWithContact, error: publicOrgWithContactError } = await supabase
                 .from('organizations_public')
-                .select('id, name, logo_url, contact_email, contact_whatsapp, social_links, photos_drive_url')
+                .select('id, name, logo_url, contact_email, contact_whatsapp, social_links, photos_drive_url, bases_url')
                 .eq('id', orgId)
                 .single();
 
@@ -227,6 +229,7 @@ export default function SettingsScreen() {
                 contact_whatsapp: (publicOrg as any).contact_whatsapp || null,
                 social_links: (publicOrg as any).social_links || null,
                 photos_drive_url: (publicOrg as any).photos_drive_url || null,
+                bases_url: (publicOrg as any).bases_url || null,
             };
         }
 
@@ -243,6 +246,7 @@ export default function SettingsScreen() {
         setContactWhatsapp(resolvedOrg.contact_whatsapp || '');
         setSocialLinks(resolvedOrg.social_links || '');
         setPhotosDriveUrl(resolvedOrg.photos_drive_url || '');
+        setBasesUrl(resolvedOrg.bases_url || '');
         await SecureStore.setItemAsync('selected_org_id', orgId);
         await SecureStore.setItemAsync('selected_org_name', resolvedOrg.name || '');
     };
@@ -370,6 +374,7 @@ export default function SettingsScreen() {
             const normalizedWhatsapp = contactWhatsapp.trim().slice(0, 30);
             const normalizedSocialLinks = socialLinks.trim().slice(0, 500);
             const normalizedPhotosDriveUrl = photosDriveUrl.trim().slice(0, 500);
+            const normalizedBasesUrl = basesUrl.trim().slice(0, 500);
 
             if (normalizedContactEmail && !EMAIL_PATTERN.test(normalizedContactEmail)) {
                 Alert.alert('Error', 'El correo de contacto no tiene un formato válido.');
@@ -386,6 +391,11 @@ export default function SettingsScreen() {
                 return;
             }
 
+            if (normalizedBasesUrl && !URL_PATTERN.test(normalizedBasesUrl)) {
+                Alert.alert('Error', 'El enlace de Bases debe comenzar con http:// o https://');
+                return;
+            }
+
             const fullPayload = {
                 name: normalizedName,
                 logo_url: logoPath || null,
@@ -393,6 +403,7 @@ export default function SettingsScreen() {
                 contact_whatsapp: normalizedWhatsapp || null,
                 social_links: normalizedSocialLinks || null,
                 photos_drive_url: normalizedPhotosDriveUrl || null,
+                bases_url: normalizedBasesUrl || null,
             };
 
             const { error: fullUpdateError } = await supabase
@@ -412,6 +423,7 @@ export default function SettingsScreen() {
                 contact_whatsapp: normalizedWhatsapp || null,
                 social_links: normalizedSocialLinks || null,
                 photos_drive_url: normalizedPhotosDriveUrl || null,
+                bases_url: normalizedBasesUrl || null,
             }) : current);
             Alert.alert('Éxito', 'Configuración guardada.');
         } catch (error) {
@@ -432,6 +444,7 @@ export default function SettingsScreen() {
         const normalizedWhatsapp = newOrgWhatsapp.trim().slice(0, 30);
         const normalizedSocial = newOrgSocial.trim().slice(0, 500);
         const normalizedDrive = newOrgDrive.trim().slice(0, 500);
+        const normalizedBases = newOrgBases.trim().slice(0, 500);
         const baseSlug = buildOrganizationSlug(normalizedName);
 
         if (!normalizedName) {
@@ -451,6 +464,11 @@ export default function SettingsScreen() {
 
         if (normalizedDrive && !URL_PATTERN.test(normalizedDrive)) {
             Alert.alert('Error', 'El enlace de fotos debe comenzar con http:// o https://');
+            return;
+        }
+
+        if (normalizedBases && !URL_PATTERN.test(normalizedBases)) {
+            Alert.alert('Error', 'El enlace de Bases debe comenzar con http:// o https://');
             return;
         }
 
@@ -478,6 +496,7 @@ export default function SettingsScreen() {
                     contact_whatsapp: normalizedWhatsapp || null,
                     social_links: normalizedSocial || null,
                     photos_drive_url: normalizedDrive || null,
+                    bases_url: normalizedBases || null,
                 };
 
                 const { data, error } = await supabase
@@ -528,6 +547,7 @@ export default function SettingsScreen() {
             setNewOrgWhatsapp('');
             setNewOrgSocial('');
             setNewOrgDrive('');
+            setNewOrgBases('');
 
             // Refresh list and select the new one
             await fetchAllOrganizations();
@@ -646,6 +666,7 @@ export default function SettingsScreen() {
                             setContactWhatsapp('');
                             setSocialLinks('');
                             setPhotosDriveUrl('');
+                            setBasesUrl('');
                             
                             // Clear stored selection
                             await SecureStore.deleteItemAsync('selected_org_id');
@@ -839,6 +860,16 @@ export default function SettingsScreen() {
                                 placeholderTextColor={colors.textTertiary}
                                 autoCapitalize="none"
                             />
+
+                            <Text style={styles.label}>Enlace de Bases</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={basesUrl}
+                                onChangeText={setBasesUrl}
+                                placeholder="https://..."
+                                placeholderTextColor={colors.textTertiary}
+                                autoCapitalize="none"
+                            />
                         </View>
 
                         <TouchableOpacity 
@@ -1019,7 +1050,7 @@ export default function SettingsScreen() {
 
                                         <View style={styles.inputGroup}>
                                             <Text style={styles.label}>Organización Asignada</Text>
-                                            <ScrollView style={styles.orgSmallList} keyboardShouldPersistTaps="handled">
+                                            <ScrollView style={styles.orgSmallList} keyboardShouldPersistTaps="handled" nestedScrollEnabled={true}>
                                                 <TouchableOpacity 
                                                     style={[styles.orgItem, !selectedUser.org_id && styles.orgItemActive]}
                                                     onPress={() => setSelectedUser({...selectedUser, org_id: null})}

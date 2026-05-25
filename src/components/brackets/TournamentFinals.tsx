@@ -317,7 +317,6 @@ const getStyles = (colors: any) => StyleSheet.create({
     },
     tappableName: {
         textDecorationLine: 'underline',
-        textDecorationStyle: 'dotted',
     },
     matchPlayerGroup: {
         color: colors.primary[500],

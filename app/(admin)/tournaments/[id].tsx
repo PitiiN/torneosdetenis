@@ -28,6 +28,8 @@ import { SingleEliminationBracket } from '@/components/brackets/SingleEliminatio
 import { RoundRobinTable } from '@/components/brackets/RoundRobinTable';
 import { TournamentFinals } from '@/components/brackets/TournamentFinals';
 import { clearCachedValue, clearCachedValuesByPrefix } from '@/services/runtimeCache';
+import { EditScoreModal } from '@/components/tournaments/EditScoreModal';
+import { ScheduleMatchModal } from '@/components/tournaments/ScheduleMatchModal';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const COURT_OPTIONS = Array.from({ length: 20 }, (_current, index) => `Cancha ${index + 1}`);
@@ -548,6 +550,7 @@ export default function AdminTournamentDetailScreen() {
                 return;
             }
             setTournament(tourData);
+            tournamentDescriptionRef.current = tourData.description;
 
             if (isRoundRobinFormat(tourData.format)) {
                 const availableGroups = getRoundRobinGroupNames(tourData.format, tourData.description);
@@ -622,16 +625,18 @@ export default function AdminTournamentDetailScreen() {
             if (!extractChampionFromDescription(tourData.description)) {
                 syncTournamentChampion(id, supabase).then(newChampName => {
                     if (newChampName) {
+                        const newDesc = buildDescriptionWithChampion(tourData.description, newChampName);
                         setTournament((prev: any) => prev ? { 
                             ...prev, 
-                            description: buildDescriptionWithChampion(prev.description, newChampName)
+                            description: newDesc
                         } : prev);
+                        tournamentDescriptionRef.current = newDesc;
                     }
                 });
             }
 
             // Check and move byes
-            const byeResolved = await checkAndProcessByes(hydratedMatches, tourData.description, tourData.format);
+            const byeResolved = await checkAndProcessByes(hydratedMatches, tourData.description, tourData.format, hydratedPlayers);
 
             // Repair historical progression for already-finished matches (winner -> next round, loser -> consolation)
             const progressionRepaired = await repairFinishedMatchesProgression(hydratedMatches, tourData.format);
@@ -728,22 +733,23 @@ export default function AdminTournamentDetailScreen() {
         setIsScheduleModalVisible(true);
     };
 
-    const saveMatchSchedule = async () => {
+    const saveMatchSchedule = async (data: { date: string; time: string; court: string }) => {
         if (!selectedMatch) return;
         setSavingSchedule(true);
 
         try {
             const previousScheduledAt = selectedMatch.scheduled_at || null;
             const previousCourt = String(selectedMatch.court || '');
-            const normalizedDate = String(scheduleData.date || '').trim();
-            const normalizedTime = String(scheduleData.time || '').trim();
-            const normalizedCourt = COURT_OPTIONS.includes(String(scheduleData.court || '').trim())
-                ? String(scheduleData.court || '').trim()
+            const normalizedDate = String(data.date || '').trim();
+            const normalizedTime = String(data.time || '').trim();
+            const normalizedCourt = COURT_OPTIONS.includes(String(data.court || '').trim())
+                ? String(data.court || '').trim()
                 : '';
             let scheduledAt: string | null = null;
 
             if (!normalizedDate && normalizedTime) {
                 Alert.alert('Error', 'Para guardar la hora primero debes seleccionar una fecha.');
+                setSavingSchedule(false);
                 return;
             }
 
@@ -751,12 +757,14 @@ export default function AdminTournamentDetailScreen() {
                 const validTime = parseTimeRelaxed(normalizedTime);
                 if (!validTime) {
                     Alert.alert('Error', 'Ingresa una hora válida (ej: 18:30 o 1830).');
+                    setSavingSchedule(false);
                     return;
                 }
 
                 const localDateTime = new Date(`${normalizedDate}T${validTime}:00`);
                 if (Number.isNaN(localDateTime.getTime())) {
                     Alert.alert('Error', 'La fecha u hora ingresada no es válida.');
+                    setSavingSchedule(false);
                     return;
                 }
                 scheduledAt = localDateTime.toISOString();
@@ -785,7 +793,6 @@ export default function AdminTournamentDetailScreen() {
                     normalizedCourt
                 );
             }
-            setIsCourtPickerVisible(false);
             setIsScheduleModalVisible(false);
             Alert.alert('Éxito', 'Horario y cancha guardados.');
         } catch (error) {
@@ -971,7 +978,8 @@ export default function AdminTournamentDetailScreen() {
         winner2Id: string | null = null,
         sourceMatches: any[] = matches,
         winnerSide?: 'A' | 'B',
-        notifyOnDefinedMatch = false
+        notifyOnDefinedMatch = false,
+        descriptionOverride?: string | null
     ) {
         if (!winnerId && !winnerSide) return false;
         if (String(match.round || '').startsWith('Grupo ')) return false;
@@ -1011,7 +1019,8 @@ export default function AdminTournamentDetailScreen() {
 
         // ADVANCE MANUAL PLAYERS
         const targetSide = nextSlotField.startsWith('player_a') ? 'A' : 'B';
-        const parsedAssignments = tournament?.description ? parseManualAssignments(tournament.description) : { rrSlots: {}, matchSlots: {} };
+        const currentDesc = descriptionOverride ?? tournamentDescriptionRef.current ?? tournament?.description;
+        const parsedAssignments = currentDesc ? parseManualAssignments(currentDesc) : { rrSlots: {}, matchSlots: {} };
         const manualSlots = parsedAssignments.matchSlots?.[match.id] || {};
         
         // Correctly resolve manual participant names using the string keys
@@ -1066,7 +1075,8 @@ export default function AdminTournamentDetailScreen() {
         sourceMatches: any[] = matches,
         loserSide?: 'A' | 'B',
         formatOverride?: string | null,
-        notifyOnDefinedMatch = false
+        notifyOnDefinedMatch = false,
+        descriptionOverride?: string | null
     ) {
         if (!hasConsolationBracket(formatOverride ?? tournament?.format)) return false;
         if (!loserId && !loserSide) return false;
@@ -1112,7 +1122,8 @@ export default function AdminTournamentDetailScreen() {
         }
 
         const targetSide = nextSlotField.startsWith('player_a') ? 'A' : 'B';
-        const parsedAssignments = tournament?.description ? parseManualAssignments(tournament.description) : { rrSlots: {}, matchSlots: {} };
+        const currentDesc = descriptionOverride ?? tournamentDescriptionRef.current ?? tournament?.description;
+        const parsedAssignments = currentDesc ? parseManualAssignments(currentDesc) : { rrSlots: {}, matchSlots: {} };
         const manualSlots = parsedAssignments.matchSlots?.[match.id] || {};
         const p1Key = getMatchManualKey(loserSide === 'A' ? 1 : 3);
         const p2Key = getMatchManualKey(loserSide === 'A' ? 2 : 4);
@@ -1157,7 +1168,11 @@ export default function AdminTournamentDetailScreen() {
         return advancedAny;
     }
 
-    async function repairFinishedMatchesProgression(allMatches: any[], formatOverride?: string | null) {
+    async function repairFinishedMatchesProgression(
+        allMatches: any[],
+        formatOverride?: string | null,
+        descriptionOverride?: string | null
+    ) {
         if (!allMatches.length) return false;
 
         const finishedMatches = [...allMatches]
@@ -1203,7 +1218,9 @@ export default function AdminTournamentDetailScreen() {
                 winnerId,
                 winner2Id,
                 allMatches,
-                winnerSide
+                winnerSide,
+                false,
+                descriptionOverride
             );
             if (advancedWinner) repairedAny = true;
 
@@ -1216,7 +1233,9 @@ export default function AdminTournamentDetailScreen() {
                 loser2Id || null,
                 allMatches,
                 loserSide,
-                formatOverride
+                formatOverride,
+                false,
+                descriptionOverride
             );
             if (advancedLoser) repairedAny = true;
         }
@@ -1227,7 +1246,8 @@ export default function AdminTournamentDetailScreen() {
     async function checkAndProcessByes(
         allMatches: any[],
         descriptionOverride?: string | null,
-        formatOverride?: string | null
+        formatOverride?: string | null,
+        playersList = players
     ) {
         if (isRoundRobinFormat(formatOverride ?? tournament?.format)) return false;
 
@@ -1240,18 +1260,19 @@ export default function AdminTournamentDetailScreen() {
             return normalized === 'BYE';
         };
 
-        const manualAssignmentsForBye = parseManualAssignments(descriptionOverride ?? tournament?.description);
         const resolveNameForByeCheck = (match: any, slot: MatchSlot) => {
             const playerId = getPlayerIdBySlot(match, slot);
-            if (playerId) return getPlayerName(playerId);
+            if (playerId) return getPlayerName(playerId, playersList);
 
+            const currentDesc = descriptionOverride ?? tournamentDescriptionRef.current ?? tournament?.description;
+            const parsed = parseManualAssignments(currentDesc);
             const manualName =
-                manualAssignmentsForBye.matchSlots?.[match.id]?.[getMatchManualKey(slot)]?.name ||
-                manualAssignmentsForBye.matchSlots?.[match.id]?.[getMatchManualFallbackKey(slot)]?.name ||
+                parsed.matchSlots?.[match.id]?.[getMatchManualKey(slot)]?.name ||
+                parsed.matchSlots?.[match.id]?.[getMatchManualFallbackKey(slot)]?.name ||
                 null;
             if (manualName) return manualName;
 
-            return getDisplayName(match, slot);
+            return getDisplayName(match, slot, playersList);
         };
 
         let workingMatches = [...allMatches];
@@ -1359,6 +1380,14 @@ export default function AdminTournamentDetailScreen() {
                 winner2Id = m.player_a2_id && m.player_a2_id !== 'BYE' ? m.player_a2_id : null;
             }
 
+            const winnerName1 = winnerSide === 'A' ? nameA : nameB;
+            const winnerName2 = winnerSide === 'A' ? nameA2 : nameB2;
+
+            // If the opponent/winner is a placeholder (Por definir, Cupo X, empty), do not resolve the BYE yet
+            if (isPlaceholderName(winnerName1) || (IS_DOUBLES && isPlaceholderName(winnerName2))) {
+                continue;
+            }
+
             const updatePayload: any = {
                 score: 'W.O.',
                 status: 'finished',
@@ -1383,7 +1412,15 @@ export default function AdminTournamentDetailScreen() {
                     candidateMatch.id === m.id ? updatedCurrentMatch : candidateMatch
                 );
                 resolvedAnyBye = true;
-                await propagateWinnerToNextMatch(updatedCurrentMatch, winnerId, winner2Id, workingMatches, winnerSide);
+                await propagateWinnerToNextMatch(
+                    updatedCurrentMatch,
+                    winnerId,
+                    winner2Id,
+                    workingMatches,
+                    winnerSide,
+                    false,
+                    descriptionOverride ?? tournamentDescriptionRef.current ?? tournament?.description
+                );
             }
         }
         return resolvedAnyBye;
@@ -1446,15 +1483,9 @@ export default function AdminTournamentDetailScreen() {
         );
     }
 
-    const saveMatchScore = async () => {
+    const saveMatchScore = async (finalScore: string) => {
         if (!selectedMatch) return;
         setSavingMatch(true);
-
-        // Construct score string "6-4 6-2"
-        const finalScore = setScores
-            .filter(set => set.s1 !== '' || set.s2 !== '')
-            .map(set => `${set.s1}-${set.s2}`)
-            .join(', ');
 
         try {
             const { w1, w2, side } = resolveWinnerIds(selectedMatch, finalScore);
@@ -1549,10 +1580,10 @@ export default function AdminTournamentDetailScreen() {
         Alert.alert('Información', 'La lógica de scaffold está en desarrollo.');
     };
 
-    const getPlayerName = (pId: string) => {
+    const getPlayerName = (pId: string, playersList = players) => {
         if (!pId) return 'Por definir';
         if (pId === 'BYE') return 'BYE';
-        const player = players.find(p => p.player_id === pId);
+        const player = playersList.find(p => p.player_id === pId);
         return player ? (player.profiles?.name || 'Desconocido') : 'Por definir';
     };
 
@@ -2952,6 +2983,7 @@ export default function AdminTournamentDetailScreen() {
             }
             return next;
         });
+        await loadTournamentData(false);
     };
 
     const assignDoublesTeamToSelectedSlot = async (team: ManualDoublesTeamRow) => {
@@ -3060,6 +3092,7 @@ export default function AdminTournamentDetailScreen() {
                 },
                 matchSlots: { ...(current.matchSlots || {}) }
             }));
+            await loadTournamentData(false);
             return;
         }
 
@@ -3099,6 +3132,7 @@ export default function AdminTournamentDetailScreen() {
                 }
             }
         }));
+        await loadTournamentData(false);
     };
 
     const createManualProfileAndAssign = async (name: string, keepModalOpen = assignmentTargets.length > 1) => {
@@ -3214,9 +3248,7 @@ export default function AdminTournamentDetailScreen() {
             setManualPlayerName2('');
             setSearchQuery('');
             setSearchResults([]);
-            if (isByeName(trimmedName)) {
-                await loadTournamentData();
-            }
+            await loadTournamentData(false);
             if (keepModalOpen && assignmentTargets.length > 1) {
                 moveToNextAssignmentTarget();
             } else {
@@ -3393,6 +3425,7 @@ export default function AdminTournamentDetailScreen() {
 
         try {
             await assignPlayerToSelectedSlot(profileId);
+            await loadTournamentData(false);
             resetPlayerSelectionSearch();
             if (assignmentTargets.length > 1) {
                 moveToNextAssignmentTarget();
@@ -4155,9 +4188,9 @@ export default function AdminTournamentDetailScreen() {
         return match.player_b2_id;
     };
 
-    const getDisplayName = (match: any, slot: MatchSlot) => {
+    const getDisplayName = (match: any, slot: MatchSlot, playersList = players) => {
         const playerId = getPlayerIdBySlot(match, slot);
-        if (playerId) return getPlayerName(playerId);
+        if (playerId) return getPlayerName(playerId, playersList);
 
         if (String(match.round || '').startsWith('Grupo ')) {
             const groupName = String(match.round || '').replace('Grupo ', '');
@@ -5499,77 +5532,18 @@ export default function AdminTournamentDetailScreen() {
             </Modal>
 
             {/* Edit Match Score Modal */}
-            <Modal visible={isEditModalVisible} transparent animationType="fade">
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>Editar Resultado</Text>
-                        {selectedMatch && (
-                            <Text style={styles.modalSubtitle}>
-                                {getDisplayName(selectedMatch, 1)}{IS_DOUBLES ? ` / ${getDisplayName(selectedMatch, 2)}` : ''} vs {getDisplayName(selectedMatch, 3)}{IS_DOUBLES ? ` / ${getDisplayName(selectedMatch, 4)}` : ''}
-                            </Text>
-                        )}
-                        {selectedMatch && (
-                            <View style={{ gap: spacing.md, marginVertical: spacing.md }}>
-                                {/* Column Headers */}
-                                <View style={{ flexDirection: 'row', paddingLeft: 60, gap: spacing.md, marginBottom: -spacing.sm }}>
-                                    <Text style={{ flex: 1, color: colors.textSecondary, fontSize: 10, fontWeight: '700', textAlign: 'center' }} numberOfLines={2}>
-                                        {getDisplayName(selectedMatch, 1)}{IS_DOUBLES ? ` / ${getDisplayName(selectedMatch, 2)}` : ''}
-                                    </Text>
-                                    <View style={{ width: 10 }} />
-                                    <Text style={{ flex: 1, color: colors.textSecondary, fontSize: 10, fontWeight: '700', textAlign: 'center' }} numberOfLines={2}>
-                                        {getDisplayName(selectedMatch, 3)}{IS_DOUBLES ? ` / ${getDisplayName(selectedMatch, 4)}` : ''}
-                                    </Text>
-                                </View>
-
-                                {setScores.map((set, idx) => (
-                                    <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.md }}>
-                                        <Text style={{ color: colors.textSecondary, fontWeight: '700', width: 44 }}>Set {idx + 1}</Text>
-                                        <TextInput
-                                            style={[styles.scoreInput, { width: 60, color: colors.text, textAlign: 'center' }]}
-                                            keyboardType="number-pad"
-                                            maxLength={2}
-                                            value={set.s1}
-                                            ref={ref => { scoreInputRefs.current[idx * 2] = ref; }}
-                                            onChangeText={(val) => {
-                                                const newSets = [...setScores];
-                                                newSets[idx] = { ...newSets[idx], s1: val };
-                                                setSetScores(newSets);
-                                                if (val && scoreInputRefs.current[(idx * 2) + 1]) {
-                                                    scoreInputRefs.current[(idx * 2) + 1]?.focus();
-                                                }
-                                            }}
-                                        />
-                                        <Text style={{ color: colors.textTertiary }}>-</Text>
-                                        <TextInput
-                                            style={[styles.scoreInput, { width: 60, color: colors.text, textAlign: 'center' }]}
-                                            keyboardType="number-pad"
-                                            maxLength={2}
-                                            value={set.s2}
-                                            ref={ref => { scoreInputRefs.current[(idx * 2) + 1] = ref; }}
-                                            onChangeText={(val) => {
-                                                const newSets = [...setScores];
-                                                newSets[idx] = { ...newSets[idx], s2: val };
-                                                setSetScores(newSets);
-                                                if (val && scoreInputRefs.current[(idx * 2) + 2]) {
-                                                    scoreInputRefs.current[(idx * 2) + 2]?.focus();
-                                                }
-                                            }}
-                                        />
-                                    </View>
-                                ))}
-                            </View>
-                        )}
-                        <View style={styles.modalButtons}>
-                            <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditModalVisible(false)}>
-                                <Text style={styles.modalBtnCancelText}>Cancelar</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={saveMatchScore} disabled={savingMatch}>
-                                {savingMatch ? <TennisSpinner size={18} color="#fff" /> : <Text style={styles.modalBtnSaveText}>Guardar</Text>}
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
+            {selectedMatch && (
+                <EditScoreModal
+                    visible={isEditModalVisible}
+                    playerALabel={`${getDisplayName(selectedMatch, 1)}${IS_DOUBLES ? ` / ${getDisplayName(selectedMatch, 2)}` : ''}`}
+                    playerBLabel={`${getDisplayName(selectedMatch, 3)}${IS_DOUBLES ? ` / ${getDisplayName(selectedMatch, 4)}` : ''}`}
+                    setsToShow={getSetsToShow(tournament?.set_type)}
+                    initialScores={setScores}
+                    saving={savingMatch}
+                    onSave={saveMatchScore}
+                    onClose={() => setIsEditModalVisible(false)}
+                />
+            )}
 
             {/* Select Player Modal */}
             <Modal
@@ -5894,83 +5868,13 @@ export default function AdminTournamentDetailScreen() {
             </Modal>
 
             {/* Schedule Match Modal */}
-            <Modal visible={isScheduleModalVisible} transparent animationType="fade">
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>Programar Partido</Text>
-                        <View style={{ gap: spacing.md, marginVertical: spacing.md }}>
-                            <DateField 
-                                label="Fecha del partido"
-                                value={scheduleData.date}
-                                onChange={(date) => setScheduleData({ ...scheduleData, date })}
-                            />
-                            
-                            <View>
-                                <Text style={[styles.modalDividerText, { textAlign: 'left', marginBottom: 4 }]}>Hora (HHMM)</Text>
-                                <TextInput
-                                    style={[styles.scoreInput, { color: colors.text, textAlign: 'left' }]}
-                                    placeholder="Ej: 1830"
-                                    placeholderTextColor={colors.textTertiary}
-                                    value={scheduleData.time}
-                                    onChangeText={(time) => setScheduleData({ ...scheduleData, time: time.replace(/[^0-9]/g, '') })}
-                                    keyboardType="number-pad"
-                                    inputMode="numeric"
-                                    maxLength={4}
-                                />
-                            </View>
-
-                            <View>
-                                <Text style={[styles.modalDividerText, { textAlign: 'left', marginBottom: 4 }]}>Cancha</Text>
-                                <TouchableOpacity
-                                    style={[styles.scoreInput, { justifyContent: 'center' }]}
-                                    onPress={() => setIsCourtPickerVisible((current) => !current)}
-                                >
-                                    <Text style={{ color: scheduleData.court ? colors.text : colors.textTertiary, fontSize: 15, fontWeight: '600' }}>
-                                        {scheduleData.court || 'Seleccionar cancha'}
-                                    </Text>
-                                </TouchableOpacity>
-                                {isCourtPickerVisible && (
-                                    <ScrollView
-                                        style={{ maxHeight: 220, marginTop: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.md, backgroundColor: colors.surface }}
-                                        keyboardShouldPersistTaps="handled"
-                                    >
-                                        {COURT_OPTIONS.map((courtName) => (
-                                            <TouchableOpacity
-                                                key={courtName}
-                                                style={styles.playerSearchItem}
-                                                onPress={() => {
-                                                    setScheduleData((current) => ({ ...current, court: courtName }));
-                                                    setIsCourtPickerVisible(false);
-                                                }}
-                                            >
-                                                <Text style={styles.playerSearchName}>{courtName}</Text>
-                                                {scheduleData.court === courtName && (
-                                                    <Ionicons name="checkmark-circle" size={18} color={colors.primary[500]} />
-                                                )}
-                                            </TouchableOpacity>
-                                        ))}
-                                    </ScrollView>
-                                )}
-                            </View>
-                        </View>
-
-                        <View style={styles.modalButtons}>
-                            <TouchableOpacity
-                                style={[styles.modalBtn, styles.modalBtnCancel]}
-                                onPress={() => {
-                                    setIsCourtPickerVisible(false);
-                                    setIsScheduleModalVisible(false);
-                                }}
-                            >
-                                <Text style={styles.modalBtnCancelText}>Cancelar</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={saveMatchSchedule} disabled={savingSchedule}>
-                                {savingSchedule ? <TennisSpinner size={18} color="#fff" /> : <Text style={styles.modalBtnSaveText}>Guardar</Text>}
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
+            <ScheduleMatchModal
+                visible={isScheduleModalVisible}
+                initialData={scheduleData}
+                saving={savingSchedule}
+                onSave={saveMatchSchedule}
+                onClose={() => setIsScheduleModalVisible(false)}
+            />
 
             <Modal
                 visible={isSeedCountModalVisible}

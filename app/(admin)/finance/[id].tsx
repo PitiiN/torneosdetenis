@@ -332,7 +332,12 @@ export default function TournamentFinanceDetail() {
                           ? styles.requestStatusRejected
                           : styles.requestStatusPending,
                     ]}>
-                      <Text style={styles.requestStatusText}>{requestStatusLabel(request.status)}</Text>
+                      <Text style={[
+                        styles.requestStatusText,
+                        request.status === 'approved' ? { color: colors.success } :
+                        request.status === 'rejected' ? { color: colors.error } :
+                        { color: '#f59e0b' }
+                      ]}>{requestStatusLabel(request.status)}</Text>
                     </View>
                   </View>
 
@@ -672,7 +677,7 @@ function getStyles(colors: any) {
       borderRadius: borderRadius.sm,
     },
     requestStatusPending: {
-      backgroundColor: '#fef3c7',
+      backgroundColor: 'rgba(245, 158, 11, 0.15)',
     },
     requestStatusApproved: {
       backgroundColor: colors.success + '20',

@@ -7,6 +7,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { borderRadius, spacing, useTheme } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { TennisSpinner } from '@/components/TennisSpinner';
+import * as Clipboard from 'expo-clipboard';
 import { getModalityLabel, sortChampionships } from '@/services/championshipSorting';
 import {
   getRequestStatusLabel,
@@ -107,7 +108,12 @@ function ChampionName({ championship }: { championship: Championship }) {
         ]);
 
         if (matchesRes.data) {
-          const name = resolveChampionFromMatches(matchesRes.data, participantsRes.data || [], championship.description);
+          const name = resolveChampionFromMatches(
+            matchesRes.data,
+            participantsRes.data || [],
+            championship.description,
+            championship.modality || championship.name
+          );
           if (name) setResolvedName(name);
         }
       } catch (e) {
@@ -661,13 +667,8 @@ export default function TournamentMasterDetailScreen() {
               style={styles.transferCopyButton}
               onPress={async () => {
                 try {
-                  const { Clipboard: RNClipboard } = require('react-native');
-                  if (RNClipboard && RNClipboard.setString) {
-                    RNClipboard.setString(masterTournament?.transfer_info || '');
-                    Alert.alert('Copiado', 'Los datos de transferencia se copiaron al portapapeles.');
-                  } else {
-                    Alert.alert('Aviso', 'Por favor, mantén presionado el texto arriba para copiarlo manualmente.');
-                  }
+                  await Clipboard.setStringAsync(masterTournament?.transfer_info || '');
+                  Alert.alert('Copiado', 'Los datos de transferencia se copiaron al portapapeles.');
                 } catch (err) {
                   Alert.alert('Aviso', 'Por favor, mantén presionado el texto arriba para copiarlo manualmente.');
                 }

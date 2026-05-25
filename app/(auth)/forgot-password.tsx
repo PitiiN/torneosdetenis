@@ -49,8 +49,8 @@ export default function ForgotPasswordScreen() {
                 <View style={styles.overlay}>
                     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
                         <KeyboardAvoidingView 
-                            behavior={Platform.OS === 'ios' ? 'padding' : 'position'}
-                            keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 32}
+                            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                            keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
                             style={styles.keyboardView}
                         >
                             <ScrollView

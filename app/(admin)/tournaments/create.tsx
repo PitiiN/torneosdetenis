@@ -6,7 +6,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { DateField } from '@/components/DateField';
-import { CHILEAN_COMUNAS, TOURNAMENT_SURFACES } from '@/constants/tournamentOptions';
+import { CHILEAN_COMUNAS, CHILEAN_REGIONS, CHILEAN_REGIONS_WITH_COMUNAS, TOURNAMENT_SURFACES } from '@/constants/tournamentOptions';
 import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import * as SecureStore from '@/utils/SecureStore';
@@ -62,13 +62,21 @@ export default function CreateTournamentScreen() {
   const [registrationCloseTime, setRegistrationCloseTime] = useState('');
   const [address, setAddress] = useState('');
   const [comuna, setComuna] = useState('Libre');
+  const [selectedRegion, setSelectedRegion] = useState('Región Metropolitana de Santiago');
   const [surface, setSurface] = useState(TOURNAMENT_SURFACES[0]);
   const [status, setStatus] = useState(STATUS_OPTIONS[0]);
   const [transferInfo, setTransferInfo] = useState('');
 
+  const [showRegionModal, setShowRegionModal] = useState(false);
   const [showComunaModal, setShowComunaModal] = useState(false);
   const [showSurfaceModal, setShowSurfaceModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
+
+  const availableComunas = React.useMemo(() => {
+    const regionData = CHILEAN_REGIONS_WITH_COMUNAS.find(r => r.name === selectedRegion);
+    const comunas = regionData ? regionData.comunas : [];
+    return ['Libre', ...comunas.slice().sort()];
+  }, [selectedRegion]);
 
   useEffect(() => {
     const checkAccess = async () => {
@@ -257,6 +265,14 @@ export default function CreateTournamentScreen() {
             />
           </View>
 
+           <View style={styles.inputGroup}>
+            <Text style={styles.label}>Región</Text>
+            <TouchableOpacity style={styles.dropdown} onPress={() => setShowRegionModal(true)}>
+              <Text style={styles.dropdownText}>{selectedRegion || 'Seleccionar región'}</Text>
+              <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Comuna</Text>
             <TouchableOpacity style={styles.dropdown} onPress={() => setShowComunaModal(true)}>
@@ -316,9 +332,26 @@ export default function CreateTournamentScreen() {
       </View>
 
       <SelectionModal
+        visible={showRegionModal}
+        title="Seleccionar Región"
+        options={CHILEAN_REGIONS}
+        onSelect={(value: string) => {
+          setSelectedRegion(value);
+          setShowRegionModal(false);
+          
+          // Sincronizar comuna
+          const regionData = CHILEAN_REGIONS_WITH_COMUNAS.find(r => r.name === value);
+          const comunas = regionData ? regionData.comunas : [];
+          if (comuna !== 'Libre' && !comunas.includes(comuna)) {
+            setComuna('Libre');
+          }
+        }}
+        onClose={() => setShowRegionModal(false)}
+      />
+      <SelectionModal
         visible={showComunaModal}
         title="Seleccionar Comuna"
-        options={CHILEAN_COMUNAS}
+        options={availableComunas}
         onSelect={(value: string) => {
           setComuna(value);
           setShowComunaModal(false);

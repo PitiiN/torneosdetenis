@@ -170,7 +170,6 @@ const getStyles = (colors: any) => StyleSheet.create({
     },
     tappablePlayerName: {
         textDecorationLine: 'underline',
-        textDecorationStyle: 'dotted',
     },
     ptsValue: {
         color: colors.primary[500],

@@ -49,6 +49,7 @@ type OrganizationInfo = {
     contact_whatsapp: string | null;
     social_links: string | null;
     photos_drive_url: string | null;
+    bases_url: string | null;
 };
 
 const SURFACE_MAP: { [key: string]: string } = {
@@ -142,7 +143,12 @@ const resolveTournamentChampionName = async (tournament: Tournament) => {
             return tagManager || null;
         }
 
-        return resolveChampionFromMatches(matchesRes.data, participantsRes.data || [], tournament.description) || tagManager || null;
+        return resolveChampionFromMatches(
+            matchesRes.data,
+            participantsRes.data || [],
+            tournament.description,
+            tournament.modality || tournament.name
+        ) || tagManager || null;
     } catch (error) {
         console.error('Error resolving champion:', error);
         return tagManager || null;
@@ -319,7 +325,7 @@ export default function TorneosScreen() {
                     let fetchedInfo: OrganizationInfo | null = null;
                     const { data: organizationData } = await supabase
                         .from('organizations')
-                        .select('name, contact_email, contact_whatsapp, social_links, photos_drive_url')
+                        .select('name, contact_email, contact_whatsapp, social_links, photos_drive_url, bases_url')
                         .eq('id', targetOrgId)
                         .maybeSingle();
 
@@ -330,11 +336,12 @@ export default function TorneosScreen() {
                             contact_whatsapp: decodeEscapedUnicode(organizationData.contact_whatsapp || '') || null,
                             social_links: decodeEscapedUnicode(organizationData.social_links || '') || null,
                             photos_drive_url: decodeEscapedUnicode(organizationData.photos_drive_url || '') || null,
+                            bases_url: decodeEscapedUnicode(organizationData.bases_url || '') || null,
                         };
                     } else {
                         const { data: publicDataWithContact, error: publicDataWithContactError } = await supabase
                             .from('organizations_public')
-                            .select('name, contact_email, contact_whatsapp, social_links, photos_drive_url')
+                            .select('name, contact_email, contact_whatsapp, social_links, photos_drive_url, bases_url')
                             .eq('id', targetOrgId)
                             .single();
 
@@ -353,6 +360,7 @@ export default function TorneosScreen() {
                                 contact_whatsapp: decodeEscapedUnicode((publicData as any).contact_whatsapp || '') || null,
                                 social_links: decodeEscapedUnicode((publicData as any).social_links || '') || null,
                                 photos_drive_url: decodeEscapedUnicode((publicData as any).photos_drive_url || '') || null,
+                                bases_url: decodeEscapedUnicode((publicData as any).bases_url || '') || null,
                             };
                         }
                     }
@@ -625,7 +633,8 @@ export default function TorneosScreen() {
         organizationInfo?.contact_email ||
         organizationInfo?.contact_whatsapp ||
         organizationInfo?.social_links ||
-        organizationInfo?.photos_drive_url
+        organizationInfo?.photos_drive_url ||
+        organizationInfo?.bases_url
     );
     const shouldShowOrganizationInfo = Boolean(activeOrgId && organizationInfo);
 
@@ -687,8 +696,8 @@ export default function TorneosScreen() {
                 {shouldShowOrganizationInfo && organizationInfo && (
                     <View style={styles.organizationInfoCard}>
 
-                        {(organizationInfo.contact_whatsapp || organizationInfo.social_links || organizationInfo.photos_drive_url) && (
-                            <View style={styles.orgButtonsContainer}>
+                        {(organizationInfo.contact_whatsapp || organizationInfo.social_links || organizationInfo.photos_drive_url || organizationInfo.bases_url) && (
+                            <View style={[styles.orgButtonsContainer, { justifyContent: 'center', flexWrap: 'wrap', gap: spacing.sm }]}>
                                 {organizationInfo.contact_whatsapp && (
                                     <TouchableOpacity
                                         style={[styles.orgButton, { backgroundColor: '#25D366' }]}
@@ -723,8 +732,17 @@ export default function TorneosScreen() {
                                         style={[styles.orgButton, { backgroundColor: '#4285F4' }]}
                                         onPress={() => Linking.openURL(organizationInfo.photos_drive_url!)}
                                     >
-                                        <Ionicons name="images-outline" size={18} color="#fff" />
+                                        <Ionicons name="images" size={18} color="#fff" />
                                         <Text style={styles.orgButtonText}>Fotos</Text>
+                                    </TouchableOpacity>
+                                )}
+                                {organizationInfo.bases_url && (
+                                    <TouchableOpacity
+                                        style={[styles.orgButton, { backgroundColor: colors.text }]}
+                                        onPress={() => Linking.openURL(organizationInfo.bases_url!)}
+                                    >
+                                        <Ionicons name="document-text" size={18} color={colors.background} />
+                                        <Text style={[styles.orgButtonText, { color: colors.background }]}>Bases</Text>
                                     </TouchableOpacity>
                                 )}
                             </View>
@@ -1129,6 +1147,7 @@ const getStyles = (colors: any) => StyleSheet.create({
         flexWrap: 'wrap',
         gap: spacing.sm,
         marginTop: spacing.sm,
+        justifyContent: 'center',
     },
     orgButton: {
         flexDirection: 'row',
