@@ -37,3 +37,8 @@ GoogleService-Info.plist
 # Scratch files
 scratch/
 
+# Keystores and certificate files
+*.jks
+*.keystore
+
+

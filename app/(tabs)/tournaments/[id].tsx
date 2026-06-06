@@ -936,14 +936,14 @@ export default function TournamentDetailScreen() {
                     name: m.player_a?.name || 'TBD', 
                     avatarUrl: m.player_a?.avatar_url || null,
                     scores: setScores.map((s: string[]) => s[0]).filter((s: string | undefined) => s !== undefined),
-                    isWinner: m.winner_id === m.player_a_id && !!m.player_a_id,
+                    isWinner: (m.winner_id === m.player_a_id || (IS_DOUBLES && (m.winner_id === m.player_a2_id || m.winner_2_id === m.player_a_id || m.winner_2_id === m.player_a2_id))) && (!!m.player_a_id || (IS_DOUBLES && !!m.player_a2_id)),
                     id: m.player_a_id || null,
                 },
                 player2: { 
                     name: m.player_b?.name || 'TBD', 
                     avatarUrl: m.player_b?.avatar_url || null,
                     scores: setScores.map((s: string[]) => s[1]).filter((s: string | undefined) => s !== undefined),
-                    isWinner: m.winner_id === m.player_b_id && !!m.player_b_id,
+                    isWinner: (m.winner_id === m.player_b_id || (IS_DOUBLES && (m.winner_id === m.player_b2_id || m.winner_2_id === m.player_b_id || m.winner_2_id === m.player_b2_id))) && (!!m.player_b_id || (IS_DOUBLES && !!m.player_b2_id)),
                     id: m.player_b_id || null,
                 },
                 ...(IS_DOUBLES ? {
@@ -1571,6 +1571,14 @@ export default function TournamentDetailScreen() {
                                                 </View>
                                                 {(match.scheduled_at || match.court) && (
                                                 <View style={{ flexDirection: 'row', justifyContent: 'center', gap: spacing.lg, marginBottom: spacing.sm }}>
+                                                    {match.scheduled_at && (
+                                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                            <Ionicons name="calendar-outline" size={12} color={colors.textTertiary} />
+                                                            <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '600' }}>
+                                                                {new Date(match.scheduled_at).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}
+                                                            </Text>
+                                                        </View>
+                                                    )}
                                                     {match.scheduled_at && (
                                                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                                                             <Ionicons name="time-outline" size={12} color={colors.textTertiary} />

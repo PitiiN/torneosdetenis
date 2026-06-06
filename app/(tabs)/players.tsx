@@ -294,13 +294,16 @@ export default function PlayersScreen() {
 
         const hasHistory = completedTournaments.length >= 1;
         const rows = currentRows.map((row) => {
-            const previousRank = hasHistory && Object.prototype.hasOwnProperty.call(previousRankMap, row.playerId)
+            let previousRank = hasHistory && Object.prototype.hasOwnProperty.call(previousRankMap, row.playerId)
                 ? previousRankMap[row.playerId]
                 : null;
+            if (hasHistory && previousRank === null && row.points > 0) {
+                previousRank = Math.max(previousRowsBase.length + 1, row.rank);
+            }
             return {
                 ...row,
                 previousRank,
-                isNewEntry: hasHistory && previousRank === null && row.points > 0,
+                isNewEntry: false,
             } as RankingScreenRow;
         });
 
@@ -504,52 +507,63 @@ export default function PlayersScreen() {
     const deleteManualRankingPlayer = async () => {
         if (!editingPlayer || !organizationId || !canEditRanking || savingManualPoints) return;
 
-        Alert.alert(
-            'Confirmar eliminación',
-            `¿Estás seguro de que quieres eliminar a ${editingPlayer.name} del ranking de esta categoría y organización? Esto borrará sus puntos manuales asociados.`,
-            [
-                { text: 'Cancelar', style: 'cancel' },
-                {
-                    text: 'Eliminar',
-                    style: 'destructive',
-                    onPress: async () => {
-                        setSavingManualPoints(true);
-                        try {
-                            const previousSnapshot = await buildRankingSnapshot(organizationId, activeCategory, modality);
+        const targetPlayer = editingPlayer;
+        closeRankingEditor(true);
 
-                            const { error: deleteError } = await supabase
-                                .from('ranking_manual_adjustments')
-                                .delete()
-                                .eq('organization_id', organizationId)
-                                .eq('level', activeCategory)
-                                .eq('modality', modality)
-                                .eq('player_id', editingPlayer.playerId);
-
-                            if (deleteError) throw deleteError;
-
-                            const currentSnapshot = await buildRankingSnapshot(organizationId, activeCategory, modality);
-                            setRankingRows(currentSnapshot.rows);
-                            setPage(0);
-                            closeRankingEditor(true);
-
-                            await notifyRankingChangesForManualAdjustment({
-                                organizationId,
-                                level: activeCategory,
-                                modality,
-                                previousRows: previousSnapshot.baseRows,
-                                currentRows: currentSnapshot.baseRows,
-                                affectedPlayerId: editingPlayer.playerId,
-                            });
-                        } catch (error) {
-                            console.error('Error deleting manual ranking adjustment:', error);
-                            Alert.alert('Error', 'No se pudo eliminar al jugador del ranking.');
-                        } finally {
-                            setSavingManualPoints(false);
+        setTimeout(() => {
+            Alert.alert(
+                'Confirmar eliminación',
+                `¿Estás seguro de que quieres eliminar a ${targetPlayer.name} del ranking de esta categoría y organización? Esto borrará sus puntos manuales asociados.`,
+                [
+                    { 
+                        text: 'Cancelar', 
+                        style: 'cancel',
+                        onPress: () => {
+                            setEditingPlayer(targetPlayer);
                         }
                     },
-                },
-            ]
-        );
+                    {
+                        text: 'Eliminar',
+                        style: 'destructive',
+                        onPress: async () => {
+                            setSavingManualPoints(true);
+                            try {
+                                const previousSnapshot = await buildRankingSnapshot(organizationId, activeCategory, modality);
+
+                                const { error: deleteError } = await supabase
+                                    .from('ranking_manual_adjustments')
+                                    .delete()
+                                    .eq('organization_id', organizationId)
+                                    .eq('level', activeCategory)
+                                    .eq('modality', modality)
+                                    .eq('player_id', targetPlayer.playerId);
+
+                                if (deleteError) throw deleteError;
+
+                                const currentSnapshot = await buildRankingSnapshot(organizationId, activeCategory, modality);
+                                setRankingRows(currentSnapshot.rows);
+                                setPage(0);
+                                closeRankingEditor(true);
+
+                                await notifyRankingChangesForManualAdjustment({
+                                    organizationId,
+                                    level: activeCategory,
+                                    modality,
+                                    previousRows: previousSnapshot.baseRows,
+                                    currentRows: currentSnapshot.baseRows,
+                                    affectedPlayerId: targetPlayer.playerId,
+                                });
+                            } catch (error) {
+                                console.error('Error deleting manual ranking adjustment:', error);
+                                Alert.alert('Error', 'No se pudo eliminar al jugador del ranking.');
+                            } finally {
+                                setSavingManualPoints(false);
+                            }
+                        },
+                    },
+                ]
+            );
+        }, 550);
     };
 
     const saveNewManualPlayer = async () => {
@@ -567,23 +581,38 @@ export default function PlayersScreen() {
             return;
         }
 
-        Alert.alert(
-            'Confirmar ingreso manual',
-            `Se agregará a ${selectedSearchUser.name} al ranking ${activeCategory} ${modality === 'dobles' ? 'Dobles' : 'Singles'} con ${parsedPoints} puntos. ¿Deseas continuar?`,
-            [
-                { text: 'Cancelar', style: 'cancel' },
-                {
-                    text: 'Confirmar',
-                    onPress: () => {
-                        persistManualAdjustment({
-                            playerId: selectedSearchUser.id,
-                            manualPoints: parsedPoints,
-                            onSuccess: () => closeAddPlayerModal(true),
-                        });
+        const targetUser = selectedSearchUser;
+        const targetPoints = parsedPoints;
+
+        closeAddPlayerModal(true);
+
+        setTimeout(() => {
+            Alert.alert(
+                'Confirmar ingreso manual',
+                `Se agregará a ${targetUser.name} al ranking ${activeCategory} ${modality === 'dobles' ? 'Dobles' : 'Singles'} con ${targetPoints} puntos. ¿Deseas continuar?`,
+                [
+                    { 
+                        text: 'Cancelar', 
+                        style: 'cancel',
+                        onPress: () => {
+                            setShowAddPlayerModal(true);
+                            setSelectedSearchUser(targetUser);
+                            setNewPlayerPoints(String(targetPoints));
+                        }
                     },
-                },
-            ]
-        );
+                    {
+                        text: 'Confirmar',
+                        onPress: () => {
+                            persistManualAdjustment({
+                                playerId: targetUser.id,
+                                manualPoints: targetPoints,
+                                onSuccess: () => closeAddPlayerModal(true),
+                            });
+                        },
+                    },
+                ]
+            );
+        }, 550);
     };
 
     const pages = useMemo(() => {

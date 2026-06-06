@@ -1575,11 +1575,6 @@ export default function AdminTournamentDetailScreen() {
         );
     };
 
-    const generateMatches = async () => {
-        // Dummy logic to generate initial structure based on format and players
-        Alert.alert('Información', 'La lógica de scaffold está en desarrollo.');
-    };
-
     const getPlayerName = (pId: string, playersList = players) => {
         if (!pId) return 'Por definir';
         if (pId === 'BYE') return 'BYE';

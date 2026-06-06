@@ -21,8 +21,9 @@ module.exports = () => {
       ...(expo.ios || {}),
       ...(iosGoogleServicesFile ? { googleServicesFile: iosGoogleServicesFile } : {}),
     },
-    runtimeVersion: isEasBuild ? { policy: 'appVersion' } : undefined,
+    runtimeVersion: isEasBuild ? { policy: 'appVersion' } : { policy: 'appVersion' },
     updates: {
+      url: "https://u.expo.dev/74e9c55f-97e5-47f7-894c-54286eef00f9",
       enabled: isEasBuild,
       checkAutomatically: isEasBuild ? 'ON_ERROR_RECOVERY' : 'NEVER',
       fallbackToCacheTimeout: 0,
