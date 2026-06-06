@@ -2,7 +2,7 @@
   "expo": {
     "name": "SweetSpot",
     "slug": "torneosdetenis",
-    "version": "3.1.0",
+    "version": "3.1.1",
     "orientation": "portrait",
     "icon": "./assets/Logos/LogoEscritorio.png",
     "userInterfaceStyle": "light",
