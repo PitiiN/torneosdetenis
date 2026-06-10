@@ -26,9 +26,18 @@ export default function TabsLayout() {
 
         setIsAdmin(Boolean(access.isAdmin));
         let resolvedOrgId: string | null = null;
+        const storedOrgId = await SecureStore.getItemAsync('selected_org_id');
+
         if (access.isSuperAdmin) {
-            resolvedOrgId = await SecureStore.getItemAsync('selected_org_id');
+            resolvedOrgId = storedOrgId;
+        } else if (access.isAdmin && Array.isArray(access.profile.admin_org_ids)) {
+            if (storedOrgId && access.profile.admin_org_ids.includes(storedOrgId)) {
+                resolvedOrgId = storedOrgId;
+            } else {
+                resolvedOrgId = access.profile.admin_org_ids[0] || access.profile.org_id || null;
+            }
         }
+
         if (!resolvedOrgId) {
             resolvedOrgId = access.profile.org_id || null;
         }

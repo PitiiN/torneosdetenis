@@ -87,8 +87,13 @@ export default function CreateTournamentScreen() {
       }
 
       let resolvedOrgId = routeOrgId || null;
-      if (!resolvedOrgId && !access.isSuperAdmin && access.profile.org_id) {
-        resolvedOrgId = access.profile.org_id;
+      if (!resolvedOrgId && !access.isSuperAdmin) {
+        const storedOrgId = await SecureStore.getItemAsync('selected_org_id');
+        if (storedOrgId && access.profile.admin_org_ids?.includes(storedOrgId)) {
+          resolvedOrgId = storedOrgId;
+        } else {
+          resolvedOrgId = access.profile.admin_org_ids?.[0] || access.profile.org_id || null;
+        }
       }
 
       if (!resolvedOrgId) {

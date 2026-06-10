@@ -1,10 +1,11 @@
-﻿import { Session } from '@supabase/supabase-js';
+import { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 
 export type AccessProfile = {
     id: string;
     role: string | null;
     org_id: string | null;
+    admin_org_ids?: string[] | null;
     is_super_admin?: boolean | null;
 };
 
@@ -84,21 +85,35 @@ async function fetchAccessProfile(userId: string): Promise<AccessProfile | null>
         .eq('id', userId)
         .single();
 
+    let profile: AccessProfile | null = null;
+
     if (!withSuperAdmin.error) {
-        return withSuperAdmin.data as AccessProfile;
+        profile = withSuperAdmin.data as AccessProfile;
+    } else {
+        const fallback = await supabase
+            .from('profiles')
+            .select(PROFILE_SELECT_FALLBACK)
+            .eq('id', userId)
+            .single();
+
+        if (!fallback.error) {
+            profile = fallback.data as AccessProfile;
+        }
     }
 
-    const fallback = await supabase
-        .from('profiles')
-        .select(PROFILE_SELECT_FALLBACK)
-        .eq('id', userId)
-        .single();
+    if (!profile) return null;
 
-    if (fallback.error) {
-        return null;
-    }
+    // Fetch administered organizations
+    const { data: adminOrgs, error: adminOrgsError } = await supabase
+        .from('organization_admins')
+        .select('org_id')
+        .eq('user_id', userId);
 
-    return fallback.data as AccessProfile;
+    profile.admin_org_ids = adminOrgs && !adminOrgsError
+        ? adminOrgs.map((row: any) => row.org_id)
+        : [];
+
+    return profile;
 }
 
 export async function getCurrentUserAccessContext(): Promise<UserAccessContext | null> {
@@ -118,7 +133,7 @@ export async function getCurrentUserAccessContext(): Promise<UserAccessContext |
     const isSuperAdmin = isAllowedSuperAdminEmail && (hasExplicitSuperAdmin || inferSuperAdminFromLegacyProfile(profile));
     const hasOrganizationScopedAdminRole =
         (profile.role === 'admin' || profile.role === 'organizer') &&
-        Boolean(profile.org_id);
+        (Boolean(profile.org_id) || Boolean(profile.admin_org_ids && profile.admin_org_ids.length > 0));
     const isAdmin = isSuperAdmin || hasOrganizationScopedAdminRole;
 
     return {
@@ -136,7 +151,8 @@ export function canManageOrganization(
     if (!context || !organizationId) return false;
     if (context.isSuperAdmin) return true;
     return (context.profile.role === 'admin' || context.profile.role === 'organizer') &&
-        context.profile.org_id === organizationId;
+        Array.isArray(context.profile.admin_org_ids) &&
+        context.profile.admin_org_ids.includes(organizationId);
 }
 
 export function canAccessAdminArea(context: UserAccessContext | null) {

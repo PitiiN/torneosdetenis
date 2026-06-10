@@ -99,7 +99,12 @@ export default function FinanceScreen() {
             let storedOrgName = await SecureStore.getItemAsync('selected_org_name');
 
             if (!access.isSuperAdmin) {
-                storedOrgId = access.profile.org_id || null;
+                if (storedOrgId && access.profile.admin_org_ids?.includes(storedOrgId)) {
+                    // Keep the storedOrgId as it is valid
+                } else {
+                    storedOrgId = access.profile.admin_org_ids?.[0] || access.profile.org_id || null;
+                }
+
                 if (!storedOrgId) {
                     setTournaments([]);
                     setOrganizationId(null);

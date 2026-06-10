@@ -7,7 +7,7 @@ import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/services/supabase';
 import * as SecureStore from '@/utils/SecureStore';
-import { getCurrentUserAccessContext } from '@/services/accessControl';
+import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { extractChampionFromDescription, resolveChampionFromMatches } from '@/services/tournamentChampion';
 import { getCachedValue, setCachedValue, resolveCachedData, clearCachedValue, clearCachedValuesByPrefix } from '@/services/runtimeCache';
@@ -194,6 +194,7 @@ export default function TorneosScreen() {
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
     const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
     const [userOrgId, setUserOrgId] = useState<string | null>(null);
+    const [adminOrgIds, setAdminOrgIds] = useState<string[]>([]);
     const [activeOrgId, setActiveOrgId] = useState<string | null>(normalizedRouteOrgId || null);
     const [pendingRequestCountByMonth, setPendingRequestCountByMonth] = useState<Record<string, number>>({});
     const [isFollowingOrg, setIsFollowingOrg] = useState(false);
@@ -228,6 +229,14 @@ export default function TorneosScreen() {
 
         if (access.isSuperAdmin) {
             nextOrgId = normalizedRouteOrgId || storedOrgId || null;
+        } else if (access.isAdmin && Array.isArray(access.profile.admin_org_ids)) {
+            if (normalizedRouteOrgId) {
+                nextOrgId = normalizedRouteOrgId;
+            } else if (storedOrgId && access.profile.admin_org_ids.includes(storedOrgId)) {
+                nextOrgId = storedOrgId;
+            } else {
+                nextOrgId = access.profile.admin_org_ids[0] || access.profile.org_id || null;
+            }
         } else {
             nextOrgId = normalizedRouteOrgId || access.profile.org_id || storedOrgId || null;
         }
@@ -279,12 +288,7 @@ export default function TorneosScreen() {
             return;
         }
 
-        const hasAdminRole = access.profile.role === 'admin' || access.profile.role === 'organizer';
-        const canManageOrg = access.isSuperAdmin || Boolean(
-            hasAdminRole &&
-            access.profile.org_id &&
-            access.profile.org_id === nextOrgId
-        );
+        const canManageOrg = canManageOrganization(access, nextOrgId);
 
         try {
             await Promise.all([
@@ -386,6 +390,7 @@ export default function TorneosScreen() {
 
         setRole(access.profile.role || 'player');
         setUserOrgId(access.profile.org_id || null);
+        setAdminOrgIds(access.profile.admin_org_ids || []);
         setIsSuperAdmin(access.isSuperAdmin);
         return access;
     }
@@ -628,7 +633,7 @@ export default function TorneosScreen() {
         );
     };
 
-    const canManage = isSuperAdmin || ((role === 'admin' || role === 'organizer') && userOrgId === activeOrgId);
+    const canManage = isSuperAdmin || ((role === 'admin' || role === 'organizer') && (userOrgId === activeOrgId || adminOrgIds.includes(activeOrgId || '')));
     const hasOrganizationInfoDetails = Boolean(
         organizationInfo?.contact_email ||
         organizationInfo?.contact_whatsapp ||

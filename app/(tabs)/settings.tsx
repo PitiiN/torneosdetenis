@@ -165,9 +165,11 @@ export default function SettingsScreen() {
 
             const targetOrgId = access.isSuperAdmin
                 ? (selectedOrgId || access.profile.org_id || null)
-                : (access.profile.org_id || null);
+                : (selectedOrgId && access.profile.admin_org_ids?.includes(selectedOrgId)
+                    ? selectedOrgId
+                    : (access.profile.admin_org_ids?.[0] || access.profile.org_id || null));
             const hasAdminRole = access.profile.role === 'admin' || access.profile.role === 'organizer';
-            const canManageTargetOrg = access.isSuperAdmin || Boolean(hasAdminRole && access.profile.org_id);
+            const canManageTargetOrg = access.isSuperAdmin || Boolean(hasAdminRole && targetOrgId && access.profile.admin_org_ids?.includes(targetOrgId));
 
             if (!canManageTargetOrg) {
                 setIsAdmin(true);
@@ -614,9 +616,10 @@ export default function SettingsScreen() {
         setSaving(true);
         try {
             const normalizedRole = normalizeAssignableRole(selectedUser.role);
-            const normalizedOrgId = normalizedRole === 'admin' ? selectedUser.org_id || null : null;
+            const normalizedOrgId = normalizedRole === 'admin' ? selectedUser.admin_org_ids?.[0] || null : null;
 
-            const { error } = await supabase
+            // Update profiles first
+            const { error: profileError } = await supabase
                 .from('profiles')
                 .update({
                     role: normalizedRole,
@@ -624,7 +627,26 @@ export default function SettingsScreen() {
                 })
                 .eq('id', selectedUser.id);
             
-            if (error) throw error;
+            if (profileError) throw profileError;
+
+            // Sync organization_admins
+            const { error: deleteError } = await supabase
+                .from('organization_admins')
+                .delete()
+                .eq('user_id', selectedUser.id);
+            if (deleteError) throw deleteError;
+
+            if (normalizedRole === 'admin' && selectedUser.admin_org_ids && selectedUser.admin_org_ids.length > 0) {
+                const inserts = selectedUser.admin_org_ids.map((orgId: string) => ({
+                    user_id: selectedUser.id,
+                    org_id: orgId
+                }));
+                const { error: insertError } = await supabase
+                    .from('organization_admins')
+                    .insert(inserts);
+                if (insertError) throw insertError;
+            }
+
             Alert.alert('Éxito', 'Usuario actualizado correctamente.');
             setShowUserModal(false);
             handleSearchUsers(userSearch); // Refresh list
@@ -903,14 +925,29 @@ export default function SettingsScreen() {
                                 <TouchableOpacity 
                                     key={user.id} 
                                     style={styles.userCard}
-                                    onPress={() => {
-                                        setSelectedUser({
-                                            ...user,
-                                            role: isProtectedSuperAdmin(user)
-                                                ? PROTECTED_SUPER_ADMIN_ROLE
-                                                : normalizeAssignableRole(user.role),
-                                        });
-                                        setShowUserModal(true);
+                                    onPress={async () => {
+                                        setSaving(true);
+                                        try {
+                                            const { data: adminOrgs, error } = await supabase
+                                                .from('organization_admins')
+                                                .select('org_id')
+                                                .eq('user_id', user.id);
+                                            if (error) throw error;
+                                            
+                                            const adminOrgIds = adminOrgs ? adminOrgs.map((o: any) => o.org_id) : [];
+                                            setSelectedUser({
+                                                ...user,
+                                                role: isProtectedSuperAdmin(user)
+                                                    ? PROTECTED_SUPER_ADMIN_ROLE
+                                                    : normalizeAssignableRole(user.role),
+                                                admin_org_ids: adminOrgIds,
+                                            });
+                                            setShowUserModal(true);
+                                        } catch (err) {
+                                            Alert.alert('Error', 'No se pudieron obtener las organizaciones del usuario.');
+                                        } finally {
+                                            setSaving(false);
+                                        }
                                     }}
                                 >
                                     <View>
@@ -1049,23 +1086,33 @@ export default function SettingsScreen() {
                                         </View>
 
                                         <View style={styles.inputGroup}>
-                                            <Text style={styles.label}>Organización Asignada</Text>
+                                            <Text style={styles.label}>Organizaciones Asignadas</Text>
                                             <ScrollView style={styles.orgSmallList} keyboardShouldPersistTaps="handled" nestedScrollEnabled={true}>
                                                 <TouchableOpacity 
-                                                    style={[styles.orgItem, !selectedUser.org_id && styles.orgItemActive]}
-                                                    onPress={() => setSelectedUser({...selectedUser, org_id: null})}
+                                                    style={[styles.orgItem, (!selectedUser.admin_org_ids || selectedUser.admin_org_ids.length === 0) && styles.orgItemActive]}
+                                                    onPress={() => setSelectedUser({...selectedUser, admin_org_ids: []})}
                                                 >
-                                                    <Text style={[styles.orgItemText, !selectedUser.org_id && styles.orgItemTextActive]}>Ninguna</Text>
+                                                    <Text style={[styles.orgItemText, (!selectedUser.admin_org_ids || selectedUser.admin_org_ids.length === 0) && styles.orgItemTextActive]}>Ninguna</Text>
                                                 </TouchableOpacity>
-                                                {allOrganizations.map(org => (
-                                                    <TouchableOpacity 
-                                                        key={org.id} 
-                                                        style={[styles.orgItem, selectedUser.org_id === org.id && styles.orgItemActive]}
-                                                        onPress={() => setSelectedUser({...selectedUser, org_id: org.id})}
-                                                    >
-                                                        <Text style={[styles.orgItemText, selectedUser.org_id === org.id && styles.orgItemTextActive]}>{org.name}</Text>
-                                                    </TouchableOpacity>
-                                                ))}
+                                                {allOrganizations.map(org => {
+                                                    const isSelected = selectedUser.admin_org_ids?.includes(org.id);
+                                                    return (
+                                                        <TouchableOpacity 
+                                                            key={org.id} 
+                                                            style={[styles.orgItem, isSelected && styles.orgItemActive]}
+                                                            onPress={() => {
+                                                                const currentIds = selectedUser.admin_org_ids || [];
+                                                                const nextIds = isSelected
+                                                                    ? currentIds.filter((id: string) => id !== org.id)
+                                                                    : [...currentIds, org.id];
+                                                                setSelectedUser({...selectedUser, admin_org_ids: nextIds});
+                                                            }}
+                                                        >
+                                                            <Text style={[styles.orgItemText, isSelected && styles.orgItemTextActive]}>{org.name}</Text>
+                                                            {isSelected && <Ionicons name="checkmark-circle" size={16} color={colors.primary[500]} style={{ marginLeft: 'auto' }} />}
+                                                        </TouchableOpacity>
+                                                    );
+                                                })}
                                             </ScrollView>
                                         </View>
                                     </>
