@@ -4548,27 +4548,49 @@ export default function AdminTournamentDetailScreen() {
             </View>
 
             {/* Tabs */}
-            <View style={styles.tabsContainer}>
+            <View style={[styles.tabsContainer, isRoundRobin && roundRobinGroupNames.length > 4 && { flexDirection: 'column' }]}>
                 {isRoundRobin ? (
                     <>
-                        {roundRobinGroupNames.map(groupName => (
-                            <TouchableOpacity key={groupName} style={[styles.tab, activeTab === `group:${groupName}` && styles.activeTab]} onPress={() => setActiveTab(`group:${groupName}`)}>
-                                <Text numberOfLines={1} style={[styles.tabText, activeTab === `group:${groupName}` && styles.activeTabText]}>{`Grupo ${groupName}`}</Text>
-                            </TouchableOpacity>
-                        ))}
-                        <TouchableOpacity style={[styles.tab, activeTab === 'finales' && styles.activeTab]} onPress={() => setActiveTab('finales')}>
-                            <Text numberOfLines={1} style={[styles.tabText, activeTab === 'finales' && styles.activeTabText]}>Finales</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={[styles.tab, activeTab === 'participantes' && styles.activeTab]} onPress={() => setActiveTab('participantes')}>
-                            <Text
-                                numberOfLines={1}
-                                adjustsFontSizeToFit
-                                minimumFontScale={0.75}
-                                style={[styles.tabText, activeTab === 'participantes' && styles.activeTabText]}
-                            >
-                                Participantes
-                            </Text>
-                        </TouchableOpacity>
+                        {(() => {
+                            const tabs = [
+                                ...roundRobinGroupNames.map(groupName => (
+                                    <TouchableOpacity key={groupName} style={[styles.tab, activeTab === `group:${groupName}` && styles.activeTab]} onPress={() => setActiveTab(`group:${groupName}`)}>
+                                        <Text numberOfLines={1} style={[styles.tabText, activeTab === `group:${groupName}` && styles.activeTabText]}>{`Grupo ${groupName}`}</Text>
+                                    </TouchableOpacity>
+                                )),
+                                <TouchableOpacity key="finales" style={[styles.tab, activeTab === 'finales' && styles.activeTab]} onPress={() => setActiveTab('finales')}>
+                                    <Text numberOfLines={1} style={[styles.tabText, activeTab === 'finales' && styles.activeTabText]}>Finales</Text>
+                                </TouchableOpacity>,
+                                <TouchableOpacity key="participantes" style={[styles.tab, activeTab === 'participantes' && styles.activeTab]} onPress={() => setActiveTab('participantes')}>
+                                    <Text
+                                        numberOfLines={1}
+                                        adjustsFontSizeToFit
+                                        minimumFontScale={0.75}
+                                        style={[styles.tabText, activeTab === 'participantes' && styles.activeTabText]}
+                                    >
+                                        Participantes
+                                    </Text>
+                                </TouchableOpacity>
+                            ];
+
+                            if (roundRobinGroupNames.length > 4) {
+                                const mid = Math.ceil(tabs.length / 2);
+                                const firstRow = tabs.slice(0, mid);
+                                const secondRow = tabs.slice(mid);
+                                return (
+                                    <View style={{ width: '100%' }}>
+                                        <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                                            {firstRow}
+                                        </View>
+                                        <View style={{ flexDirection: 'row' }}>
+                                            {secondRow}
+                                        </View>
+                                    </View>
+                                );
+                            } else {
+                                return tabs;
+                            }
+                        })()}
                     </>
                 ) : (
                     <>
