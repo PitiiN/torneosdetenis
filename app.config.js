@@ -16,7 +16,7 @@ module.exports = () => {
     android: {
       ...(expo.android || {}),
       ...(androidGoogleServicesFile ? { googleServicesFile: androidGoogleServicesFile } : {}),
-      runtimeVersion: { policy: 'appVersion' },
+      runtimeVersion: "3.1.3",
     },
     ios: {
       ...(expo.ios || {}),
