@@ -1483,23 +1483,45 @@ export default function AdminTournamentDetailScreen() {
         );
     }
 
-    const saveMatchScore = async (finalScore: string) => {
+    const saveMatchScore = async (finalScore: string, isLive: boolean) => {
         if (!selectedMatch) return;
         setSavingMatch(true);
 
         try {
-            const { w1, w2, side } = resolveWinnerIds(selectedMatch, finalScore);
-            const { error } = await supabase
-                .from('matches')
-                .update({ 
-                    score: finalScore, 
-                    winner_id: w1, 
-                    winner_2_id: w2,
-                    status: 'finished' 
-                })
-                .eq('id', selectedMatch.id);
+            if (isLive) {
+                const { error } = await supabase
+                    .from('matches')
+                    .update({ 
+                        score: finalScore, 
+                        winner_id: null, 
+                        winner_2_id: null,
+                        status: 'live' 
+                    })
+                    .eq('id', selectedMatch.id);
 
-            if (error) throw error;
+                if (error) throw error;
+
+                applyMatchPatchLocally(selectedMatch.id, {
+                    score: finalScore,
+                    winner_id: null,
+                    winner_2_id: null,
+                    status: 'live'
+                });
+                setIsEditModalVisible(false);
+                Alert.alert('Éxito', 'Marcador parcial guardado (En Vivo).');
+            } else {
+                const { w1, w2, side } = resolveWinnerIds(selectedMatch, finalScore);
+                const { error } = await supabase
+                    .from('matches')
+                    .update({ 
+                        score: finalScore, 
+                        winner_id: w1, 
+                        winner_2_id: w2,
+                        status: 'finished' 
+                    })
+                    .eq('id', selectedMatch.id);
+
+                if (error) throw error;
                 if (side) {
                     await propagateWinnerToNextMatch(selectedMatch, w1, w2 || null, matches, side as 'A' | 'B', true);
                     const loserSide = side === 'A' ? 'B' : 'A';
@@ -1507,8 +1529,6 @@ export default function AdminTournamentDetailScreen() {
                     const loser2Id = loserSide === 'A' ? selectedMatch.player_a2_id : selectedMatch.player_b2_id;
                     await propagateLoserToConsolation(selectedMatch, loserId || null, loser2Id || null, matches, loserSide, undefined, true);
                     
-                    // Use the robust resolution logic to get the champion name (handles manual participants)
-                    // We simulate the updated matches state by patching the matches array locally for the call
                     const patchedMatches = matches.map(m => 
                         m.id === selectedMatch.id 
                             ? { ...m, score: finalScore, winner_id: w1, winner_2_id: w2, status: 'finished' } 
@@ -1531,13 +1551,15 @@ export default function AdminTournamentDetailScreen() {
                     }
                 }
 
-            applyMatchPatchLocally(selectedMatch.id, {
-                score: finalScore,
-                winner_id: w1,
-                winner_2_id: w2,
-                status: 'finished'
-            });
-            setIsEditModalVisible(false);
+                applyMatchPatchLocally(selectedMatch.id, {
+                    score: finalScore,
+                    winner_id: w1,
+                    winner_2_id: w2,
+                    status: 'finished'
+                });
+                setIsEditModalVisible(false);
+                Alert.alert('Éxito', 'Resultado final guardado correctamente.');
+            }
         } catch (error) {
             Alert.alert('Error', 'No se pudo guardar el resultado.');
         } finally {

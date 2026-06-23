@@ -26,6 +26,7 @@ module.exports = () => {
     updates: {
       url: "https://u.expo.dev/74e9c55f-97e5-47f7-894c-54286eef00f9",
       enabled: true,
+      channel: "production",
       checkAutomatically: 'ON_LOAD',
       fallbackToCacheTimeout: 0,
     },

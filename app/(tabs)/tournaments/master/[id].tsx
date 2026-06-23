@@ -739,7 +739,7 @@ const getStyles = (colors: any) => StyleSheet.create({
   },
   posterContainer: {
     width: '100%',
-    height: 240,
+    aspectRatio: 1,
     backgroundColor: colors.surfaceSecondary,
     borderRadius: borderRadius.xl,
     overflow: 'hidden',

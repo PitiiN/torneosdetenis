@@ -855,7 +855,7 @@ export default function TournamentDetailScreen() {
         setScoreModalVisible(true);
     };
 
-    const saveMatchScore = async (finalScore: string) => {
+    const saveMatchScore = async (finalScore: string, isLive: boolean) => {
         if (!selectedScoreMatch) return;
         if (!hasOpponentAssignedForCurrentUser(selectedScoreMatch)) {
             Alert.alert('Aviso', 'No puedes ingresar un resultado hasta que exista un rival asignado en este enfrentamiento.');
@@ -864,43 +864,67 @@ export default function TournamentDetailScreen() {
         setSavingScore(true);
 
         try {
-            const { w1, w2, side } = resolveWinnerIds(selectedScoreMatch, finalScore);
-            const { error } = await supabase
-                .from('matches')
-                .update({ 
-                    score: finalScore, 
-                    winner_id: w1, 
+            if (isLive) {
+                const { error } = await supabase
+                    .from('matches')
+                    .update({ 
+                        score: finalScore, 
+                        winner_id: null, 
+                        winner_2_id: null,
+                        status: 'live' 
+                    })
+                    .eq('id', selectedScoreMatch.id);
+
+                if (error) throw error;
+
+                applyMatchPatchLocally(selectedScoreMatch.id, {
+                    score: finalScore,
+                    winner_id: null,
+                    winner_2_id: null,
+                    status: 'live'
+                });
+
+                setScoreModalVisible(false);
+                Alert.alert('Éxito', 'Marcador parcial guardado (En Vivo).');
+            } else {
+                const { w1, w2, side } = resolveWinnerIds(selectedScoreMatch, finalScore);
+                const { error } = await supabase
+                    .from('matches')
+                    .update({ 
+                        score: finalScore, 
+                        winner_id: w1, 
+                        winner_2_id: w2,
+                        status: 'finished' 
+                    })
+                    .eq('id', selectedScoreMatch.id);
+
+                if (error) throw error;
+
+                if (side) {
+                    const updatedMatches = matches.map(m => 
+                        m.id === selectedScoreMatch.id 
+                            ? { ...m, score: finalScore, winner_id: w1, winner_2_id: w2, status: 'finished' } 
+                            : m
+                    );
+
+                    await propagateWinnerToNextMatch(selectedScoreMatch, w1, w2, updatedMatches, true);
+                    
+                    const loserSide = side === 'A' ? 'B' : 'A';
+                    const loserId = loserSide === 'A' ? selectedScoreMatch.player_a_id : selectedScoreMatch.player_b_id;
+                    const loser2Id = loserSide === 'A' ? selectedScoreMatch.player_a2_id : selectedScoreMatch.player_b2_id;
+                    await propagateLoserToConsolation(selectedScoreMatch, loserId, loser2Id, updatedMatches, loserSide, true);
+                }
+
+                applyMatchPatchLocally(selectedScoreMatch.id, {
+                    score: finalScore,
+                    winner_id: w1,
                     winner_2_id: w2,
-                    status: 'finished' 
-                })
-                .eq('id', selectedScoreMatch.id);
+                    status: 'finished'
+                });
 
-            if (error) throw error;
-
-            if (side) {
-                const updatedMatches = matches.map(m => 
-                    m.id === selectedScoreMatch.id 
-                        ? { ...m, score: finalScore, winner_id: w1, winner_2_id: w2, status: 'finished' } 
-                        : m
-                );
-
-                await propagateWinnerToNextMatch(selectedScoreMatch, w1, w2, updatedMatches, true);
-                
-                const loserSide = side === 'A' ? 'B' : 'A';
-                const loserId = loserSide === 'A' ? selectedScoreMatch.player_a_id : selectedScoreMatch.player_b_id;
-                const loser2Id = loserSide === 'A' ? selectedScoreMatch.player_a2_id : selectedScoreMatch.player_b2_id;
-                await propagateLoserToConsolation(selectedScoreMatch, loserId, loser2Id, updatedMatches, loserSide, true);
+                setScoreModalVisible(false);
+                Alert.alert('Éxito', 'Resultado final guardado correctamente.');
             }
-
-            applyMatchPatchLocally(selectedScoreMatch.id, {
-                score: finalScore,
-                winner_id: w1,
-                winner_2_id: w2,
-                status: 'finished'
-            });
-
-            setScoreModalVisible(false);
-            Alert.alert('Éxito', 'Resultado guardado correctamente.');
         } catch (err: any) {
             Alert.alert('Error', err.message || 'No se pudo guardar el resultado.');
         } finally {

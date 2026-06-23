@@ -21,7 +21,7 @@ interface EditScoreModalProps {
   setsToShow: number;
   initialScores: { s1: string; s2: string }[];
   saving: boolean;
-  onSave: (score: string) => void;
+  onSave: (score: string, isLive: boolean) => void;
   onClose: () => void;
 }
 
@@ -57,12 +57,12 @@ export const EditScoreModal = React.memo(({
     }
   }, [visible, initialScores]);
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback((isLive: boolean) => {
     const finalScore = localScores
       .filter(set => set.s1 !== '' || set.s2 !== '')
       .map(set => `${set.s1}-${set.s2}`)
       .join(', ');
-    onSave(finalScore);
+    onSave(finalScore, isLive);
   }, [localScores, onSave]);
 
   const handleScoreChange = useCallback((idx: number, field: 's1' | 's2', val: string) => {
@@ -133,12 +133,25 @@ export const EditScoreModal = React.memo(({
                   ))}
                 </View>
 
-                <View style={styles.modalButtons}>
-                  <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={onClose}>
-                    <Text style={styles.modalBtnCancelText}>Cancelar</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSave} disabled={saving}>
-                    {saving ? <TennisSpinner size={18} color="#fff" /> : <Text style={styles.modalBtnSaveText}>Guardar</Text>}
+                <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
+                  <View style={styles.modalButtons}>
+                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={onClose}>
+                      <Text style={styles.modalBtnCancelText}>Cancelar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={[styles.modalBtn, { backgroundColor: colors.info || '#3b82f6' }]} 
+                      onPress={() => handleSave(true)} 
+                      disabled={saving}
+                    >
+                      {saving ? <TennisSpinner size={18} color="#fff" /> : <Text style={styles.modalBtnSaveText}>Guardar Parcial</Text>}
+                    </TouchableOpacity>
+                  </View>
+                  <TouchableOpacity 
+                    style={[styles.modalBtn, styles.modalBtnSave]} 
+                    onPress={() => handleSave(false)} 
+                    disabled={saving}
+                  >
+                    {saving ? <TennisSpinner size={18} color="#fff" /> : <Text style={styles.modalBtnSaveText}>Guardar Resultado Final</Text>}
                   </TouchableOpacity>
                 </View>
               </View>

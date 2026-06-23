@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, Image, ScrollView, Alert, ImageBackground } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, Image, ScrollView, Alert, ImageBackground, Linking } from 'react-native';
 import { FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
@@ -28,6 +28,7 @@ interface PlayerProfile {
   location: string | null;
   backhand: string | null;
   dominantHand: string | null;
+  phone?: string | null;
 }
 
 interface HeadToHeadStats {
@@ -207,7 +208,7 @@ export const PlayerProfileModal = ({
       // Load profile info (using public_profiles view to bypass RLS restrictions)
       const { data: profileData, error: profileError } = await supabase
         .from('public_profiles')
-        .select(`id, name, avatar_url, location, "${BACKHAND_FIELD}", mano_dominante`)
+        .select(`id, name, avatar_url, location, "${BACKHAND_FIELD}", mano_dominante, phone`)
         .eq('id', pid)
         .maybeSingle();
 
@@ -226,6 +227,7 @@ export const PlayerProfileModal = ({
         location: profileData?.location || null,
         backhand: profileData?.[BACKHAND_FIELD] || null,
         dominantHand: profileData?.mano_dominante || null,
+        phone: profileData?.phone || null,
       };
       setProfile(playerProfile);
 
@@ -438,6 +440,23 @@ export const PlayerProfileModal = ({
 
                 {/* Meta info */}
                 <View style={styles.metaRow}>
+                  {currentUserId !== profile.id && profile.phone ? (
+                    <TouchableOpacity
+                      style={styles.whatsappMetaBtn}
+                      onPress={() => {
+                        const cleanNumber = profile.phone?.replace(/\D/g, '');
+                        if (cleanNumber) {
+                          Linking.openURL(`https://wa.me/${cleanNumber}`);
+                        } else {
+                          Alert.alert('Información', 'Este jugador no tiene un número de contacto válido.');
+                        }
+                      }}
+                    >
+                      <Ionicons name="logo-whatsapp" size={14} color="#25D366" />
+                      <Text style={styles.whatsappMetaText}>WhatsApp</Text>
+                    </TouchableOpacity>
+                  ) : null}
+
                   {profile.location ? (
                     <View style={styles.metaItem}>
                       <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
@@ -864,6 +883,20 @@ const getStyles = (colors: any) => StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 13,
     fontWeight: '600',
+  },
+  whatsappMetaBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#25D36615',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  whatsappMetaText: {
+    color: '#25D366',
+    fontSize: 13,
+    fontWeight: '700',
   },
   playStyleRow: {
     flexDirection: 'row',

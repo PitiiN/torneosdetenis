@@ -18,6 +18,7 @@ interface PaymentRecord {
     is_paid: boolean;
     created_at: string;
     status: string;
+    rejection_reason?: string | null;
 }
 
 const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -54,25 +55,36 @@ export default function PaymentsScreen() {
                 setPayments(cached);
             }
 
-            const { data: registrationRows, error } = await supabase
+            // 1. Obtener registros confirmados (registrations)
+            const { data: registrationRows, error: registrationError } = await supabase
                 .from('registrations')
                 .select('id, tournament_id, fee_amount, is_paid, status, registered_at')
                 .eq('player_id', session.user.id)
                 .order('id', { ascending: false });
 
-            if (error) throw error;
+            if (registrationError) throw registrationError;
 
-            const tournamentIds = [...new Set(
-                (registrationRows || [])
-                    .map((row: any) => row?.tournament_id)
-                    .filter(Boolean)
-            )] as string[];
+            // 2. Obtener solicitudes de inscripción (pendientes y rechazadas)
+            const { data: requestRows, error: requestsError } = await supabase
+                .from('tournament_registration_requests')
+                .select('id, tournament_id, status, rejection_reason, created_at')
+                .eq('player_id', session.user.id)
+                .order('created_at', { ascending: false });
 
-            const tournamentsById: Record<string, { name: string; end_date: string | null; start_date: string | null }> = {};
+            if (requestsError) throw requestsError;
+
+            // 3. Unificar IDs de torneos
+            const tournamentIds = [...new Set([
+                ...(registrationRows || []).map((row: any) => row?.tournament_id),
+                ...(requestRows || []).map((row: any) => row?.tournament_id)
+            ].filter(Boolean))] as string[];
+
+            // 4. Obtener información de los torneos (incluyendo su cuota)
+            const tournamentsById: Record<string, { name: string; end_date: string | null; start_date: string | null; registration_fee: number }> = {};
             if (tournamentIds.length > 0) {
                 const { data: tournamentRows, error: tournamentsError } = await supabase
                     .from('tournaments')
-                    .select('id, name, end_date, start_date')
+                    .select('id, name, end_date, start_date, registration_fee')
                     .in('id', tournamentIds);
 
                 if (tournamentsError) throw tournamentsError;
@@ -82,25 +94,51 @@ export default function PaymentsScreen() {
                         name: tournament.name || 'Torneo',
                         end_date: tournament.end_date || null,
                         start_date: tournament.start_date || null,
+                        registration_fee: Number(tournament.registration_fee || 0),
                     };
                 });
             }
 
-            const formatted = (registrationRows || []).map((registration: any) => {
+            // 5. Formatear las inscripciones confirmadas
+            const formattedRegistrations = (registrationRows || []).map((registration: any) => {
                 const tournament = tournamentsById[registration.tournament_id];
                 return {
                     id: registration.id,
                     tournament_id: registration.tournament_id,
                     tournament_name: tournament?.name || 'Torneo',
-                    fee_amount: Number(registration.fee_amount || 0),
+                    fee_amount: Number(registration.fee_amount || tournament?.registration_fee || 0),
                     is_paid: Boolean(registration.is_paid),
                     created_at: tournament?.end_date || tournament?.start_date || registration.registered_at || new Date().toISOString(),
                     status: registration.status,
                 } as PaymentRecord;
             });
 
-            setPayments(formatted);
-            setCachedValue(cacheKey, formatted, 60_000);
+            // 6. Formatear las solicitudes pendientes y rechazadas
+            const formattedRequests = (requestRows || [])
+                .filter((req: any) => req.status === 'pending' || req.status === 'rejected')
+                .map((req: any) => {
+                    const tournament = tournamentsById[req.tournament_id];
+                    return {
+                        id: req.id,
+                        tournament_id: req.tournament_id,
+                        tournament_name: tournament?.name || 'Torneo',
+                        fee_amount: Number(tournament?.registration_fee || 0),
+                        is_paid: false,
+                        created_at: req.created_at || new Date().toISOString(),
+                        status: req.status === 'pending' ? 'pending_approval' : 'rejected',
+                        rejection_reason: req.rejection_reason || null,
+                    } as PaymentRecord;
+                });
+
+            // 7. Combinar y ordenar por fecha (más reciente primero)
+            const combined = [...formattedRegistrations, ...formattedRequests].sort((a, b) => {
+                const dateA = new Date(a.created_at).getTime();
+                const dateB = new Date(b.created_at).getTime();
+                return dateB - dateA;
+            });
+
+            setPayments(combined);
+            setCachedValue(cacheKey, combined, 60_000);
         } catch (error) {
             setPayments([]);
         } finally {
@@ -206,25 +244,53 @@ export default function PaymentsScreen() {
                     </View>
                 ) : filteredPayments.length > 0 ? (
                     <View style={styles.list}>
-                        {filteredPayments.map((p) => (
-                            <View key={p.id} style={styles.paymentCard}>
-                                <View style={styles.paymentInfo}>
-                                    <Text style={styles.tournamentName} numberOfLines={1}>{p.tournament_name}</Text>
-                                    <View style={styles.dateRow}>
-                                        <Ionicons name="calendar-outline" size={12} color={colors.textTertiary} />
-                                        <Text style={styles.dateText}>{new Date(p.created_at).toLocaleDateString()}</Text>
+                        {filteredPayments.map((p) => {
+                            const isPaid = p.is_paid || p.status === 'confirmed';
+                            
+                            const getBadgeStyle = () => {
+                                if (isPaid) return styles.statusPaid;
+                                if (p.status === 'pending_approval') return styles.statusPendingApproval;
+                                return styles.statusUnpaid;
+                            };
+
+                            const getBadgeTextStyle = () => {
+                                if (isPaid) return styles.statusTextPaid;
+                                if (p.status === 'pending_approval') return styles.statusTextPendingApproval;
+                                return styles.statusTextUnpaid;
+                            };
+
+                            const getBadgeText = () => {
+                                if (isPaid) return 'PAGADO';
+                                if (p.status === 'pending_approval') return 'EN REVISIÓN';
+                                if (p.status === 'rejected') return 'RECHAZADO';
+                                return 'PENDIENTE';
+                            };
+
+                            return (
+                                <View key={p.id} style={styles.paymentCard}>
+                                    <View style={styles.paymentInfo}>
+                                        <Text style={styles.tournamentName} numberOfLines={1}>{p.tournament_name}</Text>
+                                        <View style={styles.dateRow}>
+                                            <Ionicons name="calendar-outline" size={12} color={colors.textTertiary} />
+                                            <Text style={styles.dateText}>{new Date(p.created_at).toLocaleDateString()}</Text>
+                                        </View>
+                                        {p.status === 'rejected' && p.rejection_reason ? (
+                                            <Text style={styles.rejectionReason} numberOfLines={2}>
+                                                Motivo: {p.rejection_reason}
+                                            </Text>
+                                        ) : null}
+                                    </View>
+                                    <View style={styles.paymentStatus}>
+                                        <Text style={styles.amountText}>${p.fee_amount.toLocaleString()}</Text>
+                                        <View style={[styles.statusBadge, getBadgeStyle()]}>
+                                            <Text style={[styles.statusText, getBadgeTextStyle()]}>
+                                                {getBadgeText()}
+                                            </Text>
+                                        </View>
                                     </View>
                                 </View>
-                                <View style={styles.paymentStatus}>
-                                    <Text style={styles.amountText}>${p.fee_amount.toLocaleString()}</Text>
-                                    <View style={[styles.statusBadge, p.is_paid ? styles.statusPaid : styles.statusUnpaid]}>
-                                        <Text style={[styles.statusText, p.is_paid ? styles.statusTextPaid : styles.statusTextUnpaid]}>
-                                            {p.is_paid ? 'PAGADO' : 'PENDIENTE'}
-                                        </Text>
-                                    </View>
-                                </View>
-                            </View>
-                        ))}
+                            );
+                        })}
                     </View>
                 ) : (
                     <View style={styles.emptyState}>
@@ -384,6 +450,9 @@ const getStyles = (colors: any) => StyleSheet.create({
     statusUnpaid: {
         backgroundColor: colors.error + '1A',
     },
+    statusPendingApproval: {
+        backgroundColor: colors.warning + '1A',
+    },
     statusText: {
         fontSize: 10,
         fontWeight: '900',
@@ -393,6 +462,15 @@ const getStyles = (colors: any) => StyleSheet.create({
     },
     statusTextUnpaid: {
         color: colors.error,
+    },
+    statusTextPendingApproval: {
+        color: colors.warning,
+    },
+    rejectionReason: {
+        fontSize: 12,
+        color: colors.error,
+        marginTop: 6,
+        fontWeight: '600',
     },
     emptyState: {
         alignItems: 'center',

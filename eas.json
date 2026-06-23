@@ -23,11 +23,20 @@
     },
     "production": {
       "environment": "production",
+      "channel": "production",
       "distribution": "store",
       "autoIncrement": true
     },
     "apk": {
       "environment": "development",
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "apk-prod": {
+      "environment": "production",
+      "channel": "production",
       "distribution": "internal",
       "android": {
         "buildType": "apk"

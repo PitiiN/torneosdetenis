@@ -244,13 +244,15 @@ export default function TournamentFinanceDetail() {
           .remove([request.proof_path]);
       }
 
-      // La solicitud deja de existir una vez revisada (aprobada o rechazada).
-      const { error: deleteRequestError } = await supabase
-        .from('tournament_registration_requests')
-        .delete()
-        .eq('id', request.id);
+      // La solicitud solo deja de existir si es aprobada (el jugador pasa a estar registrado). Si es rechazada se conserva para que el jugador vea el motivo.
+      if (status === 'approved') {
+        const { error: deleteRequestError } = await supabase
+          .from('tournament_registration_requests')
+          .delete()
+          .eq('id', request.id);
 
-      if (deleteRequestError) throw deleteRequestError;
+        if (deleteRequestError) throw deleteRequestError;
+      }
 
       if (status === 'approved') {
         const playerId = String(request.player_id || '').trim();
