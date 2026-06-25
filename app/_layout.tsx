@@ -31,6 +31,7 @@ const getNotificationRoute = (data?: Record<string, any>) => {
 
   if (
     type === 'registration_approved' ||
+    type === 'registration_rejected' ||
     type === 'new_tournament_published' ||
     type === 'match_reminder_24h' ||
     type === 'match_schedule_updated' ||

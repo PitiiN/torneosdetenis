@@ -147,7 +147,7 @@ export const EditScoreModal = React.memo(({
                     </TouchableOpacity>
                   </View>
                   <TouchableOpacity 
-                    style={[styles.modalBtn, styles.modalBtnSave]} 
+                    style={[styles.modalBtnFull, styles.modalBtnSave]} 
                     onPress={() => handleSave(false)} 
                     disabled={saving}
                   >
@@ -211,6 +211,13 @@ const getStyles = (colors: any) => StyleSheet.create({
     borderRadius: borderRadius.md,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  modalBtnFull: {
+    height: 48,
+    borderRadius: borderRadius.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
   },
   modalBtnCancel: {
     backgroundColor: colors.background,

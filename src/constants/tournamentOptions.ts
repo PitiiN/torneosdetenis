@@ -1,4 +1,47 @@
-export const TOURNAMENT_CATEGORIES = ['Escalafón', 'Honor', '1ra', '2da', '3ra', '4ta', '5ta', 'Inicial'];
+export const TOURNAMENT_CATEGORIES = [
+  'Escalafón',
+  'Honor',
+  '1ra',
+  '2da',
+  '3ra',
+  '4ta',
+  '5ta',
+  'Inicial',
+  'Singles Open Damas',
+  'Dobles A',
+  'Dobles B',
+  'Dobles Mixto'
+];
+
+export const getCategoriesByModality = (modality: string | null): string[] => {
+  const norm = String(modality || '').trim().toLowerCase();
+  if (norm === 'dobles') {
+    return [
+      'Escalafón',
+      'Honor',
+      '1ra',
+      '2da',
+      '3ra',
+      '4ta',
+      '5ta',
+      'Inicial',
+      'Dobles A',
+      'Dobles B',
+      'Dobles Mixto'
+    ];
+  }
+  return [
+    'Escalafón',
+    'Honor',
+    '1ra',
+    '2da',
+    '3ra',
+    '4ta',
+    '5ta',
+    'Inicial',
+    'Singles Open Damas'
+  ];
+};
 
 export interface ChileanRegion {
   name: string;

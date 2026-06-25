@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
-import { TOURNAMENT_CATEGORIES } from '@/constants/tournamentOptions';
+import { TOURNAMENT_CATEGORIES, getCategoriesByModality } from '@/constants/tournamentOptions';
 import { buildRankingRows, RankingRow } from '@/services/ranking';
 import * as SecureStore from '@/utils/SecureStore';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -138,6 +138,13 @@ export default function PlayersScreen() {
             setModality(requestedModality);
         }
     }, [requestedModality, modality]);
+
+    useEffect(() => {
+        const validCategories = getCategoriesByModality(modality);
+        if (!validCategories.includes(activeCategory)) {
+            setActiveCategory(validCategories[0]);
+        }
+    }, [modality, activeCategory]);
 
     useFocusEffect(
         React.useCallback(() => {
@@ -744,7 +751,7 @@ export default function PlayersScreen() {
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterContainer}>
-                    {TOURNAMENT_CATEGORIES.map((category) => (
+                    {getCategoriesByModality(modality).map((category) => (
                         <TouchableOpacity
                             key={category}
                             style={[styles.filterButton, activeCategory === category && styles.filterButtonActive]}
@@ -862,6 +869,7 @@ export default function PlayersScreen() {
                 playerId={selectedPlayerId}
                 tournamentOrgId={organizationId}
                 tournamentLevel={activeCategory}
+                tournamentModality={modality}
                 onClose={() => setShowPlayerProfile(false)}
             />
 

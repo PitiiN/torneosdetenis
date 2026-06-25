@@ -245,11 +245,13 @@ export default function TournamentFinanceDetail() {
       }
 
       // La solicitud solo deja de existir si es aprobada (el jugador pasa a estar registrado). Si es rechazada se conserva para que el jugador vea el motivo.
+      // Si el jugador es aprobado, eliminamos todas sus solicitudes de inscripción para este torneo (incluidas las rechazadas anteriormente) para evitar duplicados en el panel.
       if (status === 'approved') {
         const { error: deleteRequestError } = await supabase
           .from('tournament_registration_requests')
           .delete()
-          .eq('id', request.id);
+          .eq('tournament_id', tournamentId)
+          .eq('player_id', request.player_id);
 
         if (deleteRequestError) throw deleteRequestError;
       }
@@ -265,6 +267,24 @@ export default function TournamentFinanceDetail() {
             body: `Tu inscripción a ${tournament?.name || 'este torneo'} fue aprobada.`,
             data: {
               type: 'registration_approved',
+              tournamentId: String(tournamentId),
+              organizationId: tournament?.organization_id || null,
+            },
+          });
+        }
+      }
+
+      if (status === 'rejected') {
+        const playerId = String(request.player_id || '').trim();
+        if (UUID_PATTERN.test(playerId) && tournamentId) {
+          await notifyTournamentUsers({
+            tournamentId: String(tournamentId),
+            userIds: [playerId],
+            type: 'registration_rejected',
+            title: 'Inscripción rechazada',
+            body: `Tu solicitud de inscripción a ${tournament?.name || 'este torneo'} fue rechazada. Motivo: ${reason?.trim() || 'No especificado'}.`,
+            data: {
+              type: 'registration_rejected',
               tournamentId: String(tournamentId),
               organizationId: tournament?.organization_id || null,
             },

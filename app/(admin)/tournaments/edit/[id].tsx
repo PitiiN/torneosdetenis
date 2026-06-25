@@ -7,7 +7,7 @@ import { useTheme, spacing, borderRadius } from '@/theme';
 import { supabase } from '@/services/supabase';
 import { DateField } from '@/components/DateField';
 import { buildTournamentDescription, buildTournamentFormatLabel, createInitialMatches, getRoundRobinGroupCount, normalizeTournamentFormat } from '@/services/tournamentStructure';
-import { TOURNAMENT_CATEGORIES, CHILEAN_COMUNAS, CHILEAN_REGIONS, CHILEAN_REGIONS_WITH_COMUNAS, TOURNAMENT_SURFACES, TOURNAMENT_SET_TYPES } from '@/constants/tournamentOptions';
+import { TOURNAMENT_CATEGORIES, CHILEAN_COMUNAS, CHILEAN_REGIONS, CHILEAN_REGIONS_WITH_COMUNAS, TOURNAMENT_SURFACES, TOURNAMENT_SET_TYPES, getCategoriesByModality } from '@/constants/tournamentOptions';
 import { canManageOrganization, getCurrentUserAccessContext } from '@/services/accessControl';
 import { TennisSpinner } from '@/components/TennisSpinner';
 import { normalizeTournamentStatus } from '@/services/tournamentStatus';
@@ -779,7 +779,7 @@ export default function EditTournamentScreen() {
             <SelectionModal
                 visible={showCategoryModal}
                 title="Seleccionar Categoría"
-                options={TOURNAMENT_CATEGORIES}
+                options={getCategoriesByModality(tournamentData?.modality || 'singles')}
                 onSelect={(val: string) => { setLevel(val); setShowCategoryModal(false); }}
                 onClose={() => setShowCategoryModal(false)}
             />

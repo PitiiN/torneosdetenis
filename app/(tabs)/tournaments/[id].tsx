@@ -1709,6 +1709,7 @@ export default function TournamentDetailScreen() {
                 playerId={selectedPlayerId}
                 tournamentOrgId={tournament?.organization_id}
                 tournamentLevel={tournament?.level}
+                tournamentModality={String(tournament?.modality || '').toLowerCase() === 'dobles' ? 'dobles' : 'singles'}
                 onClose={() => {
                     setShowPlayerProfile(false);
                     setSelectedPlayerId(null);

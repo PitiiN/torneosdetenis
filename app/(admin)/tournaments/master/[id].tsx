@@ -6,7 +6,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as SecureStore from '@/utils/SecureStore';
 import { borderRadius, spacing, useTheme } from '@/theme';
 import { supabase } from '@/services/supabase';
-import { TOURNAMENT_CATEGORIES, TOURNAMENT_SET_TYPES } from '@/constants/tournamentOptions';
+import { TOURNAMENT_CATEGORIES, TOURNAMENT_SET_TYPES, getCategoriesByModality } from '@/constants/tournamentOptions';
 import {
   buildTournamentDescription,
   buildTournamentFormatLabel,
@@ -768,7 +768,13 @@ export default function MasterTournamentAdminScreen() {
                   <TouchableOpacity
                     key={currentModality}
                     style={[styles.modalityOption, modality === currentModality && styles.modalityOptionActive]}
-                    onPress={() => setModality(currentModality)}
+                    onPress={() => {
+                      setModality(currentModality);
+                      const validCategories = getCategoriesByModality(currentModality);
+                      if (!validCategories.includes(category)) {
+                        setCategory(validCategories[0]);
+                      }
+                    }}
                   >
                     <Text style={[styles.modalityOptionText, modality === currentModality && styles.modalityOptionTextActive]}>
                       {getModalityLabel(currentModality)}
@@ -906,7 +912,7 @@ export default function MasterTournamentAdminScreen() {
           <SelectionModal
             visible={showCategoryModal}
             title="Categoria"
-            options={TOURNAMENT_CATEGORIES}
+            options={getCategoriesByModality(modality)}
             onSelect={(value: string) => {
               setCategory(value);
               setShowCategoryModal(false);
