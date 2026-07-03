@@ -67,7 +67,7 @@ export default function RootLayout() {
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [pendingNotificationDestination, setPendingNotificationDestination] = useState<any | null>(null);
   const router = useRouter();
-  const segments = useSegments();
+  const segments = useSegments() as string[];
   const lastHandledNotificationIdRef = useRef<string | null>(null);
 
   useEffect(() => {

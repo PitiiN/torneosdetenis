@@ -1174,10 +1174,10 @@ export default function ProfileScreen() {
                     {/* Wrapper para agrupar los filtros y reducir el espaciado */}
                     <View style={{ gap: 12 }}>
                         {/* Context Selector */}
-                        {(userContexts.length > 0 || isGlobalAdmin) && (
+                        {userContexts.length > 0 && (
                             <TouchableOpacity
                                 style={styles.contextSelector}
-                                onPress={() => isGlobalAdmin ? setShowOrgSearchModal(true) : setShowContextModal(true)}
+                                onPress={() => setShowContextModal(true)}
                             >
                                 <View style={styles.contextInfo}>
                                     <Ionicons name="filter-outline" size={16} color={colors.primary[500]} />

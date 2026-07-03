@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Keyboard, Image, Modal } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Keyboard, Image, Modal, Linking, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -34,7 +34,10 @@ type MasterTournament = {
   is_tournament_master: boolean;
   poster_url?: string | null;
   transfer_info?: string | null;
+  ball_brand?: string | null;
+  referee_phone?: string | null;
 };
+
 
 type Championship = {
   id: string;
@@ -143,6 +146,20 @@ const isDoublesChampionshipLegacyAware = (championship: Championship) => {
 const getChampionshipModalityLabel = (championship: Championship) =>
   isDoublesChampionshipLegacyAware(championship) ? 'Dobles' : 'Singles';
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const getSpanishDateLabel = (dateStr: string) => {
+  const date = new Date(dateStr + 'T12:00:00');
+  const days = ['DOMINGO', 'LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES', 'SÁBADO'];
+  const months = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
+  
+  const dayName = days[date.getDay()];
+  const dayNum = String(date.getDate()).padStart(2, '0');
+  const monthName = months[date.getMonth()];
+  
+  return `${dayName} ${dayNum} DE ${monthName}`;
+};
+
 export default function TournamentMasterDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string | string[] }>();
   const masterTournamentId = Array.isArray(id) ? id[0] : id;
@@ -164,6 +181,11 @@ export default function TournamentMasterDetailScreen() {
   const [selectedProofMimeType, setSelectedProofMimeType] = useState<string | null>(null);
   const [isProofModalVisible, setIsProofModalVisible] = useState(false);
   const [isTransferModalVisible, setIsTransferModalVisible] = useState(false);
+  const [matches, setMatches] = useState<any[]>([]);
+  const [profiles, setProfiles] = useState<Record<string, string>>({});
+  const horizontalScrollRef = useRef<ScrollView>(null);
+  const { width: screenWidth } = useWindowDimensions();
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
 
   const loadMasterData = useCallback(async () => {
@@ -173,7 +195,7 @@ export default function TournamentMasterDetailScreen() {
     try {
       const { data: masterData, error: masterError } = await supabase
         .from('tournaments')
-        .select('id, organization_id, name, status, start_date, end_date, registration_close_at, registration_close_time, address, comuna, surface, is_tournament_master, poster_url, transfer_info')
+        .select('id, organization_id, name, status, start_date, end_date, registration_close_at, registration_close_time, address, comuna, surface, is_tournament_master, poster_url, transfer_info, ball_brand, referee_phone')
         .eq('id', masterTournamentId)
         .single();
 
@@ -259,6 +281,44 @@ export default function TournamentMasterDetailScreen() {
         };
       });
       setLatestRequestsByTournamentId(nextMap);
+
+      // Consultar partidos de los campeonatos hijos
+      const champIds = loadedChampionships.map(c => c.id);
+      let matchesList: any[] = [];
+      let profilesMap: Record<string, string> = {};
+      if (champIds.length > 0) {
+        const { data: matchesRows, error: matchesError } = await supabase
+          .from('matches')
+          .select('id, tournament_id, player_a_id, player_a2_id, player_b_id, player_b2_id, winner_id, winner_2_id, score, status, scheduled_at, court, round')
+          .in('tournament_id', champIds);
+
+        if (matchesError) throw matchesError;
+        matchesList = matchesRows || [];
+
+        // Consultar perfiles de los jugadores en partidos
+        const playerIds = new Set<string>();
+        matchesList.forEach(m => {
+          if (m.player_a_id) playerIds.add(m.player_a_id);
+          if (m.player_a2_id) playerIds.add(m.player_a2_id);
+          if (m.player_b_id) playerIds.add(m.player_b_id);
+          if (m.player_b2_id) playerIds.add(m.player_b2_id);
+        });
+
+        const playerIdsArr = Array.from(playerIds);
+        if (playerIdsArr.length > 0) {
+          const { data: profilesRows, error: profilesError } = await supabase
+            .from('public_profiles')
+            .select('id, name')
+            .in('id', playerIdsArr);
+
+          if (profilesError) throw profilesError;
+          (profilesRows || []).forEach(p => {
+            profilesMap[p.id] = p.name;
+          });
+        }
+      }
+      setMatches(matchesList);
+      setProfiles(profilesMap);
     } catch (error) {
       Alert.alert('Error', 'No se pudo cargar la informacion del torneo.');
       router.back();
@@ -270,6 +330,86 @@ export default function TournamentMasterDetailScreen() {
   useEffect(() => {
     loadMasterData();
   }, [loadMasterData]);
+
+  const parseManualAssignments = (description?: string | null) => {
+    const match = (description || '').match(/\[MANUAL_ASSIGNMENTS:([^\]]+)\]/);
+    if (!match?.[1]) return { rrSlots: {}, matchSlots: {} };
+    try {
+      return JSON.parse(decodeURIComponent(match[1]));
+    } catch {
+      return { rrSlots: {}, matchSlots: {} };
+    }
+  };
+
+  const getMatchPlayerName = (match: any, slot: 1 | 2 | 3 | 4, championship: any, profilesMap: Record<string, string>) => {
+    let playerId = null;
+    if (slot === 1) playerId = match.player_a_id;
+    else if (slot === 2) playerId = match.player_a2_id;
+    else if (slot === 3) playerId = match.player_b_id;
+    else playerId = match.player_b2_id;
+
+    if (playerId && profilesMap[playerId]) {
+      return profilesMap[playerId];
+    }
+
+    if (championship) {
+      const manualAssignments = parseManualAssignments(championship.description);
+      const numKey = String(slot);
+      const fallbackKey = slot === 1 || slot === 2 ? 'player_a' : 'player_b';
+      const assigned = manualAssignments.matchSlots?.[match.id]?.[numKey]?.name ||
+                       manualAssignments.matchSlots?.[match.id]?.[fallbackKey]?.name;
+      if (assigned) return assigned;
+    }
+
+    return 'Por definir';
+  };
+
+  const uniqueDates = useMemo(() => {
+    const dates = new Set<string>();
+    matches.forEach(m => {
+      if (m.scheduled_at) {
+        const datePart = m.scheduled_at.split('T')[0];
+        dates.add(datePart);
+      }
+    });
+    return Array.from(dates).sort();
+  }, [matches]);
+
+  useEffect(() => {
+    if (uniqueDates.length > 0 && !selectedDate) {
+      setSelectedDate(uniqueDates[0]);
+    }
+  }, [uniqueDates, selectedDate]);
+
+  const uniqueHours = useMemo(() => {
+    if (!selectedDate) return [];
+    const hours = new Set<string>();
+    matches.forEach(m => {
+      if (m.scheduled_at && m.scheduled_at.startsWith(selectedDate)) {
+        const timePart = m.scheduled_at.split('T')[1]?.slice(0, 5); // "HH:MM"
+        if (timePart) hours.add(timePart);
+      }
+    });
+    return Array.from(hours).sort();
+  }, [matches, selectedDate]);
+
+  const uniqueCourts = useMemo(() => {
+    if (!selectedDate) return [];
+    const courts = new Set<string>();
+    matches.forEach(m => {
+      if (m.scheduled_at && m.scheduled_at.startsWith(selectedDate) && m.court) {
+        courts.add(m.court.trim());
+      }
+    });
+    return Array.from(courts).sort((a, b) => {
+      const numA = parseInt(a.replace(/\D/g, ''), 10);
+      const numB = parseInt(b.replace(/\D/g, ''), 10);
+      if (!isNaN(numA) && !isNaN(numB)) {
+        return numA - numB;
+      }
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }, [matches, selectedDate]);
 
   const openProofModal = (championship: Championship) => {
     const championshipStatus = normalizeTournamentStatus(championship?.status);
@@ -452,7 +592,16 @@ export default function TournamentMasterDetailScreen() {
         </View>
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        ref={horizontalScrollRef}
+        style={{ flex: 1 }}
+      >
+        {/* Slide 1: Información General y Categorías */}
+        <View style={{ width: screenWidth }}>
+          <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {posterUrl && (
           <TouchableOpacity
             style={styles.posterContainer}
@@ -488,8 +637,40 @@ export default function TournamentMasterDetailScreen() {
           {masterTournament.surface && (
             <Text style={styles.masterInfoText}>Superficie: {masterTournament.surface}</Text>
           )}
+          {masterTournament.ball_brand && (
+            <Text style={styles.masterInfoText}>Pelota del torneo: {masterTournament.ball_brand}</Text>
+          )}
           <Text style={styles.masterInfoStatus}>{formatStatus(masterTournament.status)}</Text>
         </View>
+
+        <View style={styles.buttonsRow}>
+          {masterTournament.referee_phone && (
+            <TouchableOpacity
+              style={[styles.refereeButton, { flex: 1, marginTop: 0, marginBottom: 0, alignSelf: 'stretch' }]}
+              onPress={() => {
+                const cleanNumber = masterTournament.referee_phone?.replace(/\D/g, '');
+                if (cleanNumber) {
+                  Linking.openURL(`https://wa.me/${cleanNumber}`);
+                } else {
+                  Alert.alert('Información', 'El torneo no tiene un número de contacto de árbitro válido.');
+                }
+              }}
+            >
+              <Ionicons name="logo-whatsapp" size={16} color="#fff" />
+              <Text style={styles.refereeButtonText} numberOfLines={1}>Contacto Árbitro</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.courtScheduleButton}
+            onPress={() => {
+              horizontalScrollRef.current?.scrollTo({ x: screenWidth, animated: true });
+            }}
+          >
+            <Ionicons name="calendar-outline" size={16} color="#fff" />
+            <Text style={styles.courtScheduleButtonText} numberOfLines={1}>Programación por Cancha</Text>
+          </TouchableOpacity>
+        </View>
+
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Categorías disponibles</Text>
@@ -610,6 +791,136 @@ export default function TournamentMasterDetailScreen() {
             <Text style={styles.emptyText}>Aún no hay competencias creadas.</Text>
           </View>
         )}
+      </ScrollView>
+        </View>
+
+        {/* Slide 2: Programación por Cancha */}
+        <View style={{ width: screenWidth, flex: 1, backgroundColor: '#FFFFFF' }}>
+          <ScrollView contentContainerStyle={{ paddingBottom: spacing.xl }} showsVerticalScrollIndicator={false}>
+            {uniqueDates.length === 0 ? (
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, minHeight: 400 }}>
+                <Ionicons name="calendar-outline" size={48} color={colors.textTertiary} />
+                <Text style={{ fontSize: 16, color: colors.textSecondary, fontWeight: '700', marginTop: spacing.md, textAlign: 'center' }}>
+                  No hay partidos programados
+                </Text>
+                <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: spacing.xs, textAlign: 'center' }}>
+                  Los partidos programados aparecerán aquí.
+                </Text>
+              </View>
+            ) : (
+              <>
+                {(() => {
+                  if (!selectedDate) return null;
+                  const currentIndex = uniqueDates.indexOf(selectedDate);
+                  const dateLabel = getSpanishDateLabel(selectedDate);
+
+                  return (
+                    <View style={styles.schedulerHeader}>
+                      <TouchableOpacity 
+                        disabled={currentIndex <= 0}
+                        onPress={() => setSelectedDate(uniqueDates[currentIndex - 1])}
+                        style={[styles.arrowButton, currentIndex <= 0 && { opacity: 0.1 }]}
+                      >
+                        <Ionicons name="chevron-back" size={24} color="#0A1A3A" />
+                      </TouchableOpacity>
+                      
+                      <View style={styles.schedulerHeaderTitleContainer}>
+                        <Text style={styles.schedulerTitleSmall}>PROGRAMACIÓN</Text>
+                        <Text style={styles.schedulerTitleLarge}>{dateLabel}</Text>
+                      </View>
+
+                      <TouchableOpacity 
+                        disabled={currentIndex >= uniqueDates.length - 1}
+                        onPress={() => setSelectedDate(uniqueDates[currentIndex + 1])}
+                        style={[styles.arrowButton, currentIndex >= uniqueDates.length - 1 && { opacity: 0.1 }]}
+                      >
+                        <Ionicons name="chevron-forward" size={24} color="#0A1A3A" />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })()}
+
+                {(() => {
+                  if (!selectedDate) return null;
+                  const matchesForDate = matches.filter(m => m.scheduled_at && m.scheduled_at.startsWith(selectedDate));
+                  
+                  if (uniqueCourts.length === 0) {
+                    return (
+                      <View style={{ padding: spacing.xl, alignItems: 'center' }}>
+                        <Text style={{ color: colors.textSecondary, fontSize: 14 }}>
+                          No hay canchas asignadas para este día.
+                        </Text>
+                      </View>
+                    );
+                  }
+
+                  return (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={true} contentContainerStyle={{ paddingHorizontal: spacing.md, paddingVertical: spacing.md }}>
+                      {uniqueCourts.map(courtName => {
+                        return (
+                          <View key={courtName} style={styles.courtColumn}>
+                            {/* Court Column Header */}
+                            <View style={styles.courtColumnHeader}>
+                              <Text style={styles.courtColumnHeaderLabel}>{courtName.toUpperCase()}</Text>
+                            </View>
+
+                            {/* Rows of match cards corresponding to unique hours */}
+                            {uniqueHours.map(hourStr => {
+                              const cellMatches = matchesForDate.filter(m => {
+                                if (!m.court || m.court.trim() !== courtName) return false;
+                                const mHour = m.scheduled_at.split('T')[1]?.slice(0, 5);
+                                return mHour === hourStr;
+                              });
+
+                              return (
+                                <View key={hourStr} style={styles.courtCell}>
+                                  {cellMatches.length > 0 ? (
+                                    cellMatches.map(m => {
+                                      const champ = championships.find(c => c.id === m.tournament_id);
+                                      const isDoubles = champ ? isDoublesChampionshipLegacyAware(champ) : false;
+                                      const p1Name = getMatchPlayerName(m, 1, champ, profiles);
+                                      const p2Name = isDoubles ? getMatchPlayerName(m, 2, champ, profiles) : null;
+                                      const p3Name = getMatchPlayerName(m, 3, champ, profiles);
+                                      const p4Name = isDoubles ? getMatchPlayerName(m, 4, champ, profiles) : null;
+
+                                      return (
+                                        <View
+                                          key={m.id}
+                                          style={styles.matchScheduleCard}
+                                        >
+                                          <Text style={styles.matchScheduleTime}>{hourStr}</Text>
+                                          <Text style={styles.matchScheduleCategory} numberOfLines={1}>
+                                            {String(champ?.name || '').toUpperCase()}
+                                          </Text>
+                                          
+                                          <View style={styles.matchSchedulePlayersContainer}>
+                                            <Text style={styles.matchSchedulePlayerText} numberOfLines={1}>
+                                              {isDoubles ? `${p1Name} / ${p2Name}` : p1Name}
+                                            </Text>
+                                            <Text style={styles.matchScheduleVs}>VS</Text>
+                                            <Text style={styles.matchSchedulePlayerText} numberOfLines={1}>
+                                              {isDoubles ? `${p3Name} / ${p4Name}` : p3Name}
+                                            </Text>
+                                          </View>
+                                        </View>
+                                      );
+                                    })
+                                  ) : (
+                                    <View style={styles.emptyCourtCell} />
+                                  )}
+                                </View>
+                              );
+                            })}
+                          </View>
+                        );
+                      })}
+                    </ScrollView>
+                  );
+                })()}
+              </>
+            )}
+          </ScrollView>
+        </View>
       </ScrollView>
 
       <Modal
@@ -1035,5 +1346,155 @@ const getStyles = (colors: any) => StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '700',
+  },
+  refereeButton: {
+    backgroundColor: '#25D366',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.lg,
+    marginTop: -spacing.md,
+    marginBottom: spacing.md,
+    alignSelf: 'flex-start',
+  },
+  refereeButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  buttonsRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: -spacing.md,
+    marginBottom: spacing.md,
+    marginHorizontal: spacing.xl,
+  },
+  courtScheduleButton: {
+    backgroundColor: '#0A1A3A',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.lg,
+    flex: 1,
+  },
+  courtScheduleButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  schedulerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  arrowButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8F9FA',
+  },
+  schedulerHeaderTitleContainer: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  schedulerTitleSmall: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#00A8E8',
+    letterSpacing: 1.5,
+  },
+  schedulerTitleLarge: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0A1A3A',
+    marginTop: 2,
+  },
+  courtColumn: {
+    width: 280,
+    marginRight: spacing.md,
+  },
+  courtColumnHeader: {
+    backgroundColor: '#0A1A3A',
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  courtColumnHeaderLabel: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 13,
+    letterSpacing: 1,
+  },
+  courtCell: {
+    minHeight: 110,
+    marginBottom: spacing.md,
+    justifyContent: 'center',
+  },
+  matchScheduleCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: borderRadius.md,
+    borderWidth: 2,
+    borderColor: '#E2E8F0',
+    padding: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  matchScheduleTime: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0A1A3A',
+    textAlign: 'center',
+  },
+  matchScheduleCategory: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#00A8E8',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  matchSchedulePlayersContainer: {
+    marginTop: spacing.sm,
+    width: '100%',
+    alignItems: 'center',
+  },
+  matchSchedulePlayerText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1E293B',
+    textAlign: 'center',
+  },
+  matchScheduleVs: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#94A3B8',
+    marginVertical: 2,
+    textAlign: 'center',
+  },
+  emptyCourtCell: {
+    height: 100,
+    borderRadius: borderRadius.md,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8F9FA',
   },
 });

@@ -128,7 +128,7 @@ function proceedWithPublish(updateMessage) {
   };
 
   const command = 'npx';
-  const args = ['eas', 'update', '--branch', 'production', '--message', updateMessage];
+  const args = ['eas', 'update', '--branch', 'production', '--message', `"${updateMessage}"`];
 
   // Spawn the child process and inherit stdio so it shows the native interactive CLI output
   const result = spawnSync(command, args, {

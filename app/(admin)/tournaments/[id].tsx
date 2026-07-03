@@ -4638,7 +4638,18 @@ export default function AdminTournamentDetailScreen() {
                 )}
             </View>
 
-            <ScrollView contentContainerStyle={styles.scrollContent}>
+            {(() => {
+                const isBracketTab = ['principal', 'consolacion', 'finales'].includes(activeTab);
+                return (
+                    <ScrollView 
+                        style={{ flex: 1 }}
+                        contentContainerStyle={[
+                            styles.scrollContent, 
+                            isBracketTab && { flexGrow: 1, paddingBottom: 0, paddingVertical: 0 }
+                        ]} 
+                        scrollEnabled={!isBracketTab}
+                        showsVerticalScrollIndicator={false}
+                    >
 
                 {/* Summary Info Card */}
                 <View style={[styles.summaryCard, { paddingVertical: spacing.lg }]}>
@@ -5112,216 +5123,84 @@ export default function AdminTournamentDetailScreen() {
                     )
                 ) : (
                     // Elimination Bracket Matching the HTML exact look
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingVertical: spacing.md }}>
-                        <View style={{ flexDirection: 'row', gap: spacing['3xl'], paddingHorizontal: spacing.xl }}>
-                            {(() => {
-                                const filteredMatches = matches.filter(m => {
-                                    const isConsolationMatch = /^(Consolaci|Repechaje)/i.test(String(m.round || ''));
-                                    if (activeTab === 'consolacion') return isConsolationMatch;
-                                    return !isConsolationMatch;
-                                });
-                                const rounds = [...new Set(filteredMatches.map(m => m.round_number))].sort((a, b) => a - b);
+                    <>
+                        {(() => {
+                            const filteredMatches = matches.filter(m => {
+                                const isConsolationMatch = /^(Consolaci|Repechaje)/i.test(String(m.round || ''));
+                                if (activeTab === 'consolacion') return isConsolationMatch;
+                                return !isConsolationMatch;
+                            });
+                            const roundNums = [...new Set(filteredMatches.map(m => m.round_number))].sort((a, b) => a - b);
+                            
+                            const transformedRounds = roundNums.map(roundNum => {
+                                const roundMatches = filteredMatches.filter(m => m.round_number === roundNum);
+                                return {
+                                    title: formatRoundLabel(roundMatches[0]?.round) || `Ronda ${roundNum}`,
+                                    matches: roundMatches.map(m => {
+                                        const scoreText = getScoreText(m.score);
+                                        const setScores = scoreText && !/^W\.?O\.?$/i.test(scoreText)
+                                            ? scoreText.split(/\s*,\s*/).map(s => s.split('-'))
+                                            : [];
 
-                                return rounds.map((roundNum, index) => {
-                                    const roundMatches = filteredMatches.filter(m => m.round_number === roundNum);
-                                    const initialMarginTop = (Math.pow(2, index) - 1) * (MATCH_HEIGHT + ROUND_GAP) / 2;
-                                    const matchGap = (Math.pow(2, index) - 1) * MATCH_HEIGHT + (Math.pow(2, index)) * ROUND_GAP;
+                                        return {
+                                            id: m.id,
+                                            player1: {
+                                                name: getDisplayName(m, 1),
+                                                avatarUrl: getDisplayAvatar(m, 1),
+                                                scores: setScores.map(s => s[0]).filter(Boolean),
+                                                isWinner: m.winner_id === m.player_a_id && !!m.player_a_id,
+                                                id: m.player_a_id || null,
+                                            },
+                                            player2: {
+                                                name: getDisplayName(m, 3),
+                                                avatarUrl: getDisplayAvatar(m, 3),
+                                                scores: setScores.map(s => s[1]).filter(Boolean),
+                                                isWinner: m.winner_id === m.player_b_id && !!m.player_b_id,
+                                                id: m.player_b_id || null,
+                                            },
+                                            ...(IS_DOUBLES ? {
+                                                player1Partner: {
+                                                    name: getDisplayName(m, 2),
+                                                    avatarUrl: getDisplayAvatar(m, 2),
+                                                    id: m.player_a2_id || null,
+                                                },
+                                                player2Partner: {
+                                                    name: getDisplayName(m, 4),
+                                                    avatarUrl: getDisplayAvatar(m, 4),
+                                                    id: m.player_b2_id || null,
+                                                }
+                                            } : {}),
+                                            status: m.status === 'finished' ? 'finished' : (m.status === 'live' ? 'live' : 'scheduled'),
+                                            scheduledAt: m.scheduled_at,
+                                            court: m.court,
+                                            round: m.round,
+                                            rawMatch: m
+                                        };
+                                    })
+                                };
+                            });
 
-                                    return (
-                                        <View key={roundNum} style={{ width: 260 }}>
-                                            <Text style={[styles.roundTitle, { marginBottom: spacing.lg }]}>{formatRoundLabel(roundMatches[0]?.round)}</Text>
-
-                                            <View style={{ marginTop: initialMarginTop }}>
-                                                {roundMatches.map((m, mIdx) => {
-                                                    const scoreText = getScoreText(m.score);
-                                                    const scoreSetStrings = getScoreSetStrings(m.score);
-                                                    const isUnplayed = !scoreText;
-                                                    const isTBD = !m.player_a_id || !m.player_b_id;
-
-                                                    let isMatchWinnerA = false;
-                                                    let isMatchWinnerB = false;
-                                                    if (!isUnplayed && scoreSetStrings.length > 0) {
-                                                        let setsA = 0;
-                                                        let setsB = 0;
-                                                        scoreSetStrings.forEach((setStr: string) => {
-                                                            const setScores = setStr.split(/[ -]/);
-                                                            const scoreA = parseInt(setScores[0] || '0', 10);
-                                                            const scoreB = parseInt(setScores[1] || '0', 10);
-                                                            if (!isNaN(scoreA) && !isNaN(scoreB)) {
-                                                                if (scoreA > scoreB) setsA++;
-                                                                else if (scoreB > scoreA) setsB++;
-                                                            }
-                                                        });
-                                                        if (setsA > setsB) isMatchWinnerA = true;
-                                                        else if (setsB > setsA) isMatchWinnerB = true;
-                                                        else {
-                                                            isMatchWinnerA = m.winner_id === m.player_a_id || m.winner_2_id === m.player_a2_id;
-                                                            isMatchWinnerB = m.winner_id === m.player_b_id || m.winner_2_id === m.player_b2_id;
-                                                        }
-                                                    } else {
-                                                        isMatchWinnerA = m.winner_id === m.player_a_id || m.winner_2_id === m.player_a2_id;
-                                                        isMatchWinnerB = m.winner_id === m.player_b_id || m.winner_2_id === m.player_b2_id;
-                                                    }
-
-                                                    const colorA = isTBD ? colors.textTertiary : (isMatchWinnerA ? colors.text : (isMatchWinnerB ? colors.textSecondary : colors.text));
-                                                    const colorB = isTBD ? colors.textTertiary : (isMatchWinnerB ? colors.text : (isMatchWinnerA ? colors.textSecondary : colors.text));
-                                                    const weightA = isTBD ? '400' : (isMatchWinnerA ? '900' : (isMatchWinnerB ? '500' : '600'));
-                                                    const weightB = isTBD ? '400' : (isMatchWinnerB ? '900' : (isMatchWinnerA ? '500' : '600'));
-
-                                                    // Special positioning for 3rd place match
-                                                    const is3rdPlace = m.round?.includes('3er y 4to');
-                                                    const currentMatchGap = is3rdPlace ? spacing.xl : matchGap;
-
-                                                    return (
-                                                        <View
-                                                            key={m.id}
-                                                            style={[
-                                                                styles.bracketMatchCard,
-                                                                {
-                                                                    height: MATCH_HEIGHT,
-                                                                    marginBottom: mIdx === roundMatches.length - 1 ? 0 :
-                                                                        (roundMatches[mIdx + 1]?.round.includes('3er y 4to') ? spacing.xl : currentMatchGap)
-                                                                }
-                                                            ]}
-                                                        >
-                                                            {m.round === '3er y 4to Puesto' && (
-                                                                <View style={{ backgroundColor: colors.background, paddingVertical: 4 }}>
-                                                                    <Text style={{ textAlign: 'center', fontSize: 10, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase' }}>{formatRoundLabel(m.round)}</Text>
-                                                                </View>
-                                                            )}
-                                                            <View style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: colors.background, backgroundColor: isMatchWinnerA ? colors.primary[500] + '15' : colors.surface }}>
-                                                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flex: 1 }}>
-                                                                    <View style={{ flex: 1 }}>
-                                                                        <TouchableOpacity
-                                                                            style={{ paddingHorizontal: spacing.md, paddingVertical: IS_DOUBLES ? 4 : spacing.md, justifyContent: 'center' }}
-                                                                            onPress={() => handlePlayerPress(m.id, 1)}
-                                                                            onLongPress={() => handlePlayerLongPress(getPlayerIdBySlot(m, 1))}
-                                                                            delayLongPress={2000}
-                                                                        >
-                                                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                                                                {renderPlayerAvatar(getDisplayName(m, 1), getDisplayAvatar(m, 1), 22)}
-                                                                                <Text style={{ flex: 1, fontSize: IS_DOUBLES ? 11 : 13, fontWeight: weightA, color: colorA }} numberOfLines={1}>{getDisplayName(m, 1)}</Text>
-                                                                            </View>
-                                                                        </TouchableOpacity>
-                                                                        {IS_DOUBLES && (
-                                                                            <TouchableOpacity
-                                                                                style={{ paddingHorizontal: spacing.md, paddingVertical: 4, justifyContent: 'center' }}
-                                                                                onPress={() => handlePlayerPress(m.id, 2)}
-                                                                                onLongPress={() => handlePlayerLongPress(getPlayerIdBySlot(m, 2))}
-                                                                                delayLongPress={2000}
-                                                                            >
-                                                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                                                                    {renderPlayerAvatar(getDisplayName(m, 2), getDisplayAvatar(m, 2), 22)}
-                                                                                    <Text style={{ flex: 1, fontSize: 11, fontWeight: weightA, color: colorA }} numberOfLines={1}>{getDisplayName(m, 2)}</Text>
-                                                                                </View>
-                                                                            </TouchableOpacity>
-                                                                        )}
-                                                                    </View>
-                                                                    <TouchableOpacity onPress={() => handleMatchPress(m)} style={{ flexDirection: 'row', gap: 4, paddingRight: spacing.md }}>
-                                                                        {(scoreSetStrings.length ? scoreSetStrings : ['-']).map((setStr: string, sIdx: number) => {
-                                                                            const setScores = setStr.split(/[ -]/);
-                                                                            const scoreA = parseInt(setScores[0] || '0', 10);
-                                                                            const scoreB = parseInt(setScores[1] || '0', 10);
-                                                                            const isSetWinner = !isNaN(scoreA) && !isNaN(scoreB) ? scoreA > scoreB : (m.winner_id === m.player_a_id || m.winner_2_id === m.player_a2_id);
-                                                                            
-                                                                            return (
-                                                                                <View key={sIdx} style={{ backgroundColor: isUnplayed ? colors.background : (isSetWinner ? colors.primary[500] : colors.surfaceSecondary), paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm, minWidth: 24, alignItems: 'center' }}>
-                                                                                    <Text style={{ color: isUnplayed ? colors.textSecondary : (isSetWinner ? '#fff' : colors.textTertiary), fontSize: 11, fontWeight: '700' }}>
-                                                                                        {isUnplayed ? '-' : setScores[0]}
-                                                                                    </Text>
-                                                                                </View>
-                                                                            );
-                                                                        })}
-                                                                    </TouchableOpacity>
-                                                                </View>
-                                                            </View>
-
-                                                            <View style={{ flex: 1, opacity: isTBD ? 0.6 : 1, backgroundColor: isMatchWinnerB ? colors.primary[500] + '15' : colors.surface }}>
-                                                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flex: 1 }}>
-                                                                    <View style={{ flex: 1 }}>
-                                                                        <TouchableOpacity
-                                                                            style={{ paddingHorizontal: spacing.md, paddingVertical: IS_DOUBLES ? 4 : spacing.md, justifyContent: 'center' }}
-                                                                            onPress={() => handlePlayerPress(m.id, 3)}
-                                                                            onLongPress={() => handlePlayerLongPress(getPlayerIdBySlot(m, 3))}
-                                                                            delayLongPress={2000}
-                                                                        >
-                                                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                                                                {renderPlayerAvatar(getDisplayName(m, 3), getDisplayAvatar(m, 3), 22)}
-                                                                                <Text style={{ flex: 1, fontSize: IS_DOUBLES ? 11 : 13, fontWeight: weightB, color: colorB }} numberOfLines={1}>{getDisplayName(m, 3)}</Text>
-                                                                            </View>
-                                                                        </TouchableOpacity>
-                                                                        {IS_DOUBLES && (
-                                                                            <TouchableOpacity
-                                                                                style={{ paddingHorizontal: spacing.md, paddingVertical: 4, justifyContent: 'center' }}
-                                                                                onPress={() => handlePlayerPress(m.id, 4)}
-                                                                                onLongPress={() => handlePlayerLongPress(getPlayerIdBySlot(m, 4))}
-                                                                                delayLongPress={2000}
-                                                                            >
-                                                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                                                                    {renderPlayerAvatar(getDisplayName(m, 4), getDisplayAvatar(m, 4), 22)}
-                                                                                    <Text style={{ flex: 1, fontSize: 11, fontWeight: weightB, color: colorB }} numberOfLines={1}>{getDisplayName(m, 4)}</Text>
-                                                                                </View>
-                                                                            </TouchableOpacity>
-                                                                        )}
-                                                                    </View>
-                                                                    <TouchableOpacity onPress={() => handleMatchPress(m)} style={{ flexDirection: 'row', gap: 4, paddingRight: spacing.md }}>
-                                                                        {(scoreSetStrings.length ? scoreSetStrings : ['-']).map((setStr: string, sIdx: number) => {
-                                                                            const setScores = setStr.split(/[ -]/);
-                                                                            const scoreA = parseInt(setScores[0] || '0', 10);
-                                                                            const scoreB = parseInt(setScores[1] || '0', 10);
-                                                                            const isSetWinner = !isNaN(scoreA) && !isNaN(scoreB) ? scoreB > scoreA : (m.winner_id === m.player_b_id || m.winner_2_id === m.player_b2_id);
-
-                                                                            return (
-                                                                                <View key={sIdx} style={{ backgroundColor: isUnplayed ? colors.background : (isSetWinner ? colors.primary[500] : colors.surfaceSecondary), paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm, minWidth: 24, alignItems: 'center' }}>
-                                                                                    <Text style={{ color: isUnplayed ? colors.textSecondary : (isSetWinner ? '#fff' : colors.textTertiary), fontSize: 11, fontWeight: '700' }}>
-                                                                                        {isUnplayed ? '-' : setScores[1] || '0'}
-                                                                                    </Text>
-                                                                                </View>
-                                                                            );
-                                                                        })}
-                                                                    </TouchableOpacity>
-                                                                </View>
-                                                            </View>
-                                                            <TouchableOpacity 
-                                                                onPress={() => handleSchedulePress(m)}
-                                                                activeOpacity={0.7}
-                                                                style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 6, backgroundColor: colors.background + '50' }}>
-                                                                <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-                                                                    {m.scheduled_at && (
-                                                                        <>
-                                                                            <Text style={{ fontSize: 9, color: colors.textTertiary, fontWeight: '600' }}>
-                                                                                {formatScheduleDate(m.scheduled_at)}
-                                                                            </Text>
-                                                                            <Text style={{ fontSize: 9, color: colors.textTertiary, fontWeight: '600' }}>
-                                                                                {formatScheduleTime(m.scheduled_at)}
-                                                                            </Text>
-                                                                        </>
-                                                                    )}
-                                                                    {m.court && (
-                                                                        <Text style={{ fontSize: 9, color: colors.textTertiary, fontWeight: '600' }}>
-                                                                            {m.court}
-                                                                        </Text>
-                                                                    )}
-                                                                </View>
-                                                                <Ionicons name="calendar-outline" size={12} color={colors.textTertiary} />
-                                                            </TouchableOpacity>
-                                                            {isTBD && (
-                                                                <View style={{ backgroundColor: colors.primary[500] + '15', padding: 4, alignItems: 'center' }}>
-                                                                    <Text style={{ color: colors.primary[500], fontSize: 9, fontWeight: '700', textTransform: 'uppercase' }}>Próximamente</Text>
-                                                                </View>
-                                                            )}
-                                                        </View>
-                                                    )
-                                                })}
-                                            </View>
-                                        </View>
-                                    )
-                                })
-                            })()}
-                        </View>
-                    </ScrollView>
+                            return (
+                                <View style={[styles.bracketContainer, { flex: 1 }]}>
+                                    <SingleEliminationBracket 
+                                        rounds={transformedRounds} 
+                                        onPlayerPress={() => {}}
+                                        isAdmin={true}
+                                        onAdminPlayerPress={handlePlayerPress as any}
+                                        onAdminPlayerLongPress={handlePlayerLongPress}
+                                        onAdminMatchPress={handleMatchPress}
+                                        onAdminSchedulePress={handleSchedulePress}
+                                        matchHeight={IS_DOUBLES ? 140 : 100}
+                                        roundGap={24}
+                                    />
+                                </View>
+                            );
+                        })()}
+                    </>
                 )}
-            </ScrollView>
+                    </ScrollView>
+                );
+            })()}
 
             {canShareBracket ? (
                 <View style={styles.hiddenShareCanvas} pointerEvents="none">
@@ -6016,6 +5895,7 @@ export default function AdminTournamentDetailScreen() {
 
 const getStyles = (colors: any) => {
     return StyleSheet.create({
+        bracketContainer: { flex: 1, backgroundColor: colors.background, paddingVertical: spacing.md },
         container: { flex: 1, backgroundColor: colors.background },
         centerAll: { flex: 1, justifyContent: 'center', alignItems: 'center' },
         errorText: { fontSize: 16, color: colors.error },

@@ -1,5 +1,5 @@
-import React, { useRef } from 'react';
-import { Animated, View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useTheme, spacing } from '@/theme';
 import { MatchCard } from './MatchCard';
 
@@ -19,6 +19,7 @@ interface SingleEliminationProps {
             canSubmitScore?: boolean;
             onSubmitScore?: () => void;
             round?: string;
+            rawMatch?: any;
         }[];
     }[];
     onPlayerPress?: (playerId: string) => void;
@@ -26,6 +27,11 @@ interface SingleEliminationProps {
     roundGap?: number;
     isShareImage?: boolean;
     isMirror?: boolean;
+    isAdmin?: boolean;
+    onAdminPlayerPress?: (matchId: string, slot: number) => void;
+    onAdminPlayerLongPress?: (playerId: string | null) => void;
+    onAdminMatchPress?: (match: any) => void;
+    onAdminSchedulePress?: (match: any) => void;
 }
 
 export const SingleEliminationBracket = ({ 
@@ -34,21 +40,21 @@ export const SingleEliminationBracket = ({
     matchHeight = 130,
     roundGap = 24,
     isShareImage = false,
-    isMirror = false
+    isMirror = false,
+    isAdmin = false,
+    onAdminPlayerPress,
+    onAdminPlayerLongPress,
+    onAdminMatchPress,
+    onAdminSchedulePress
 }: SingleEliminationProps) => {
-    const scale = useRef(new Animated.Value(1)).current;
-    const baseScaleRef = useRef(1);
-    const startDistanceRef = useRef<number | null>(null);
     const { colors } = useTheme();
     const styles = getStyles(colors);
 
-    const distanceBetweenTouches = (touches: any[]) => {
-        if (touches.length < 2) return null;
-        const [firstTouch, secondTouch] = touches;
-        const dx = secondTouch.pageX - firstTouch.pageX;
-        const dy = secondTouch.pageY - firstTouch.pageY;
-        return Math.sqrt(dx * dx + dy * dy);
-    };
+    const headerScrollRef = useRef<ScrollView>(null);
+    const bodyScrollRef = useRef<ScrollView>(null);
+    const verticalScrollRef = useRef<ScrollView>(null);
+    const [viewportHeight, setViewportHeight] = useState(600);
+    const activeColRef = useRef<number>(0);
 
     // Calculate dynamic spacing parameters when generating share image for few players/rounds
     const numRounds = rounds.length;
@@ -59,7 +65,6 @@ export const SingleEliminationBracket = ({
     let horizontalPadding = spacing.xl;
 
     if (isShareImage && numRounds > 0) {
-        // Adjust column width dynamically based on total rounds to fit the 1600px canvas perfectly
         if (numRounds >= 7) {
             columnWidth = 180;
             columnGap = 16;
@@ -79,8 +84,6 @@ export const SingleEliminationBracket = ({
                 columnGap = Math.max(32, Math.min(calculatedGap, 200));
             }
         }
-        
-        // Center the content inside the 1600px poster width (leaving 32px padding on each side)
         const totalContentWidth = numRounds * columnWidth + (numRounds - 1) * columnGap;
         horizontalPadding = Math.max(16, (1536 - totalContentWidth) / 2);
     }
@@ -89,79 +92,116 @@ export const SingleEliminationBracket = ({
     let containerPaddingTop = 0;
 
     if (isShareImage) {
-        const viewportHeight = 1450; // Use a conservative safe height for content viewport
+        const viewportHeightVal = 1450;
         if (numMatchesInFirstRound > 1) {
             const totalCardsHeight = numMatchesInFirstRound * matchHeight;
-            const availableVerticalSpace = viewportHeight - totalCardsHeight;
+            const availableVerticalSpace = viewportHeightVal - totalCardsHeight;
             
             if (availableVerticalSpace > 0) {
                 const calculatedGap = availableVerticalSpace / (numMatchesInFirstRound - 1);
-                // Cap the round gap to 2x card height so cards don't look completely disconnected, but still spacious
                 const maxAllowedGap = Math.max(80, matchHeight * 2);
                 finalRoundGap = Math.min(calculatedGap, maxAllowedGap);
                 
                 const totalBracketHeight = numMatchesInFirstRound * matchHeight + (numMatchesInFirstRound - 1) * finalRoundGap;
-                if (viewportHeight > totalBracketHeight) {
-                    containerPaddingTop = (viewportHeight - totalBracketHeight) / 2;
+                if (viewportHeightVal > totalBracketHeight) {
+                    containerPaddingTop = (viewportHeightVal - totalBracketHeight) / 2;
                 }
             }
         } else if (numMatchesInFirstRound === 1) {
-            // If there's only 1 match (e.g. Gran Final), center it completely vertically
-            containerPaddingTop = (viewportHeight - matchHeight) / 2;
+            containerPaddingTop = (viewportHeightVal - matchHeight) / 2;
         }
     }
 
-    // Build display rounds with original index tracking to handle mirroring elegantly
     const displayRounds = isMirror 
         ? rounds.map((r, idx) => ({ ...r, originalIdx: r.originalIdx !== undefined ? r.originalIdx : idx })).reverse()
         : rounds.map((r, idx) => ({ ...r, originalIdx: r.originalIdx !== undefined ? r.originalIdx : idx }));
 
+    const handleBodyHorizontalScroll = (event: any) => {
+        const x = event.nativeEvent.contentOffset.x;
+        headerScrollRef.current?.scrollTo({ x, animated: false });
+        
+        // Auto-center vertically when active column changes
+        const colWidth = columnWidth + columnGap;
+        const colIdx = Math.round(x / colWidth);
+        if (colIdx !== activeColRef.current) {
+            activeColRef.current = colIdx;
+            
+            const round = displayRounds[colIdx];
+            if (round && !isShareImage) {
+                const index = round.originalIdx !== undefined ? round.originalIdx : colIdx;
+                const numMatches = round.matches.length;
+                const initialMarginTop = (Math.pow(2, index) - 1) * (matchHeight + finalRoundGap) / 2;
+                const matchGap = (Math.pow(2, index) - 1) * matchHeight + (Math.pow(2, index)) * finalRoundGap;
+                const colHeight = numMatches * matchHeight + (numMatches - 1) * matchGap;
+                const colCenter = initialMarginTop + colHeight / 2;
+                
+                const targetY = Math.max(0, colCenter - viewportHeight / 2);
+                verticalScrollRef.current?.scrollTo({ y: targetY, animated: true });
+            }
+        }
+    };
+
     return (
-        <Animated.View
-            onTouchStart={(event) => {
-                const distance = distanceBetweenTouches(Array.from(event.nativeEvent.touches || []));
-                if (distance) startDistanceRef.current = distance;
-            }}
-            onTouchMove={(event) => {
-                const touches = Array.from(event.nativeEvent.touches || []);
-                if (touches.length < 2 || !startDistanceRef.current) return;
-                const currentDistance = distanceBetweenTouches(touches);
-                if (!currentDistance) return;
-                const nextScale = Math.max(0.75, Math.min(baseScaleRef.current * (currentDistance / startDistanceRef.current), 2));
-                scale.setValue(nextScale);
-            }}
-            onTouchEnd={(event) => {
-                const touches = Array.from(event.nativeEvent.touches || []);
-                if (touches.length < 2) {
-                    scale.stopAnimation((value: number) => {
-                        baseScaleRef.current = value;
-                    });
-                    startDistanceRef.current = null;
-                }
-            }}
-            style={{ transform: [{ scale }] }}
-        >
-            <ScrollView 
-                horizontal 
-                showsHorizontalScrollIndicator={false} 
-                contentContainerStyle={[
-                    styles.scrollContent,
-                    {
+        <View style={styles.container}>
+            {/* Header Row (Horizontal Scroll, only if not generating share image) */}
+            {!isShareImage && (
+                <View style={[styles.headerContainer, { backgroundColor: colors.surface }]}>
+                    <ScrollView
+                        ref={headerScrollRef}
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        scrollEnabled={false}
+                        pointerEvents="none"
+                        contentContainerStyle={{
+                            paddingHorizontal: horizontalPadding,
+                            gap: columnGap,
+                        }}
+                    >
+                        {displayRounds.map((round) => (
+                            <View key={round.title} style={{ width: columnWidth, alignItems: 'center', justifyContent: 'center' }}>
+                                <Text style={styles.roundTitle}>{round.title.toUpperCase()}</Text>
+                            </View>
+                        ))}
+                    </ScrollView>
+                </View>
+            )}
+
+            {/* Body Container (Vertical Scroll) */}
+            <ScrollView
+                ref={verticalScrollRef}
+                style={{ flex: 1 }}
+                scrollEnabled={!isShareImage}
+                contentContainerStyle={{ 
+                    paddingTop: containerPaddingTop + (isShareImage ? 0 : spacing.md), 
+                    paddingBottom: spacing.xl 
+                }}
+                onLayout={(e) => setViewportHeight(e.nativeEvent.layout.height)}
+            >
+                {/* Horizontal Scroll for columns */}
+                <ScrollView
+                    ref={bodyScrollRef}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    scrollEnabled={!isShareImage}
+                    onScroll={handleBodyHorizontalScroll}
+                    scrollEventThrottle={16}
+                    contentContainerStyle={{
                         paddingHorizontal: horizontalPadding,
                         gap: columnGap,
-                        paddingTop: containerPaddingTop
-                    }
-                ]}
-            >
-                {displayRounds.map((round) => {
-                    const index = round.originalIdx;
-                    const initialMarginTop = (Math.pow(2, index) - 1) * (matchHeight + finalRoundGap) / 2;
-                    const matchGap = (Math.pow(2, index) - 1) * matchHeight + (Math.pow(2, index)) * finalRoundGap;
+                    }}
+                >
+                    {displayRounds.map((round, rIdx) => {
+                        const index = round.originalIdx;
+                        const initialMarginTop = (Math.pow(2, index) - 1) * (matchHeight + finalRoundGap) / 2;
+                        const matchGap = (Math.pow(2, index) - 1) * matchHeight + (Math.pow(2, index)) * finalRoundGap;
 
-                    return (
-                        <View key={round.title} style={[styles.roundColumn, { width: columnWidth }]}>
-                            <Text style={styles.roundTitle}>{round.title.toUpperCase()}</Text>
-                            <View style={{ marginTop: initialMarginTop }}>
+                        return (
+                            <View key={round.title} style={[styles.roundColumn, { width: columnWidth, marginTop: initialMarginTop }]}>
+                                {isShareImage && (
+                                    <Text style={[styles.roundTitle, { marginBottom: spacing.xl, alignSelf: 'center', textAlign: 'center' }]}>
+                                        {round.title.toUpperCase()}
+                                    </Text>
+                                )}
                                 {round.matches.map((match, mIdx) => {
                                     const is3rdPlace = match.round?.includes('3er y 4to');
                                     const nextIs3rdPlace = round.matches[mIdx + 1]?.round?.includes('3er y 4to');
@@ -169,6 +209,11 @@ export const SingleEliminationBracket = ({
                                     const marginBottom = mIdx === round.matches.length - 1 
                                         ? 0 
                                         : (nextIs3rdPlace ? 24 : currentMatchGap);
+
+                                    const isEven = mIdx % 2 === 0;
+                                    const hasSibling = isEven 
+                                        ? mIdx + 1 < round.matches.length
+                                        : mIdx - 1 >= 0;
 
                                     return (
                                         <View 
@@ -183,6 +228,55 @@ export const SingleEliminationBracket = ({
                                                 }
                                             ]}
                                         >
+                                            {/* Left horizontal connector line */}
+                                            {rIdx > 0 && (
+                                                <View 
+                                                    style={{
+                                                        position: 'absolute',
+                                                        left: -columnGap / 2,
+                                                        top: matchHeight / 2 - 1,
+                                                        width: columnGap / 2,
+                                                        height: 2,
+                                                        backgroundColor: colors.border,
+                                                        zIndex: -1,
+                                                    }}
+                                                />
+                                            )}
+
+                                            {/* Right horizontal connector line */}
+                                            {rIdx < displayRounds.length - 1 && (
+                                                <View 
+                                                    style={{
+                                                        position: 'absolute',
+                                                        right: -columnGap / 2,
+                                                        top: matchHeight / 2 - 1,
+                                                        width: columnGap / 2,
+                                                        height: 2,
+                                                        backgroundColor: colors.border,
+                                                        zIndex: -1,
+                                                    }}
+                                                />
+                                            )}
+
+                                            {/* Vertical connector line joining sibling pairs */}
+                                            {rIdx < displayRounds.length - 1 && hasSibling && (
+                                                <View 
+                                                    style={{
+                                                        position: 'absolute',
+                                                        right: -columnGap / 2,
+                                                        width: 2,
+                                                        height: (matchHeight + matchGap) / 2,
+                                                        backgroundColor: colors.border,
+                                                        zIndex: -1,
+                                                        ...(isEven ? {
+                                                            top: matchHeight / 2,
+                                                        } : {
+                                                            bottom: matchHeight / 2,
+                                                        })
+                                                    }}
+                                                />
+                                            )}
+
                                             <MatchCard 
                                                 player1={match.player1}
                                                 player2={match.player2}
@@ -195,38 +289,49 @@ export const SingleEliminationBracket = ({
                                                 canSubmitScore={match.canSubmitScore}
                                                 onSubmitScore={match.onSubmitScore}
                                                 width={columnWidth}
+                                                isAdmin={isAdmin}
+                                                onAdminPlayerPress={onAdminPlayerPress}
+                                                onAdminPlayerLongPress={onAdminPlayerLongPress}
+                                                onAdminMatchPress={onAdminMatchPress}
+                                                onAdminSchedulePress={onAdminSchedulePress}
+                                                rawMatch={match.rawMatch}
                                             />
                                         </View>
                                     );
                                 })}
                             </View>
-                        </View>
-                    );
-                })}
+                        );
+                    })}
+                </ScrollView>
             </ScrollView>
-        </Animated.View>
+        </View>
     );
 };
 
 const getStyles = (colors: any) => StyleSheet.create({
+    container: {
+        flex: 1,
+        width: '100%',
+    },
+    headerContainer: {
+        height: 48,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+        justifyContent: 'center',
+    },
     scrollContent: {
-        paddingHorizontal: spacing.xl,
-        gap: spacing['3xl'],
         paddingBottom: spacing.xl,
     },
     roundColumn: {
-        width: 240,
         alignItems: 'center',
     },
     roundTitle: {
         color: colors.textTertiary,
-        fontSize: 12,
-        fontWeight: '800',
+        fontSize: 11,
+        fontWeight: '900',
         letterSpacing: 1.5,
-        marginBottom: spacing.xl,
     },
     matchWrapper: {
         position: 'relative',
-        width: 240,
     }
 });

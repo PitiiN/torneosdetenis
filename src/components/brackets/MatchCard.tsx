@@ -23,9 +23,34 @@ interface MatchCardProps {
   canSubmitScore?: boolean;
   onSubmitScore?: () => void;
   width?: number;
+  // Admin-specific props
+  isAdmin?: boolean;
+  onAdminPlayerPress?: (matchId: string, slot: number) => void;
+  onAdminPlayerLongPress?: (playerId: string | null) => void;
+  onAdminMatchPress?: (match: any) => void;
+  onAdminSchedulePress?: (match: any) => void;
+  rawMatch?: any;
 }
 
-export const MatchCard = ({ player1, player2, player1Partner, player2Partner, status, scheduledAt, court, onPlayerPress, canSubmitScore, onSubmitScore, width }: MatchCardProps) => {
+export const MatchCard = ({
+  player1,
+  player2,
+  player1Partner,
+  player2Partner,
+  status,
+  scheduledAt,
+  court,
+  onPlayerPress,
+  canSubmitScore,
+  onSubmitScore,
+  width,
+  isAdmin = false,
+  onAdminPlayerPress,
+  onAdminPlayerLongPress,
+  onAdminMatchPress,
+  onAdminSchedulePress,
+  rawMatch,
+}: MatchCardProps) => {
   const { colors } = useTheme();
   const styles = getStyles(colors);
   const isDoubles = !!(player1Partner || player2Partner);
@@ -40,14 +65,14 @@ export const MatchCard = ({ player1, player2, player1Partner, player2Partner, st
     return `${chunks[0][0] || ''}${chunks[1][0] || ''}`.toUpperCase();
   };
 
-  const renderAvatar = (name: string, avatarUrl?: string | null, size = 24) => {
+  const renderAvatar = (name: string, avatarUrl?: string | null, size = 20) => {
     if (avatarUrl) {
       return <Image source={{ uri: avatarUrl, cache: 'force-cache' }} style={{ width: size, height: size, borderRadius: size / 2 }} />;
     }
 
     return (
       <View style={[styles.playerAvatar, { width: size, height: size, borderRadius: size / 2 }]}>
-        <Text style={[styles.playerAvatarInitials, { fontSize: Math.max(8, Math.floor(size * 0.38)) }]}>{getInitials(name)}</Text>
+        <Text style={[styles.playerAvatarInitials, { fontSize: Math.max(7, Math.floor(size * 0.38)) }]}>{getInitials(name)}</Text>
       </View>
     );
   };
@@ -96,40 +121,69 @@ export const MatchCard = ({ player1, player2, player1Partner, player2Partner, st
     });
   };
 
-  const isTappable = (player: Player) =>
-    !!onPlayerPress && player.name && player.name !== 'TBD' && player.name !== 'BYE';
+  const isTappable = (player: Player) => 
+    isAdmin || (!!onPlayerPress && player.name && player.name !== 'TBD' && player.name !== 'BYE');
 
-  const handlePlayerPress = (player: Player) => {
-    if (isTappable(player)) {
-      onPlayerPress!(player.id || 'non_registered');
+  const handlePlayerPress = (player: Player, slot: number) => {
+    if (isAdmin) {
+      onAdminPlayerPress?.(rawMatch?.id, slot);
+    } else if (isTappable(player)) {
+      onPlayerPress?.(player.id || 'non_registered');
     }
+  };
+
+  const handlePlayerLongPress = (player: Player) => {
+    if (isAdmin) {
+      onAdminPlayerLongPress?.(player.id || null);
+    }
+  };
+
+  const renderScoreColumn = (p: Player, op: Player) => {
+    const scoreViews = renderScores(p, op);
+    if (isAdmin) {
+      return (
+        <TouchableOpacity 
+          style={styles.scoresRow} 
+          onPress={() => onAdminMatchPress?.(rawMatch)}
+          activeOpacity={0.6}
+        >
+          {scoreViews}
+        </TouchableOpacity>
+      );
+    }
+    return <View style={styles.scoresRow}>{scoreViews}</View>;
   };
 
   return (
     <View style={[styles.card, width !== undefined && { width }]}>
-      <View style={[styles.playerRow, player1.isWinner && styles.winnerRow, isDoubles && { height: 'auto', paddingVertical: 6 }]}>
+      {/* Player 1 Row */}
+      <View style={[styles.playerRow, player1.isWinner && styles.winnerRow, isDoubles && { height: 'auto', paddingVertical: 4 }]}>
         {isDoubles ? (
           <View style={{ flex: 1, gap: 4 }}>
             <TouchableOpacity
               style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-              onPress={() => handlePlayerPress(player1)}
+              onPress={() => handlePlayerPress(player1, 1)}
+              onLongPress={() => handlePlayerLongPress(player1)}
               disabled={!isTappable(player1)}
               activeOpacity={0.6}
+              delayLongPress={isAdmin ? 1500 : undefined}
             >
-              {renderAvatar(player1.name, player1.avatarUrl, 18)}
-              <Text style={[styles.playerName, !player1.isWinner && player2.isWinner && styles.loserText, isTappable(player1) && styles.tappableName, { fontSize: 12 }]} numberOfLines={1}>
+              {renderAvatar(player1.name, player1.avatarUrl, 16)}
+              <Text style={[styles.playerName, !player1.isWinner && player2.isWinner && styles.loserText, isTappable(player1) && styles.tappableName, { fontSize: 11 }]} numberOfLines={1}>
                 {player1.name}
               </Text>
             </TouchableOpacity>
             {player1Partner && (
               <TouchableOpacity
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-                onPress={() => handlePlayerPress(player1Partner)}
+                onPress={() => handlePlayerPress(player1Partner, 2)}
+                onLongPress={() => handlePlayerLongPress(player1Partner)}
                 disabled={!isTappable(player1Partner)}
                 activeOpacity={0.6}
+                delayLongPress={isAdmin ? 1500 : undefined}
               >
-                {renderAvatar(player1Partner.name, player1Partner.avatarUrl, 18)}
-                <Text style={[styles.playerName, { fontSize: 11, fontWeight: '500' }, !player1.isWinner && player2.isWinner && styles.loserText, isTappable(player1Partner) && styles.tappableName]} numberOfLines={1}>
+                {renderAvatar(player1Partner.name, player1Partner.avatarUrl, 16)}
+                <Text style={[styles.playerName, { fontSize: 10, fontWeight: '500' }, !player1.isWinner && player2.isWinner && styles.loserText, isTappable(player1Partner) && styles.tappableName]} numberOfLines={1}>
                   {player1Partner.name}
                 </Text>
               </TouchableOpacity>
@@ -138,9 +192,11 @@ export const MatchCard = ({ player1, player2, player1Partner, player2Partner, st
         ) : (
           <TouchableOpacity
             style={styles.playerInfo}
-            onPress={() => handlePlayerPress(player1)}
+            onPress={() => handlePlayerPress(player1, 1)}
+            onLongPress={() => handlePlayerLongPress(player1)}
             disabled={!isTappable(player1)}
             activeOpacity={0.6}
+            delayLongPress={isAdmin ? 1500 : undefined}
           >
             {renderAvatar(player1.name, player1.avatarUrl)}
             <Text style={[styles.playerName, !player1.isWinner && player2.isWinner && styles.loserText, isTappable(player1) && styles.tappableName]} numberOfLines={1}>
@@ -148,34 +204,37 @@ export const MatchCard = ({ player1, player2, player1Partner, player2Partner, st
             </Text>
           </TouchableOpacity>
         )}
-        <View style={styles.scoresRow}>
-          {renderScores(player1, player2)}
-        </View>
+        {renderScoreColumn(player1, player2)}
       </View>
       
-      <View style={[styles.playerRow, player2.isWinner && styles.winnerRow, styles.bottomRow, isDoubles && { height: 'auto', paddingVertical: 6 }]}>
+      {/* Player 2 Row */}
+      <View style={[styles.playerRow, player2.isWinner && styles.winnerRow, styles.bottomRow, isDoubles && { height: 'auto', paddingVertical: 4 }]}>
         {isDoubles ? (
           <View style={{ flex: 1, gap: 4 }}>
             <TouchableOpacity
               style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-              onPress={() => handlePlayerPress(player2)}
+              onPress={() => handlePlayerPress(player2, 3)}
+              onLongPress={() => handlePlayerLongPress(player2)}
               disabled={!isTappable(player2)}
               activeOpacity={0.6}
+              delayLongPress={isAdmin ? 1500 : undefined}
             >
-              {renderAvatar(player2.name, player2.avatarUrl, 18)}
-              <Text style={[styles.playerName, !player2.isWinner && player1.isWinner && styles.loserText, isTappable(player2) && styles.tappableName, { fontSize: 12 }]} numberOfLines={1}>
+              {renderAvatar(player2.name, player2.avatarUrl, 16)}
+              <Text style={[styles.playerName, !player2.isWinner && player1.isWinner && styles.loserText, isTappable(player2) && styles.tappableName, { fontSize: 11 }]} numberOfLines={1}>
                 {player2.name}
               </Text>
             </TouchableOpacity>
             {player2Partner && (
               <TouchableOpacity
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-                onPress={() => handlePlayerPress(player2Partner)}
+                onPress={() => handlePlayerPress(player2Partner, 4)}
+                onLongPress={() => handlePlayerLongPress(player2Partner)}
                 disabled={!isTappable(player2Partner)}
                 activeOpacity={0.6}
+                delayLongPress={isAdmin ? 1500 : undefined}
               >
-                {renderAvatar(player2Partner.name, player2Partner.avatarUrl, 18)}
-                <Text style={[styles.playerName, { fontSize: 11, fontWeight: '500' }, !player2.isWinner && player1.isWinner && styles.loserText, isTappable(player2Partner) && styles.tappableName]} numberOfLines={1}>
+                {renderAvatar(player2Partner.name, player2Partner.avatarUrl, 16)}
+                <Text style={[styles.playerName, { fontSize: 10, fontWeight: '500' }, !player2.isWinner && player1.isWinner && styles.loserText, isTappable(player2Partner) && styles.tappableName]} numberOfLines={1}>
                   {player2Partner.name}
                 </Text>
               </TouchableOpacity>
@@ -184,9 +243,11 @@ export const MatchCard = ({ player1, player2, player1Partner, player2Partner, st
         ) : (
           <TouchableOpacity
             style={styles.playerInfo}
-            onPress={() => handlePlayerPress(player2)}
+            onPress={() => handlePlayerPress(player2, 3)}
+            onLongPress={() => handlePlayerLongPress(player2)}
             disabled={!isTappable(player2)}
             activeOpacity={0.6}
+            delayLongPress={isAdmin ? 1500 : undefined}
           >
             {renderAvatar(player2.name, player2.avatarUrl)}
             <Text style={[styles.playerName, !player2.isWinner && player1.isWinner && styles.loserText, isTappable(player2) && styles.tappableName]} numberOfLines={1}>
@@ -194,9 +255,7 @@ export const MatchCard = ({ player1, player2, player1Partner, player2Partner, st
             </Text>
           </TouchableOpacity>
         )}
-        <View style={styles.scoresRow}>
-          {renderScores(player2, player1)}
-        </View>
+        {renderScoreColumn(player2, player1)}
       </View>
       
       {status && (
@@ -210,27 +269,39 @@ export const MatchCard = ({ player1, player2, player1Partner, player2Partner, st
           {scheduledAt && (
              <>
                <View style={styles.scheduleRow}>
-                  <Ionicons name="calendar-outline" size={12} color={colors.textTertiary} />
+                  <Ionicons name="calendar-outline" size={10} color={colors.textTertiary} />
                   <Text style={styles.scheduleText}>{new Date(scheduledAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}</Text>
                </View>
                <View style={styles.scheduleRow}>
-                  <Ionicons name="time-outline" size={12} color={colors.textTertiary} />
+                  <Ionicons name="time-outline" size={10} color={colors.textTertiary} />
                   <Text style={styles.scheduleText}>{new Date(scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
                </View>
              </>
           )}
           {court && (
              <View style={styles.scheduleRow}>
-                <Ionicons name="location-outline" size={12} color={colors.textTertiary} />
+                <Ionicons name="location-outline" size={10} color={colors.textTertiary} />
                 <Text style={styles.scheduleText}>{court}</Text>
              </View>
           )}
         </View>
       )}
 
+      {/* Admin Programar Partido Button */}
+      {isAdmin && player1.id && player2.id && !scheduledAt && (!rawMatch?.score) && (
+        <TouchableOpacity 
+          style={styles.adminScheduleButton} 
+          onPress={() => onAdminSchedulePress?.(rawMatch)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="calendar-outline" size={12} color={colors.textSecondary} />
+          <Text style={styles.adminScheduleText}>Programar partido</Text>
+        </TouchableOpacity>
+      )}
+
       {canSubmitScore && (
         <TouchableOpacity style={styles.submitScoreButton} onPress={onSubmitScore} activeOpacity={0.82}>
-          <Ionicons name="create-outline" size={13} color={colors.primary[500]} />
+          <Ionicons name="create-outline" size={12} color={colors.primary[500]} />
           <Text style={styles.submitScoreText}>Ingresar resultado</Text>
         </TouchableOpacity>
       )}
@@ -256,8 +327,9 @@ const getStyles = (colors: any) => StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: spacing.md,
-    height: 48,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    height: 36,
   },
   winnerRow: {
     backgroundColor: colors.primary[500] + '0D', // 0D is ~5% opacity
@@ -268,7 +340,7 @@ const getStyles = (colors: any) => StyleSheet.create({
   },
   playerName: {
     color: colors.text,
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
     flex: 1,
   },
@@ -283,9 +355,9 @@ const getStyles = (colors: any) => StyleSheet.create({
     minWidth: 0,
   },
   playerAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: colors.primary[500] + '20',
     alignItems: 'center',
     justifyContent: 'center',
@@ -293,7 +365,7 @@ const getStyles = (colors: any) => StyleSheet.create({
   },
   playerAvatarInitials: {
     color: colors.primary[500],
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '800',
   },
   loserText: {
@@ -376,5 +448,20 @@ const getStyles = (colors: any) => StyleSheet.create({
     color: colors.primary[500],
     fontSize: 11,
     fontWeight: '800',
+  },
+  adminScheduleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  adminScheduleText: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

@@ -1433,7 +1433,18 @@ export default function TournamentDetailScreen() {
                 </View>
             </View>
 
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            {(() => {
+                const isBracketTab = ['principal', 'consolacion', 'finales'].includes(activeTab);
+                return (
+                    <ScrollView 
+                        style={{ flex: 1 }}
+                        contentContainerStyle={[
+                            styles.scrollContent, 
+                            isBracketTab && { flexGrow: 1, paddingBottom: 0, paddingVertical: 0 }
+                        ]} 
+                        scrollEnabled={!isBracketTab}
+                        showsVerticalScrollIndicator={false}
+                    >
                 <View style={styles.statusSection}>
                     <View style={[styles.statusBadge, { 
                         backgroundColor: tournament.status === 'open' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255, 255, 255, 0.05)' 
@@ -1649,11 +1660,11 @@ export default function TournamentDetailScreen() {
                             </View>
                         )
                     ) : (
-                        <View style={styles.bracketContainer}>
+                        <View style={[styles.bracketContainer, { flex: 1 }]}>
                             <SingleEliminationBracket 
                                 rounds={rounds} 
                                 onPlayerPress={handlePlayerPress} 
-                                matchHeight={IS_DOUBLES ? 180 : 130}
+                                matchHeight={IS_DOUBLES ? 140 : 100}
                                 roundGap={24}
                             />
                         </View>
@@ -1667,7 +1678,9 @@ export default function TournamentDetailScreen() {
                         </Text>
                     </View>
                 )}
-            </ScrollView>
+                    </ScrollView>
+                );
+            })()}
 
             {shouldShowRequestFooter && (
                 <View

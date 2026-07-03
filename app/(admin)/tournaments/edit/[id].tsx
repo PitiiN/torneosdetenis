@@ -114,6 +114,9 @@ export default function EditTournamentScreen() {
     const [address, setAddress] = useState('');
     const [comuna, setComuna] = useState('');
     const [transferInfo, setTransferInfo] = useState('');
+    const [ballBrand, setBallBrand] = useState('');
+    const [refereePhone, setRefereePhone] = useState('');
+
     const [selectedRegion, setSelectedRegion] = useState('Región Metropolitana de Santiago');
     const [tournamentData, setTournamentData] = useState<any>(null);
     const [rankingPointRows, setRankingPointRows] = useState<RankingPointRow[]>(() => DEFAULT_RANKING_ROWS());
@@ -179,7 +182,7 @@ export default function EditTournamentScreen() {
 
             const { data, error } = await supabase
                 .from('tournaments')
-                .select('id, organization_id, parent_tournament_id, is_tournament_master, name, status, level, modality, surface, max_players, format, set_type, description, start_date, end_date, registration_fee, registration_close_at, registration_close_time, address, comuna, transfer_info')
+                .select('id, organization_id, parent_tournament_id, is_tournament_master, name, status, level, modality, surface, max_players, format, set_type, description, start_date, end_date, registration_fee, registration_close_at, registration_close_time, address, comuna, transfer_info, ball_brand, referee_phone')
                 .eq('id', id)
                 .single();
             if (error) throw error;
@@ -205,6 +208,9 @@ export default function EditTournamentScreen() {
             setRegistrationFee(String(data.registration_fee || '0'));
             setAddress(data.address || '');
             setTransferInfo(data.transfer_info || '');
+            setBallBrand(data.ball_brand || '');
+            setRefereePhone(data.referee_phone || '');
+
             const loadedComuna = data.comuna || '';
             setComuna(loadedComuna);
             if (loadedComuna && loadedComuna !== 'Libre') {
@@ -276,6 +282,9 @@ export default function EditTournamentScreen() {
                 updatePayload.address = address;
                 updatePayload.comuna = comuna;
                 updatePayload.transfer_info = transferInfo;
+                updatePayload.ball_brand = ballBrand;
+                updatePayload.referee_phone = refereePhone;
+
             } else {
                 const rankingPoints: Record<string, number> = {};
                 const usedPlaces = new Set<string>();
@@ -550,6 +559,37 @@ export default function EditTournamentScreen() {
                                 />
                             </View>
 
+                            {/* Pelota del torneo */}
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>
+                                    <Ionicons name="tennisball-outline" size={18} color={colors.primary[500]} />
+                                    {' '}Pelota del torneo (opcional)
+                                </Text>
+                                <TextInput
+                                    style={styles.textInput}
+                                    value={ballBrand}
+                                    onChangeText={setBallBrand}
+                                    placeholder="Ej: Penn Championship, Head Tour, etc."
+                                    placeholderTextColor={colors.textTertiary}
+                                />
+                            </View>
+
+                            {/* Contacto árbitro */}
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>
+                                    <Ionicons name="call-outline" size={18} color={colors.primary[500]} />
+                                    {' '}Contacto árbitro (opcional - solo números)
+                                </Text>
+                                <TextInput
+                                    style={styles.textInput}
+                                    value={refereePhone}
+                                    onChangeText={(text) => setRefereePhone(text.replace(/[^0-9]/g, ''))}
+                                    placeholder="Ej: 56912345678"
+                                    placeholderTextColor={colors.textTertiary}
+                                    keyboardType="number-pad"
+                                />
+                            </View>
+
                             {/* Transfer Info */}
                             <View style={styles.inputGroup}>
                                 <Text style={styles.label}>
@@ -567,6 +607,7 @@ export default function EditTournamentScreen() {
                                     textAlignVertical="top"
                                 />
                             </View>
+
                         </>
                     )}
 

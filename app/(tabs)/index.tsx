@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, useWindowDimensions, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, spacing, borderRadius } from '@/theme';
@@ -7,7 +7,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '@/services/supabase';
 import * as SecureStore from '@/utils/SecureStore';
 import { DateField } from '@/components/DateField';
-import { CHILEAN_COMUNAS } from '@/constants/tournamentOptions';
+import { CHILEAN_COMUNAS, CHILEAN_REGIONS_WITH_COMUNAS, CHILEAN_REGIONS } from '@/constants/tournamentOptions';
 import { Modal } from 'react-native';
 import { resolveStorageAssetUrlWithRetry } from '@/services/storage';
 import { TennisSpinner } from '@/components/TennisSpinner';
@@ -28,6 +28,7 @@ type OpenTournamentRef = {
     organization_id: string;
     comuna?: string | null;
     start_date?: string | null;
+    status?: string | null;
 };
 
 type HomeCachePayload = {
@@ -63,9 +64,26 @@ export default function InicioScreen() {
     const [sourceOrganizations, setSourceOrganizations] = useState<Organization[]>([]);
     const [openTournaments, setOpenTournaments] = useState<OpenTournamentRef[]>([]);
     const [loading, setLoading] = useState(true);
+    const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
     const [selectedComuna, setSelectedComuna] = useState<string | null>(null);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
+    const [showRegionModal, setShowRegionModal] = useState(false);
     const [showComunaModal, setShowComunaModal] = useState(false);
+
+    const getRegionOfComuna = (comunaName: string): string | null => {
+        if (!comunaName || comunaName === 'Libre') return null;
+        const region = CHILEAN_REGIONS_WITH_COMUNAS.find(r =>
+            r.comunas.some(c => c.toLowerCase() === comunaName.toLowerCase())
+        );
+        return region ? region.name : null;
+    };
+
+    const filteredComunas = useMemo(() => {
+        if (!selectedRegion) return [];
+        const regionData = CHILEAN_REGIONS_WITH_COMUNAS.find(r => r.name === selectedRegion);
+        return regionData ? regionData.comunas : [];
+    }, [selectedRegion]);
+
     const lastSeenOrganizationsUpdatedAtRef = useRef<string | null>(null);
     const logoRetryInFlightRef = useRef<Set<string>>(new Set());
 
@@ -81,7 +99,8 @@ export default function InicioScreen() {
 
     useEffect(() => {
         applyFilters();
-    }, [sourceOrganizations, openTournaments, selectedComuna, selectedDate]);
+    }, [sourceOrganizations, openTournaments, selectedRegion, selectedComuna, selectedDate]);
+
 
     const orgCardWidth = useMemo(() => {
         const horizontalPadding = spacing.xl * 2;
@@ -153,22 +172,38 @@ export default function InicioScreen() {
         }, {} as Record<string, OpenTournamentRef[]>);
 
         let filtered = sourceOrganizations;
-        if (selectedComuna || selectedDate) {
+        if (selectedRegion || selectedComuna || selectedDate) {
             filtered = sourceOrganizations.filter((org) => {
-
-
                 const orgTournaments = tournamentsByOrg[org.id] || [];
                 if (orgTournaments.length === 0) return false;
+
                 return orgTournaments.some((tournament) => {
-                    const matchComuna = !selectedComuna || tournament.comuna === selectedComuna;
-                    const matchDate = !selectedDate || String(tournament.start_date || '') >= selectedDate;
-                    return matchComuna && matchDate;
+                    // 1. Region Match
+                    if (selectedRegion) {
+                        const tRegion = getRegionOfComuna(tournament.comuna || '');
+                        if (tRegion !== selectedRegion) return false;
+                    }
+
+                    // 2. Comuna Match
+                    if (selectedComuna) {
+                        if (tournament.comuna !== selectedComuna) return false;
+                    }
+
+                    // 3. Date & Active Status Match (Only if Date filter is selected)
+                    if (selectedDate) {
+                        const isDocActiveOrInProcess = tournament.status === 'open' || tournament.status === 'in_progress';
+                        const matchDate = tournament.start_date && tournament.start_date >= selectedDate;
+                        if (!isDocActiveOrInProcess || !matchDate) return false;
+                    }
+
+                    return true;
                 });
             });
         }
 
         setOrganizations(filtered);
     };
+
 
     const retryOrganizationLogo = useCallback(async (organization: Organization) => {
         const organizationId = String(organization?.id || '').trim();
@@ -253,7 +288,7 @@ export default function InicioScreen() {
                 const { data: tournamentData, error: tournamentsError } = await supabase
                     .from('tournaments')
                     .select('organization_id, comuna, start_date, status')
-                    .eq('status', 'open');
+                    .in('status', ['open', 'in_progress', 'finished']);
 
                 const baseOrganizations = ((orgData || []) as Organization[]).map((organization) => {
                     const rawLogoUrl = String(organization.logo_url || '').trim();
@@ -345,10 +380,44 @@ export default function InicioScreen() {
 
                 {/* Filter Section */}
                 <View style={styles.filterSection}>
-                    <View style={styles.filterRow}>
+                    <ScrollView 
+                        horizontal 
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.filterRow}
+                    >
+                        {/* Region Chip */}
                         <TouchableOpacity 
-                            style={[styles.filterChip, selectedComuna && styles.activeFilterChip]} 
-                            onPress={() => setShowComunaModal(true)}
+                            style={[styles.filterChip, selectedRegion && styles.activeFilterChip]} 
+                            onPress={() => setShowRegionModal(true)}
+                        >
+                            <Ionicons name="map-outline" size={16} color={selectedRegion ? '#fff' : colors.textTertiary} />
+                            <Text style={[styles.filterChipText, selectedRegion && styles.activeFilterChipText]}>
+                                {selectedRegion ? (selectedRegion.length > 20 ? selectedRegion.substring(0, 17) + '...' : selectedRegion) : 'Región'}
+                            </Text>
+                            {selectedRegion && (
+                                <TouchableOpacity onPress={() => {
+                                    setSelectedRegion(null);
+                                    setSelectedComuna(null);
+                                }}>
+                                    <Ionicons name="close-circle" size={14} color="#fff" style={{ marginLeft: 4 }} />
+                                </TouchableOpacity>
+                            )}
+                        </TouchableOpacity>
+
+                        {/* Comuna Chip */}
+                        <TouchableOpacity 
+                            style={[
+                                styles.filterChip, 
+                                selectedComuna && styles.activeFilterChip,
+                                !selectedRegion && styles.disabledFilterChip
+                            ]} 
+                            onPress={() => {
+                                if (selectedRegion) {
+                                    setShowComunaModal(true);
+                                } else {
+                                    Alert.alert('Información', 'Por favor selecciona una Región primero.');
+                                }
+                            }}
                         >
                             <Ionicons name="location-outline" size={16} color={selectedComuna ? '#fff' : colors.textTertiary} />
                             <Text style={[styles.filterChipText, selectedComuna && styles.activeFilterChipText]}>
@@ -361,6 +430,7 @@ export default function InicioScreen() {
                             )}
                         </TouchableOpacity>
 
+                        {/* Date Chip */}
                         <TouchableOpacity 
                             style={[styles.filterChip, selectedDate && styles.activeFilterChip]}
                             onPress={() => {}} // DateField handles its own modal
@@ -379,8 +449,9 @@ export default function InicioScreen() {
                                 </TouchableOpacity>
                             )}
                         </TouchableOpacity>
-                    </View>
+                    </ScrollView>
                 </View>
+
 
                 {/* Organizations Vitrine */}
                 <View style={styles.sectionHeader}>
@@ -437,13 +508,49 @@ export default function InicioScreen() {
                 )}
             </ScrollView>
 
+            {/* Selection Modal for Región */}
+            <Modal visible={showRegionModal} transparent animationType="fade">
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Seleccionar Región</Text>
+                        <ScrollView style={{ maxHeight: 400 }}>
+                            {CHILEAN_REGIONS.map((region) => (
+                                <TouchableOpacity 
+                                    key={region} 
+                                    style={styles.modalOption} 
+                                    onPress={() => {
+                                        setSelectedRegion(region);
+                                        // Reset Comuna if it doesn't belong to the new region
+                                        if (selectedComuna) {
+                                            const belongs = CHILEAN_REGIONS_WITH_COMUNAS.find(r => r.name === region)?.comunas.includes(selectedComuna);
+                                            if (!belongs) {
+                                                setSelectedComuna(null);
+                                            }
+                                        }
+                                        setShowRegionModal(false);
+                                    }}
+                                >
+                                    <Text style={styles.modalOptionText}>{region}</Text>
+                                    {selectedRegion === region && (
+                                        <Ionicons name="checkmark" size={20} color={colors.primary[500]} />
+                                    )}
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                        <TouchableOpacity style={styles.modalClose} onPress={() => setShowRegionModal(false)}>
+                            <Text style={styles.modalCloseText}>Cancelar</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
             {/* Selection Modal for Comuna */}
             <Modal visible={showComunaModal} transparent animationType="fade">
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <Text style={styles.modalTitle}>Seleccionar Comuna</Text>
                         <ScrollView style={{ maxHeight: 400 }}>
-                            {CHILEAN_COMUNAS.map((comuna) => (
+                            {filteredComunas.map((comuna) => (
                                 <TouchableOpacity 
                                     key={comuna} 
                                     style={styles.modalOption} 
@@ -550,6 +657,11 @@ const getStyles = (colors: any) => StyleSheet.create({
         backgroundColor: colors.primary[500],
         borderColor: colors.primary[500],
     },
+    disabledFilterChip: {
+        opacity: 0.45,
+        backgroundColor: colors.surfaceSecondary,
+    },
+
     filterChipText: {
         fontSize: 13,
         color: colors.textSecondary,

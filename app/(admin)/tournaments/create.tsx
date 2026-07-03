@@ -66,6 +66,9 @@ export default function CreateTournamentScreen() {
   const [surface, setSurface] = useState(TOURNAMENT_SURFACES[0]);
   const [status, setStatus] = useState(STATUS_OPTIONS[0]);
   const [transferInfo, setTransferInfo] = useState('');
+  const [ballBrand, setBallBrand] = useState('');
+  const [refereePhone, setRefereePhone] = useState('');
+
 
   const [showRegionModal, setShowRegionModal] = useState(false);
   const [showComunaModal, setShowComunaModal] = useState(false);
@@ -169,13 +172,19 @@ export default function CreateTournamentScreen() {
       }
       await clearCachedValue('home:organizations:v1');
 
-      // Guardar datos de transferencia si se proporcionaron
-      if (transferInfo.trim()) {
+      // Guardar datos adicionales si se proporcionaron
+      const extraUpdates: any = {};
+      if (transferInfo.trim()) extraUpdates.transfer_info = transferInfo.trim();
+      if (ballBrand.trim()) extraUpdates.ball_brand = ballBrand.trim();
+      if (refereePhone.trim()) extraUpdates.referee_phone = refereePhone.trim();
+
+      if (Object.keys(extraUpdates).length > 0) {
         await supabase
           .from('tournaments')
-          .update({ transfer_info: transferInfo.trim() })
+          .update(extraUpdates)
           .eq('id', createdTournamentId);
       }
+
 
       await SecureStore.setItemAsync('selected_org_id', activeOrgId);
       Alert.alert('Éxito', 'Torneo completo creado. Ahora agrega los campeonatos por categoría y modalidad.');
@@ -300,6 +309,29 @@ export default function CreateTournamentScreen() {
               <Text style={styles.dropdownText}>{status}</Text>
               <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
             </TouchableOpacity>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Pelota del torneo (opcional)</Text>
+            <TextInput
+              style={styles.textInput}
+              value={ballBrand}
+              onChangeText={setBallBrand}
+              placeholder="Ej: Penn Championship, Head Tour, etc."
+              placeholderTextColor={colors.textTertiary}
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Contacto árbitro (opcional - solo números)</Text>
+            <TextInput
+              style={styles.textInput}
+              value={refereePhone}
+              onChangeText={(text) => setRefereePhone(text.replace(/[^0-9]/g, ''))}
+              placeholder="Ej: 56912345678"
+              placeholderTextColor={colors.textTertiary}
+              keyboardType="number-pad"
+            />
           </View>
 
           <View style={styles.inputGroup}>

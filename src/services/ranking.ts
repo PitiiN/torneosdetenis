@@ -434,9 +434,19 @@ export const buildRankingRows = (
     });
 
     tournamentMatches.forEach((match) => {
+      // Exclude BYE matches from stats
+      const isBye = [
+        match?.player_a_id,
+        match?.player_a2_id,
+        match?.player_b_id,
+        match?.player_b2_id
+      ].some((id) => String(id || '').toUpperCase() === 'BYE');
+      if (isBye) return;
+
       const winnerSide = resolveMatchWinnerSide(match, tournamentMatches);
       const scoreText = getScoreText(match.score);
       const sets = scoreText.split(/\s*,\s*/).map((set) => set.trim()).filter(Boolean);
+
 
       (['A', 'B'] as const).forEach((side) => {
         const sidePlayerIds = side === 'A'
