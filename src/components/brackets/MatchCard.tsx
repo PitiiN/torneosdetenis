@@ -95,7 +95,8 @@ export const MatchCard = ({
 
     return player.scores.map((s, idx) => {
       const currentVal = parseSetScore(s);
-      const otherVal = parseSetScore(otherPlayer.scores?.[idx]);
+      const otherStr = otherPlayer.scores?.[idx];
+      const otherVal = parseSetScore(otherStr);
 
       const isSetWinner = currentVal > otherVal;
       const isSetLoser = currentVal < otherVal;
@@ -111,11 +112,56 @@ export const MatchCard = ({
         textStyle = [styles.scoreText, styles.scoreTextLoser];
       }
 
+      const strCurrent = String(s ?? '').trim();
+      const strOther = String(otherStr ?? '').trim();
+      
+      let displayScore = strCurrent || '-';
+      let tbPoints: number | string | null = null;
+
+      const tbMatchBoth = strCurrent.match(/\((\d+)[/-](\d+)\)/) || strOther.match(/\((\d+)[/-](\d+)\)/);
+      
+      if (tbMatchBoth) {
+        const p1 = parseInt(tbMatchBoth[1], 10);
+        const p2 = parseInt(tbMatchBoth[2], 10);
+        
+        if (currentVal > otherVal) {
+          tbPoints = Math.max(p1, p2);
+        } else if (currentVal < otherVal) {
+          tbPoints = Math.min(p1, p2);
+        } else {
+          // Tied main score
+          const ownTb = strCurrent.match(/\((\d+)[/-](\d+)\)/);
+          if (ownTb) {
+            tbPoints = `${ownTb[1]}/${ownTb[2]}`;
+          } else {
+            const ownSingle = strCurrent.match(/\((\d+)\)/);
+            if (ownSingle) tbPoints = parseInt(ownSingle[1], 10);
+          }
+        }
+        
+        const mainMatch = strCurrent.match(/^(\d+)/);
+        if (mainMatch) displayScore = mainMatch[1];
+      } else {
+        const ownSingle = strCurrent.match(/\((\d+)\)/);
+        if (ownSingle) {
+          tbPoints = parseInt(ownSingle[1], 10);
+          const mainMatch = strCurrent.match(/^(\d+)/);
+          if (mainMatch) displayScore = mainMatch[1];
+        }
+      }
+
       return (
         <View key={idx} style={boxStyle}>
-          <Text style={textStyle}>
-            {s ?? '-'}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center' }}>
+            <Text style={[textStyle, { textDecorationLine: 'none' }]}>
+              {displayScore}
+            </Text>
+            {tbPoints !== null && (
+              <Text style={[textStyle, { fontSize: 8, lineHeight: 10, marginTop: -2, marginLeft: 1, textDecorationLine: 'none', fontWeight: '800' }]}>
+                {tbPoints}
+              </Text>
+            )}
+          </View>
         </View>
       );
     });
@@ -152,6 +198,29 @@ export const MatchCard = ({
       );
     }
     return <View style={styles.scoresRow}>{scoreViews}</View>;
+  };
+
+  const getStatusTranslation = (statusStr: string) => {
+    switch (statusStr.toLowerCase()) {
+      case 'scheduled':
+      case 'pendiente':
+      case 'programado':
+        return 'PROGRAMADO';
+      case 'live':
+      case 'en vivo':
+        return 'EN VIVO';
+      case 'finished':
+      case 'finalizado':
+        return 'FINALIZADO';
+      case 'open':
+      case 'abierto':
+        return 'ABIERTO';
+      case 'in_progress':
+      case 'en proceso':
+        return 'EN PROCESO';
+      default:
+        return statusStr.toUpperCase();
+    }
   };
 
   return (
@@ -260,35 +329,63 @@ export const MatchCard = ({
       
       {status && (
         <View style={styles.statusBadge}>
-          <Text style={styles.statusText}>{status.toUpperCase()}</Text>
+          <Text style={styles.statusText}>{getStatusTranslation(status)}</Text>
         </View>
       )}
 
       {(scheduledAt || court) && (
-        <View style={styles.schedulingInfo}>
-          {scheduledAt && (
-             <>
+        isAdmin ? (
+          <TouchableOpacity 
+            style={styles.schedulingInfo} 
+            onPress={() => onAdminSchedulePress?.(rawMatch)}
+            activeOpacity={0.7}
+          >
+            {scheduledAt && (
+               <>
+                 <View style={styles.scheduleRow}>
+                    <Ionicons name="calendar-outline" size={10} color={colors.textTertiary} />
+                    <Text style={styles.scheduleText}>{new Date(scheduledAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}</Text>
+                 </View>
+                 <View style={styles.scheduleRow}>
+                    <Ionicons name="time-outline" size={10} color={colors.textTertiary} />
+                    <Text style={styles.scheduleText}>{new Date(scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                 </View>
+               </>
+            )}
+            {court && (
                <View style={styles.scheduleRow}>
-                  <Ionicons name="calendar-outline" size={10} color={colors.textTertiary} />
-                  <Text style={styles.scheduleText}>{new Date(scheduledAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}</Text>
+                  <Ionicons name="location-outline" size={10} color={colors.textTertiary} />
+                  <Text style={styles.scheduleText}>{court}</Text>
                </View>
+            )}
+            <Ionicons name="pencil-outline" size={10} color={colors.textTertiary} style={{ marginLeft: 4 }} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.schedulingInfo}>
+            {scheduledAt && (
+               <>
+                 <View style={styles.scheduleRow}>
+                    <Ionicons name="calendar-outline" size={10} color={colors.textTertiary} />
+                    <Text style={styles.scheduleText}>{new Date(scheduledAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}</Text>
+                 </View>
+                 <View style={styles.scheduleRow}>
+                    <Ionicons name="time-outline" size={10} color={colors.textTertiary} />
+                    <Text style={styles.scheduleText}>{new Date(scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                 </View>
+               </>
+            )}
+            {court && (
                <View style={styles.scheduleRow}>
-                  <Ionicons name="time-outline" size={10} color={colors.textTertiary} />
-                  <Text style={styles.scheduleText}>{new Date(scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                  <Ionicons name="location-outline" size={10} color={colors.textTertiary} />
+                  <Text style={styles.scheduleText}>{court}</Text>
                </View>
-             </>
-          )}
-          {court && (
-             <View style={styles.scheduleRow}>
-                <Ionicons name="location-outline" size={10} color={colors.textTertiary} />
-                <Text style={styles.scheduleText}>{court}</Text>
-             </View>
-          )}
-        </View>
+            )}
+          </View>
+        )
       )}
 
       {/* Admin Programar Partido Button */}
-      {isAdmin && player1.id && player2.id && !scheduledAt && (!rawMatch?.score) && (
+      {isAdmin && !scheduledAt && (!rawMatch?.score) && (
         <TouchableOpacity 
           style={styles.adminScheduleButton} 
           onPress={() => onAdminSchedulePress?.(rawMatch)}
@@ -345,7 +442,7 @@ const getStyles = (colors: any) => StyleSheet.create({
     flex: 1,
   },
   tappableName: {
-    textDecorationLine: 'underline',
+    // textDecorationLine: 'underline',
   },
   playerInfo: {
     flexDirection: 'row',

@@ -808,14 +808,20 @@ export default function AdminTournamentDetailScreen() {
             return { w1: null, w2: null, side: null };
         }
 
+        const parseGames = (str: string): number => {
+            const trimmed = String(str || '').trim();
+            const matchResult = trimmed.match(/^(\d+)/);
+            return matchResult ? parseInt(matchResult[1], 10) : NaN;
+        };
+
         const sets = scoreText.split(/\s*,\s*/).filter(Boolean);
         let playerAWins = 0;
         let playerBWins = 0;
 
         sets.forEach(setScore => {
             const [aRaw, bRaw] = setScore.split('-');
-            const a = Number(aRaw);
-            const b = Number(bRaw);
+            const a = parseGames(aRaw);
+            const b = parseGames(bRaw);
             if (Number.isNaN(a) || Number.isNaN(b)) return;
             if (a > b) playerAWins += 1;
             if (b > a) playerBWins += 1;

@@ -364,12 +364,26 @@ export default function TournamentMasterDetailScreen() {
     return 'Por definir';
   };
 
+  const [activeSlide, setActiveSlide] = useState(0);
+
+  const getLocalDateString = (isoString: string) => {
+    const d = new Date(isoString);
+    if (Number.isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const getLocalTimeString = (isoString: string) => {
+    const d = new Date(isoString);
+    if (Number.isNaN(d.getTime())) return '';
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+
   const uniqueDates = useMemo(() => {
     const dates = new Set<string>();
     matches.forEach(m => {
       if (m.scheduled_at) {
-        const datePart = m.scheduled_at.split('T')[0];
-        dates.add(datePart);
+        const localDate = getLocalDateString(m.scheduled_at);
+        if (localDate) dates.add(localDate);
       }
     });
     return Array.from(dates).sort();
@@ -385,9 +399,12 @@ export default function TournamentMasterDetailScreen() {
     if (!selectedDate) return [];
     const hours = new Set<string>();
     matches.forEach(m => {
-      if (m.scheduled_at && m.scheduled_at.startsWith(selectedDate)) {
-        const timePart = m.scheduled_at.split('T')[1]?.slice(0, 5); // "HH:MM"
-        if (timePart) hours.add(timePart);
+      if (m.scheduled_at) {
+        const localDate = getLocalDateString(m.scheduled_at);
+        if (localDate === selectedDate) {
+          const localTime = getLocalTimeString(m.scheduled_at);
+          if (localTime) hours.add(localTime);
+        }
       }
     });
     return Array.from(hours).sort();
@@ -397,8 +414,11 @@ export default function TournamentMasterDetailScreen() {
     if (!selectedDate) return [];
     const courts = new Set<string>();
     matches.forEach(m => {
-      if (m.scheduled_at && m.scheduled_at.startsWith(selectedDate) && m.court) {
-        courts.add(m.court.trim());
+      if (m.scheduled_at && m.court) {
+        const localDate = getLocalDateString(m.scheduled_at);
+        if (localDate === selectedDate) {
+          courts.add(m.court.trim());
+        }
       }
     });
     return Array.from(courts).sort((a, b) => {
@@ -575,12 +595,17 @@ export default function TournamentMasterDetailScreen() {
       <View style={[styles.header, { paddingTop: Math.max(insets.top, spacing.md) }]}>
         <View style={styles.headerRow}>
           <TouchableOpacity
-            onPress={() =>
-              router.push({
-                pathname: '/(tabs)/tournaments',
-                params: { orgId: masterTournament.organization_id },
-              })
-            }
+            onPress={() => {
+              if (activeSlide === 1) {
+                horizontalScrollRef.current?.scrollTo({ x: 0, animated: true });
+                setActiveSlide(0);
+              } else {
+                router.push({
+                  pathname: '/(tabs)/tournaments',
+                  params: { orgId: masterTournament.organization_id },
+                });
+              }
+            }}
             style={styles.iconButton}
           >
             <Ionicons name="arrow-back" size={22} color={colors.text} />
@@ -595,6 +620,7 @@ export default function TournamentMasterDetailScreen() {
       <ScrollView
         horizontal
         pagingEnabled
+        scrollEnabled={false}
         showsHorizontalScrollIndicator={false}
         ref={horizontalScrollRef}
         style={{ flex: 1 }}
@@ -657,17 +683,18 @@ export default function TournamentMasterDetailScreen() {
               }}
             >
               <Ionicons name="logo-whatsapp" size={16} color="#fff" />
-              <Text style={styles.refereeButtonText} numberOfLines={1}>Contacto Árbitro</Text>
+              <Text style={[styles.refereeButtonText, { textAlign: 'center', flexShrink: 1 }]} numberOfLines={2}>Contacto Árbitro</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
             style={styles.courtScheduleButton}
             onPress={() => {
               horizontalScrollRef.current?.scrollTo({ x: screenWidth, animated: true });
+              setActiveSlide(1);
             }}
           >
             <Ionicons name="calendar-outline" size={16} color="#fff" />
-            <Text style={styles.courtScheduleButtonText} numberOfLines={1}>Programación por Cancha</Text>
+            <Text style={[styles.courtScheduleButtonText, { textAlign: 'center', flexShrink: 1 }]} numberOfLines={2}>Programación por Cancha</Text>
           </TouchableOpacity>
         </View>
 
@@ -842,7 +869,10 @@ export default function TournamentMasterDetailScreen() {
 
                 {(() => {
                   if (!selectedDate) return null;
-                  const matchesForDate = matches.filter(m => m.scheduled_at && m.scheduled_at.startsWith(selectedDate));
+                  const matchesForDate = matches.filter(m => {
+                    if (!m.scheduled_at) return false;
+                    return getLocalDateString(m.scheduled_at) === selectedDate;
+                  });
                   
                   if (uniqueCourts.length === 0) {
                     return (
@@ -854,21 +884,23 @@ export default function TournamentMasterDetailScreen() {
                     );
                   }
 
+                  const courtColumnWidth = (screenWidth - 40) / 3;
+
                   return (
                     <ScrollView horizontal showsHorizontalScrollIndicator={true} contentContainerStyle={{ paddingHorizontal: spacing.md, paddingVertical: spacing.md }}>
                       {uniqueCourts.map(courtName => {
                         return (
-                          <View key={courtName} style={styles.courtColumn}>
+                          <View key={courtName} style={[styles.courtColumn, { width: courtColumnWidth, marginRight: 6 }]}>
                             {/* Court Column Header */}
-                            <View style={styles.courtColumnHeader}>
-                              <Text style={styles.courtColumnHeaderLabel}>{courtName.toUpperCase()}</Text>
+                            <View style={[styles.courtColumnHeader, { paddingVertical: spacing.xs, paddingHorizontal: spacing.xs, marginBottom: 8 }]}>
+                              <Text style={[styles.courtColumnHeaderLabel, { fontSize: 11 }]} numberOfLines={1}>{courtName.toUpperCase()}</Text>
                             </View>
 
                             {/* Rows of match cards corresponding to unique hours */}
                             {uniqueHours.map(hourStr => {
                               const cellMatches = matchesForDate.filter(m => {
                                 if (!m.court || m.court.trim() !== courtName) return false;
-                                const mHour = m.scheduled_at.split('T')[1]?.slice(0, 5);
+                                const mHour = getLocalTimeString(m.scheduled_at);
                                 return mHour === hourStr;
                               });
 
@@ -886,20 +918,20 @@ export default function TournamentMasterDetailScreen() {
                                       return (
                                         <View
                                           key={m.id}
-                                          style={styles.matchScheduleCard}
+                                          style={[styles.matchScheduleCard, { padding: 6, borderWidth: 1 }]}
                                         >
-                                          <Text style={styles.matchScheduleTime}>{hourStr}</Text>
-                                          <Text style={styles.matchScheduleCategory} numberOfLines={1}>
-                                            {String(champ?.name || '').toUpperCase()}
+                                          <Text style={[styles.matchScheduleTime, { fontSize: 12 }]}>{hourStr}</Text>
+                                          <Text style={[styles.matchScheduleCategory, { fontSize: 8, textAlign: 'center' }]} numberOfLines={2}>
+                                            {String(champ?.name || '').replace(/fecha\s*\d+/i, '').replace(/\s+f\s*\d+/i, '').trim().toUpperCase()}
                                           </Text>
                                           
                                           <View style={styles.matchSchedulePlayersContainer}>
-                                            <Text style={styles.matchSchedulePlayerText} numberOfLines={1}>
-                                              {isDoubles ? `${p1Name} / ${p2Name}` : p1Name}
+                                            <Text style={[styles.matchSchedulePlayerText, { fontSize: 9 }]} numberOfLines={2}>
+                                              {isDoubles ? `${p1Name}\n/\n${p2Name}` : p1Name}
                                             </Text>
-                                            <Text style={styles.matchScheduleVs}>VS</Text>
-                                            <Text style={styles.matchSchedulePlayerText} numberOfLines={1}>
-                                              {isDoubles ? `${p3Name} / ${p4Name}` : p3Name}
+                                            <Text style={[styles.matchScheduleVs, { marginVertical: 1, fontSize: 8 }]}>VS</Text>
+                                            <Text style={[styles.matchSchedulePlayerText, { fontSize: 9 }]} numberOfLines={2}>
+                                              {isDoubles ? `${p3Name}\n/\n${p4Name}` : p3Name}
                                             </Text>
                                           </View>
                                         </View>
@@ -1352,9 +1384,9 @@ const getStyles = (colors: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.sm,
+    gap: 4,
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: 8,
     borderRadius: borderRadius.lg,
     marginTop: -spacing.md,
     marginBottom: spacing.md,
@@ -1362,30 +1394,30 @@ const getStyles = (colors: any) => StyleSheet.create({
   },
   refereeButtonText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
   },
   buttonsRow: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
     marginTop: -spacing.md,
     marginBottom: spacing.md,
-    marginHorizontal: spacing.xl,
+    marginHorizontal: spacing.md,
   },
   courtScheduleButton: {
     backgroundColor: '#0A1A3A',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.sm,
+    gap: 4,
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: 8,
     borderRadius: borderRadius.lg,
-    flex: 1,
+    flex: 1.3,
   },
   courtScheduleButtonText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
   },
   schedulerHeader: {

@@ -403,6 +403,96 @@ export const createEmptyRankingAccumulator = (): RankingAccumulator => ({
   gamesWon: 0,
 });
 
+const parseManualAssignments = (description?: string | null) => {
+  if (!description) return { rrSlots: {}, matchSlots: {} };
+  const match = description.match(/\[MANUAL_ASSIGNMENTS:([^\]]+)\]/);
+  if (!match?.[1]) return { rrSlots: {}, matchSlots: {} };
+
+  try {
+    return JSON.parse(decodeURIComponent(match[1]));
+  } catch {
+    return { rrSlots: {}, matchSlots: {} };
+  }
+};
+
+const getRoundRobinPairings = (numPlayers: number): [number, number][] => {
+  const pairings: [number, number][] = [];
+  const players = Array.from({ length: numPlayers }, (_, i) => i);
+  if (numPlayers % 2 !== 0) {
+    players.push(-1); // Bye placeholder
+  }
+  const n = players.length;
+  const rounds = n - 1;
+  const matchesPerRound = n / 2;
+
+  for (let r = 0; r < rounds; r++) {
+    for (let m = 0; m < matchesPerRound; m++) {
+      const p1 = players[m];
+      const p2 = players[n - 1 - m];
+      if (p1 !== -1 && p2 !== -1) {
+        pairings.push([p1, p2]);
+      }
+    }
+    players.splice(1, 0, players.pop()!);
+  }
+  return pairings;
+};
+
+export const isByeMatch = (match: any, tournament: any) => {
+  const hasByeId = [
+    match?.player_a_id,
+    match?.player_a2_id,
+    match?.player_b_id,
+    match?.player_b2_id
+  ].some((id) => String(id || '').toUpperCase() === 'BYE');
+  if (hasByeId) return true;
+
+  if (tournament?.description) {
+    const manual = parseManualAssignments(tournament.description);
+    if (!match.group_name) {
+      const slots = manual.matchSlots?.[match.id] || {};
+      const keysToCheck = ['p1', 'p2', 'p3', 'p4', 'player_a', 'player_b'];
+      const hasByeName = keysToCheck.some((key) => {
+        const name = slots[key]?.name || '';
+        return String(name).trim().toUpperCase() === 'BYE';
+      });
+      if (hasByeName) return true;
+    } else {
+      const grp = manual.rrSlots?.[match.group_name] || {};
+      let maxSlotIdx = -1;
+      let hasByeInGroup = false;
+      let byeSlotIndex = -1;
+      
+      Object.entries(grp).forEach(([key, val]: [string, any]) => {
+        if (key.startsWith('slot_')) {
+          const parts = key.split('_');
+          const slotIdx = parseInt(parts[1], 10);
+          if (!isNaN(slotIdx)) {
+            if (slotIdx > maxSlotIdx) maxSlotIdx = slotIdx;
+            if (val?.name?.toUpperCase() === 'BYE') {
+              hasByeInGroup = true;
+              byeSlotIndex = slotIdx;
+            }
+          }
+        }
+      });
+      
+      const slotCount = maxSlotIdx + 1;
+      if (hasByeInGroup && slotCount > 0 && match.match_order) {
+        const pairings = getRoundRobinPairings(slotCount);
+        const pairing = pairings[match.match_order - 1];
+        if (pairing) {
+          if (pairing[0] === byeSlotIndex || pairing[1] === byeSlotIndex) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+};
+
 export const buildRankingRows = (
   tournaments: any[],
   matchesByTournament: Record<string, any[]>,
@@ -435,13 +525,7 @@ export const buildRankingRows = (
 
     tournamentMatches.forEach((match) => {
       // Exclude BYE matches from stats
-      const isBye = [
-        match?.player_a_id,
-        match?.player_a2_id,
-        match?.player_b_id,
-        match?.player_b2_id
-      ].some((id) => String(id || '').toUpperCase() === 'BYE');
-      if (isBye) return;
+      if (isByeMatch(match, tournament)) return;
 
       const winnerSide = resolveMatchWinnerSide(match, tournamentMatches);
       const scoreText = getScoreText(match.score);

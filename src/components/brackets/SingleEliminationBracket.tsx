@@ -1,5 +1,5 @@
-import React, { useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useRef, useState, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, useWindowDimensions } from 'react-native';
 import { useTheme, spacing } from '@/theme';
 import { MatchCard } from './MatchCard';
 
@@ -49,6 +49,7 @@ export const SingleEliminationBracket = ({
 }: SingleEliminationProps) => {
     const { colors } = useTheme();
     const styles = getStyles(colors);
+    const { width: screenWidth } = useWindowDimensions();
 
     const headerScrollRef = useRef<ScrollView>(null);
     const bodyScrollRef = useRef<ScrollView>(null);
@@ -112,33 +113,22 @@ export const SingleEliminationBracket = ({
         }
     }
 
+    const totalHeight = numMatchesInFirstRound * matchHeight + numMatchesInFirstRound * finalRoundGap;
+
     const displayRounds = isMirror 
         ? rounds.map((r, idx) => ({ ...r, originalIdx: r.originalIdx !== undefined ? r.originalIdx : idx })).reverse()
         : rounds.map((r, idx) => ({ ...r, originalIdx: r.originalIdx !== undefined ? r.originalIdx : idx }));
 
+    const snapOffsets = useMemo(() => {
+        return displayRounds.map((_, i) => {
+            const centerOfCol = horizontalPadding + i * (columnWidth + columnGap) + columnWidth / 2;
+            return Math.max(0, centerOfCol - screenWidth / 2);
+        });
+    }, [displayRounds, horizontalPadding, columnWidth, columnGap, screenWidth]);
+
     const handleBodyHorizontalScroll = (event: any) => {
         const x = event.nativeEvent.contentOffset.x;
         headerScrollRef.current?.scrollTo({ x, animated: false });
-        
-        // Auto-center vertically when active column changes
-        const colWidth = columnWidth + columnGap;
-        const colIdx = Math.round(x / colWidth);
-        if (colIdx !== activeColRef.current) {
-            activeColRef.current = colIdx;
-            
-            const round = displayRounds[colIdx];
-            if (round && !isShareImage) {
-                const index = round.originalIdx !== undefined ? round.originalIdx : colIdx;
-                const numMatches = round.matches.length;
-                const initialMarginTop = (Math.pow(2, index) - 1) * (matchHeight + finalRoundGap) / 2;
-                const matchGap = (Math.pow(2, index) - 1) * matchHeight + (Math.pow(2, index)) * finalRoundGap;
-                const colHeight = numMatches * matchHeight + (numMatches - 1) * matchGap;
-                const colCenter = initialMarginTop + colHeight / 2;
-                
-                const targetY = Math.max(0, colCenter - viewportHeight / 2);
-                verticalScrollRef.current?.scrollTo({ y: targetY, animated: true });
-            }
-        }
     };
 
     return (
@@ -172,10 +162,9 @@ export const SingleEliminationBracket = ({
                 style={{ flex: 1 }}
                 scrollEnabled={!isShareImage}
                 contentContainerStyle={{ 
-                    paddingTop: containerPaddingTop + (isShareImage ? 0 : spacing.md), 
-                    paddingBottom: spacing.xl 
+                    paddingTop: containerPaddingTop + (isShareImage ? 0 : spacing.xl), 
+                    paddingBottom: spacing.xl,
                 }}
-                onLayout={(e) => setViewportHeight(e.nativeEvent.layout.height)}
             >
                 {/* Horizontal Scroll for columns */}
                 <ScrollView
@@ -185,31 +174,35 @@ export const SingleEliminationBracket = ({
                     scrollEnabled={!isShareImage}
                     onScroll={handleBodyHorizontalScroll}
                     scrollEventThrottle={16}
+                    snapToOffsets={snapOffsets}
+                    decelerationRate="fast"
+                    snapToAlignment="center"
                     contentContainerStyle={{
                         paddingHorizontal: horizontalPadding,
                         gap: columnGap,
+                        height: totalHeight,
                     }}
                 >
                     {displayRounds.map((round, rIdx) => {
-                        const index = round.originalIdx;
-                        const initialMarginTop = (Math.pow(2, index) - 1) * (matchHeight + finalRoundGap) / 2;
-                        const matchGap = (Math.pow(2, index) - 1) * matchHeight + (Math.pow(2, index)) * finalRoundGap;
-
                         return (
-                            <View key={round.title} style={[styles.roundColumn, { width: columnWidth, marginTop: initialMarginTop }]}>
+                            <View 
+                                key={round.title} 
+                                style={[
+                                    styles.roundColumn, 
+                                    { 
+                                        width: columnWidth, 
+                                        height: totalHeight,
+                                        justifyContent: 'space-around',
+                                        flexDirection: 'column',
+                                    }
+                                ]}
+                            >
                                 {isShareImage && (
                                     <Text style={[styles.roundTitle, { marginBottom: spacing.xl, alignSelf: 'center', textAlign: 'center' }]}>
                                         {round.title.toUpperCase()}
                                     </Text>
                                 )}
                                 {round.matches.map((match, mIdx) => {
-                                    const is3rdPlace = match.round?.includes('3er y 4to');
-                                    const nextIs3rdPlace = round.matches[mIdx + 1]?.round?.includes('3er y 4to');
-                                    const currentMatchGap = is3rdPlace ? 24 : matchGap;
-                                    const marginBottom = mIdx === round.matches.length - 1 
-                                        ? 0 
-                                        : (nextIs3rdPlace ? 24 : currentMatchGap);
-
                                     const isEven = mIdx % 2 === 0;
                                     const hasSibling = isEven 
                                         ? mIdx + 1 < round.matches.length
@@ -223,7 +216,6 @@ export const SingleEliminationBracket = ({
                                                 { 
                                                     width: columnWidth,
                                                     height: matchHeight,
-                                                    marginBottom,
                                                     justifyContent: 'center'
                                                 }
                                             ]}
@@ -259,20 +251,16 @@ export const SingleEliminationBracket = ({
                                             )}
 
                                             {/* Vertical connector line joining sibling pairs */}
-                                            {rIdx < displayRounds.length - 1 && hasSibling && (
+                                            {rIdx < displayRounds.length - 1 && hasSibling && isEven && (
                                                 <View 
                                                     style={{
                                                         position: 'absolute',
                                                         right: -columnGap / 2,
+                                                        top: matchHeight / 2,
                                                         width: 2,
-                                                        height: (matchHeight + matchGap) / 2,
+                                                        height: totalHeight / round.matches.length,
                                                         backgroundColor: colors.border,
                                                         zIndex: -1,
-                                                        ...(isEven ? {
-                                                            top: matchHeight / 2,
-                                                        } : {
-                                                            bottom: matchHeight / 2,
-                                                        })
                                                     }}
                                                 />
                                             )}

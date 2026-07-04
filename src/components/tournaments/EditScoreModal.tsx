@@ -121,10 +121,6 @@ export const EditScoreModal = React.memo(({
         } else {
           nextRefIndex = ((idx + 1) * 4); // Focus next set's s1
         }
-      } else if (field === 'tb1') {
-        nextRefIndex = (idx * 4) + 3; // Focus tb2
-      } else if (field === 'tb2') {
-        nextRefIndex = ((idx + 1) * 4); // Focus next set's s1
       }
 
       if (nextRefIndex !== -1 && scoreInputRefs.current[nextRefIndex]) {
@@ -226,7 +222,7 @@ export const EditScoreModal = React.memo(({
                         {set.hasTb && (
                           <>
                             <TextInput
-                              style={[styles.scoreInput, { width: 36, height: 36, fontSize: 13, color: colors.text, textAlign: 'center', paddingHorizontal: 0 }]}
+                              style={[styles.scoreInput, { width: 36, height: 36, fontSize: 13, color: colors.text, textAlign: 'center', paddingHorizontal: 0, paddingVertical: 0, paddingTop: 0, paddingBottom: 0 }]}
                               keyboardType="number-pad"
                               maxLength={2}
                               value={set.tb1}
@@ -237,7 +233,7 @@ export const EditScoreModal = React.memo(({
                             />
                             <Text style={{ color: colors.textTertiary, fontSize: 10 }}>/</Text>
                             <TextInput
-                              style={[styles.scoreInput, { width: 36, height: 36, fontSize: 13, color: colors.text, textAlign: 'center', paddingHorizontal: 0 }]}
+                              style={[styles.scoreInput, { width: 36, height: 36, fontSize: 13, color: colors.text, textAlign: 'center', paddingHorizontal: 0, paddingVertical: 0, paddingTop: 0, paddingBottom: 0 }]}
                               keyboardType="number-pad"
                               maxLength={2}
                               value={set.tb2}
