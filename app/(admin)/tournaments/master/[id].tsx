@@ -1151,16 +1151,20 @@ export default function MasterTournamentAdminScreen() {
 
                   return (
                     <ScrollView horizontal showsHorizontalScrollIndicator={true} contentContainerStyle={{ paddingHorizontal: spacing.md, paddingVertical: spacing.md }}>
-                      {uniqueCourts.map(courtName => {
-                        return (
-                          <View key={courtName} style={[styles.courtColumn, { width: courtColumnWidth, marginRight: 6 }]}>
-                            {/* Court Column Header */}
-                            <View style={[styles.courtColumnHeader, { paddingVertical: spacing.xs, paddingHorizontal: spacing.xs, marginBottom: 8 }]}>
+                      <View style={{ flexDirection: 'column' }}>
+                        {/* Headers Row */}
+                        <View style={{ flexDirection: 'row', marginBottom: 8 }}>
+                          {uniqueCourts.map(courtName => (
+                            <View key={courtName} style={[styles.courtColumnHeader, { width: courtColumnWidth, marginRight: 6, paddingVertical: spacing.xs, paddingHorizontal: spacing.xs }]}>
                               <Text style={[styles.courtColumnHeaderLabel, { fontSize: 11 }]} numberOfLines={1}>{courtName.toUpperCase()}</Text>
                             </View>
+                          ))}
+                        </View>
 
-                            {/* Rows of match cards corresponding to unique hours */}
-                            {uniqueHours.map(hourStr => {
+                        {/* Hours Rows */}
+                        {uniqueHours.map(hourStr => (
+                          <View key={hourStr} style={{ flexDirection: 'row', alignItems: 'stretch', marginBottom: 6 }}>
+                            {uniqueCourts.map(courtName => {
                               const cellMatches = matchesForDate.filter(m => {
                                 if (!m.court || m.court.trim() !== courtName) return false;
                                 const mHour = getLocalTimeString(m.scheduled_at);
@@ -1168,7 +1172,7 @@ export default function MasterTournamentAdminScreen() {
                               });
 
                               return (
-                                <View key={hourStr} style={styles.courtCell}>
+                                <View key={courtName} style={[styles.courtCell, { width: courtColumnWidth, marginRight: 6, flexDirection: 'column', alignItems: 'stretch' }]}>
                                   {cellMatches.length > 0 ? (
                                     cellMatches.map(m => {
                                       const champ = championships.find(c => c.id === m.tournament_id);
@@ -1183,7 +1187,7 @@ export default function MasterTournamentAdminScreen() {
                                           key={m.id}
                                           activeOpacity={0.8}
                                           onPress={() => handleSchedulePress(m)}
-                                          style={[styles.matchScheduleCard, { padding: 6, borderWidth: 1 }]}
+                                          style={[styles.matchScheduleCard, { padding: 6, borderWidth: 1, flex: 1 }]}
                                         >
                                           <Text style={[styles.matchScheduleTime, { fontSize: 12 }]}>{hourStr}</Text>
                                           <Text style={[styles.matchScheduleCategory, { fontSize: 8, textAlign: 'center' }]} numberOfLines={2}>
@@ -1203,14 +1207,14 @@ export default function MasterTournamentAdminScreen() {
                                       );
                                     })
                                   ) : (
-                                    <View style={styles.emptyCourtCell} />
+                                    <View style={[styles.emptyCourtCell, { flex: 1, minHeight: 90 }]} />
                                   )}
                                 </View>
                               );
                             })}
                           </View>
-                        );
-                      })}
+                        ))}
+                      </View>
                     </ScrollView>
                   );
                 })()}

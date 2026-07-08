@@ -156,15 +156,10 @@ export const SingleEliminationBracket = ({
                 </View>
             )}
 
-            {/* Body Container (Vertical Scroll) */}
-            <ScrollView
-                ref={verticalScrollRef}
+            {/* Body Container (fills the viewport height) */}
+            <View
                 style={{ flex: 1 }}
-                scrollEnabled={!isShareImage}
-                contentContainerStyle={{ 
-                    paddingTop: containerPaddingTop + (isShareImage ? 0 : spacing.xl), 
-                    paddingBottom: spacing.xl,
-                }}
+                onLayout={(e) => setViewportHeight(e.nativeEvent.layout.height)}
             >
                 {/* Horizontal Scroll for columns */}
                 <ScrollView
@@ -180,22 +175,26 @@ export const SingleEliminationBracket = ({
                     contentContainerStyle={{
                         paddingHorizontal: horizontalPadding,
                         gap: columnGap,
-                        height: totalHeight,
                     }}
                 >
                     {displayRounds.map((round, rIdx) => {
+                        const columnContentHeight = Math.max(
+                            viewportHeight - (isShareImage ? 0 : spacing.xl),
+                            round.matches.length * matchHeight + round.matches.length * finalRoundGap
+                        );
+
                         return (
-                            <View 
-                                key={round.title} 
-                                style={[
-                                    styles.roundColumn, 
-                                    { 
-                                        width: columnWidth, 
-                                        height: totalHeight,
-                                        justifyContent: 'space-around',
-                                        flexDirection: 'column',
-                                    }
-                                ]}
+                            <ScrollView
+                                key={round.title}
+                                style={{ width: columnWidth, height: '100%' }}
+                                contentContainerStyle={{
+                                    height: columnContentHeight,
+                                    justifyContent: 'space-around',
+                                    flexDirection: 'column',
+                                    paddingVertical: isShareImage ? 0 : spacing.md,
+                                }}
+                                showsVerticalScrollIndicator={false}
+                                scrollEnabled={!isShareImage && columnContentHeight > viewportHeight}
                             >
                                 {isShareImage && (
                                     <Text style={[styles.roundTitle, { marginBottom: spacing.xl, alignSelf: 'center', textAlign: 'center' }]}>
@@ -258,7 +257,7 @@ export const SingleEliminationBracket = ({
                                                         right: -columnGap / 2,
                                                         top: matchHeight / 2,
                                                         width: 2,
-                                                        height: totalHeight / round.matches.length,
+                                                        height: columnContentHeight / round.matches.length,
                                                         backgroundColor: colors.border,
                                                         zIndex: -1,
                                                     }}
@@ -287,11 +286,11 @@ export const SingleEliminationBracket = ({
                                         </View>
                                     );
                                 })}
-                            </View>
+                            </ScrollView>
                         );
                     })}
                 </ScrollView>
-            </ScrollView>
+            </View>
         </View>
     );
 };

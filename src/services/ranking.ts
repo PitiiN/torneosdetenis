@@ -71,7 +71,10 @@ export const getScoreText = (scoreValue: any): string => {
 };
 
 export const parseSetScore = (setScore: string) => {
-  const normalized = String(setScore || '')
+  const cleanScore = String(setScore || '')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/\[[^\]]*\]/g, '');
+  const normalized = cleanScore
     .replace(/\u2013/g, '-')
     .trim();
   if (!normalized) return null;
