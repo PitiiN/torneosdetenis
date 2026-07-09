@@ -32,6 +32,7 @@ interface SingleEliminationProps {
     onAdminPlayerLongPress?: (playerId: string | null) => void;
     onAdminMatchPress?: (match: any) => void;
     onAdminSchedulePress?: (match: any) => void;
+    children?: React.ReactNode;
 }
 
 export const SingleEliminationBracket = ({ 
@@ -45,7 +46,8 @@ export const SingleEliminationBracket = ({
     onAdminPlayerPress,
     onAdminPlayerLongPress,
     onAdminMatchPress,
-    onAdminSchedulePress
+    onAdminSchedulePress,
+    children
 }: SingleEliminationProps) => {
     const { colors } = useTheme();
     const styles = getStyles(colors);
@@ -133,35 +135,45 @@ export const SingleEliminationBracket = ({
 
     return (
         <View style={styles.container}>
-            {/* Header Row (Horizontal Scroll, only if not generating share image) */}
-            {!isShareImage && (
-                <View style={[styles.headerContainer, { backgroundColor: colors.surface }]}>
-                    <ScrollView
-                        ref={headerScrollRef}
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        scrollEnabled={false}
-                        pointerEvents="none"
-                        contentContainerStyle={{
-                            paddingHorizontal: horizontalPadding,
-                            gap: columnGap,
-                        }}
-                    >
-                        {displayRounds.map((round) => (
-                            <View key={round.title} style={{ width: columnWidth, alignItems: 'center', justifyContent: 'center' }}>
-                                <Text style={styles.roundTitle}>{round.title.toUpperCase()}</Text>
-                            </View>
-                        ))}
-                    </ScrollView>
-                </View>
-            )}
-
-            {/* Body Container (fills the viewport height) */}
-            <View
+            {/* Body Container (Vertical Scroll) */}
+            <ScrollView
+                ref={verticalScrollRef}
                 style={{ flex: 1 }}
-                onLayout={(e) => setViewportHeight(e.nativeEvent.layout.height)}
+                scrollEnabled={!isShareImage}
+                stickyHeaderIndices={!isShareImage ? [1] : undefined}
+                contentContainerStyle={{ 
+                    paddingBottom: spacing.xl,
+                }}
             >
-                {/* Horizontal Scroll for columns */}
+                {/* 0. Optional Header details */}
+                <View>
+                    {!isShareImage && children}
+                </View>
+
+                {/* 1. Header Row (Horizontal Scroll, sticky round titles) */}
+                {!isShareImage && (
+                    <View style={[styles.headerContainer, { backgroundColor: colors.surface }]}>
+                        <ScrollView
+                            ref={headerScrollRef}
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            scrollEnabled={false}
+                            pointerEvents="none"
+                            contentContainerStyle={{
+                                paddingHorizontal: horizontalPadding,
+                                gap: columnGap,
+                            }}
+                        >
+                            {displayRounds.map((round) => (
+                                <View key={round.title} style={{ width: columnWidth, alignItems: 'center', justifyContent: 'center' }}>
+                                    <Text style={styles.roundTitle}>{round.title.toUpperCase()}</Text>
+                                </View>
+                            ))}
+                        </ScrollView>
+                    </View>
+                )}
+
+                {/* 2. Horizontal Scroll for columns */}
                 <ScrollView
                     ref={bodyScrollRef}
                     horizontal
@@ -175,26 +187,25 @@ export const SingleEliminationBracket = ({
                     contentContainerStyle={{
                         paddingHorizontal: horizontalPadding,
                         gap: columnGap,
+                        height: totalHeight,
+                        paddingTop: isShareImage ? 0 : spacing.xl,
                     }}
                 >
                     {displayRounds.map((round, rIdx) => {
-                        const columnContentHeight = Math.max(
-                            viewportHeight - (isShareImage ? 0 : spacing.xl),
-                            round.matches.length * matchHeight + round.matches.length * finalRoundGap
-                        );
+                        const index = round.originalIdx || 0;
+                        const initialMarginTop = (Math.pow(2, index) - 1) * (matchHeight + finalRoundGap) / 2;
+                        const matchGap = (Math.pow(2, index) - 1) * matchHeight + (Math.pow(2, index)) * finalRoundGap;
 
                         return (
-                            <ScrollView
-                                key={round.title}
-                                style={{ width: columnWidth, height: '100%' }}
-                                contentContainerStyle={{
-                                    height: columnContentHeight,
-                                    justifyContent: 'space-around',
-                                    flexDirection: 'column',
-                                    paddingVertical: isShareImage ? 0 : spacing.md,
-                                }}
-                                showsVerticalScrollIndicator={false}
-                                scrollEnabled={!isShareImage && columnContentHeight > viewportHeight}
+                            <View 
+                                key={round.title} 
+                                style={[
+                                    styles.roundColumn, 
+                                    { 
+                                        width: columnWidth,
+                                        marginTop: initialMarginTop,
+                                    }
+                                ]}
                             >
                                 {isShareImage && (
                                     <Text style={[styles.roundTitle, { marginBottom: spacing.xl, alignSelf: 'center', textAlign: 'center' }]}>
@@ -207,6 +218,12 @@ export const SingleEliminationBracket = ({
                                         ? mIdx + 1 < round.matches.length
                                         : mIdx - 1 >= 0;
 
+                                    const is3rdPlace = match.round?.includes('3er y 4to');
+                                    const nextIs3rdPlace = round.matches[mIdx + 1]?.round?.includes('3er y 4to');
+                                    const currentMatchGap = is3rdPlace 
+                                        ? 0 
+                                        : (nextIs3rdPlace ? 24 : matchGap);
+
                                     return (
                                         <View 
                                             key={match.id} 
@@ -215,6 +232,7 @@ export const SingleEliminationBracket = ({
                                                 { 
                                                     width: columnWidth,
                                                     height: matchHeight,
+                                                    marginBottom: mIdx === round.matches.length - 1 ? 0 : currentMatchGap,
                                                     justifyContent: 'center'
                                                 }
                                             ]}
@@ -229,7 +247,6 @@ export const SingleEliminationBracket = ({
                                                         width: columnGap / 2,
                                                         height: 2,
                                                         backgroundColor: colors.border,
-                                                        zIndex: -1,
                                                     }}
                                                 />
                                             )}
@@ -244,22 +261,24 @@ export const SingleEliminationBracket = ({
                                                         width: columnGap / 2,
                                                         height: 2,
                                                         backgroundColor: colors.border,
-                                                        zIndex: -1,
                                                     }}
                                                 />
                                             )}
 
                                             {/* Vertical connector line joining sibling pairs */}
-                                            {rIdx < displayRounds.length - 1 && hasSibling && isEven && (
+                                            {rIdx < displayRounds.length - 1 && hasSibling && (
                                                 <View 
                                                     style={{
                                                         position: 'absolute',
                                                         right: -columnGap / 2,
-                                                        top: matchHeight / 2,
                                                         width: 2,
-                                                        height: columnContentHeight / round.matches.length,
+                                                        height: (matchHeight + currentMatchGap) / 2,
                                                         backgroundColor: colors.border,
-                                                        zIndex: -1,
+                                                        ...(isEven ? {
+                                                            top: matchHeight / 2,
+                                                        } : {
+                                                            bottom: matchHeight / 2,
+                                                        })
                                                     }}
                                                 />
                                             )}
@@ -286,11 +305,11 @@ export const SingleEliminationBracket = ({
                                         </View>
                                     );
                                 })}
-                            </ScrollView>
+                            </View>
                         );
                     })}
                 </ScrollView>
-            </View>
+            </ScrollView>
         </View>
     );
 };

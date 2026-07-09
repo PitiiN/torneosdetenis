@@ -4645,97 +4645,173 @@ export default function AdminTournamentDetailScreen() {
             </View>
 
             {(() => {
-                const isBracketTab = ['principal', 'consolacion', 'finales'].includes(activeTab);
+                const isSingleEliminationBracketTab = ['principal', 'consolacion'].includes(activeTab);
+
+                const renderSummaryCard = () => (
+                    <View style={[styles.summaryCard, { paddingVertical: spacing.lg }]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 }}>
+                                <Ionicons name="podium" size={20} color={colors.primary[500]} />
+                                <Text style={[styles.summaryText, { flex: 1 }]} numberOfLines={2}>
+                                    Nivel {tournament.level?.toUpperCase().replace('-', ' ')} | {tournament.surface?.toUpperCase()}
+                                </Text>
+                            </View>
+                        </View>
+                        {tournament.status !== 'finished' && tournament.status !== 'completed' && (
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm }}>
+                                <TouchableOpacity
+                                    style={{
+                                        alignSelf: 'flex-start',
+                                        backgroundColor: colors.primary[500],
+                                        paddingHorizontal: spacing.md,
+                                        paddingVertical: spacing.xs,
+                                        borderRadius: borderRadius.sm,
+                                        opacity: isSeeding ? 0.7 : 1
+                                    }}
+                                    onPress={handleSeedTournament}
+                                    disabled={isSeeding}
+                                >
+                                    {isSeeding ? (
+                                        <TennisSpinner size={14} color="#fff" />
+                                    ) : (
+                                        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Sembrar</Text>
+                                    )}
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={{ alignSelf: 'flex-start', backgroundColor: colors.primary[500], paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.sm }}
+                                    onPress={finalizeTournament}
+                                >
+                                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Finalizar Torneo</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={{
+                                        alignSelf: 'flex-start',
+                                        backgroundColor: tournament.players_can_submit_scores ? colors.primary[500] : colors.surfaceSecondary,
+                                        paddingHorizontal: spacing.md,
+                                        paddingVertical: spacing.xs,
+                                        borderRadius: borderRadius.sm,
+                                        borderWidth: 1,
+                                        borderColor: tournament.players_can_submit_scores ? colors.primary[500] : colors.border,
+                                        flexDirection: 'row',
+                                        alignItems: 'center',
+                                        gap: spacing.xs
+                                    }}
+                                    onPress={handleTogglePlayerScoreSubmission}
+                                >
+                                    <Ionicons
+                                        name={tournament.players_can_submit_scores ? 'checkmark-circle' : 'create-outline'}
+                                        size={14}
+                                        color={tournament.players_can_submit_scores ? '#fff' : colors.textSecondary}
+                                    />
+                                    <Text style={{
+                                        color: tournament.players_can_submit_scores ? '#fff' : colors.textSecondary,
+                                        fontSize: 12,
+                                        fontWeight: '700'
+                                    }}>
+                                        {tournament.players_can_submit_scores ? 'Autocarga Habilitada' : 'Habilitar Autocarga'}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
+                        {(tournament.status === 'finished' || tournament.status === 'completed') && (
+                            <View style={{ alignSelf: 'flex-start', backgroundColor: colors.success + '20', paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.sm, flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.sm }}>
+                                <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                                <Text style={{ color: colors.success, fontSize: 11, fontWeight: '800' }}>FINALIZADO</Text>
+                            </View>
+                        )}
+                        <Text style={[styles.summaryTextSecondary, { marginTop: spacing.xs }]}>
+                            {IS_DOUBLES
+                                ? `${manualDoublesTeamRows.length + listedRegisteredPlayers.length} Participantes visibles`
+                                : `${listedRegisteredPlayers.length + manualParticipantRows.length} Jugadores`}
+                            {' | '}{tournament.format} | {tournament.modality === 'dobles' ? 'Dobles' : 'Singles'} | Máx: {tournament.max_players}
+                        </Text>
+                    </View>
+                );
+
+                if (isSingleEliminationBracketTab) {
+                    const filteredMatches = matches.filter(m => {
+                        const isConsolationMatch = /^(Consolaci|Repechaje)/i.test(String(m.round || ''));
+                        if (activeTab === 'consolacion') return isConsolationMatch;
+                        return !isConsolationMatch;
+                    });
+                    const roundNums = [...new Set(filteredMatches.map(m => m.round_number))].sort((a, b) => a - b);
+                    
+                    const transformedRounds = roundNums.map(roundNum => {
+                        const roundMatches = filteredMatches.filter(m => m.round_number === roundNum);
+                        return {
+                            title: formatRoundLabel(roundMatches[0]?.round) || `Ronda ${roundNum}`,
+                            matches: roundMatches.map(m => {
+                                const scoreText = getScoreText(m.score);
+                                const setScores = scoreText && !/^W\.?O\.?$/i.test(scoreText)
+                                    ? scoreText.split(/\s*,\s*/).map(s => s.split('-'))
+                                    : [];
+
+                                return {
+                                    id: m.id,
+                                    player1: {
+                                        name: getDisplayName(m, 1),
+                                        avatarUrl: getDisplayAvatar(m, 1),
+                                        scores: setScores.map(s => s[0]).filter(Boolean),
+                                        isWinner: m.winner_id === m.player_a_id && !!m.player_a_id,
+                                        id: m.player_a_id || null,
+                                    },
+                                    player2: {
+                                        name: getDisplayName(m, 3),
+                                        avatarUrl: getDisplayAvatar(m, 3),
+                                        scores: setScores.map(s => s[1]).filter(Boolean),
+                                        isWinner: m.winner_id === m.player_b_id && !!m.player_b_id,
+                                        id: m.player_b_id || null,
+                                    },
+                                    ...(IS_DOUBLES ? {
+                                        player1Partner: {
+                                            name: getDisplayName(m, 2),
+                                            avatarUrl: getDisplayAvatar(m, 2),
+                                            id: m.player_a2_id || null,
+                                        },
+                                        player2Partner: {
+                                            name: getDisplayName(m, 4),
+                                            avatarUrl: getDisplayAvatar(m, 4),
+                                            id: m.player_b2_id || null,
+                                        }
+                                    } : {}),
+                                    status: m.status === 'finished' ? 'finished' : (m.status === 'live' ? 'live' : 'scheduled'),
+                                    scheduledAt: m.scheduled_at,
+                                    court: m.court,
+                                    round: m.round,
+                                    rawMatch: m
+                                };
+                            })
+                        };
+                    });
+
+                    return (
+                        <View style={{ flex: 1 }}>
+                            <View style={[styles.bracketContainer, { flex: 1 }]}>
+                                <SingleEliminationBracket 
+                                    rounds={transformedRounds} 
+                                    onPlayerPress={() => {}}
+                                    isAdmin={true}
+                                    onAdminPlayerPress={handlePlayerPress as any}
+                                    onAdminPlayerLongPress={handlePlayerLongPress}
+                                    onAdminMatchPress={handleMatchPress}
+                                    onAdminSchedulePress={handleSchedulePress}
+                                    matchHeight={IS_DOUBLES ? 140 : 100}
+                                    roundGap={24}
+                                >
+                                    {renderSummaryCard()}
+                                </SingleEliminationBracket>
+                            </View>
+                        </View>
+                    );
+                }
+
                 return (
                     <ScrollView 
                         style={{ flex: 1 }}
-                        contentContainerStyle={[
-                            styles.scrollContent, 
-                            isBracketTab && { flexGrow: 1, paddingBottom: 0, paddingVertical: 0 }
-                        ]} 
-                        scrollEnabled={!isBracketTab}
+                        contentContainerStyle={styles.scrollContent} 
                         showsVerticalScrollIndicator={false}
                     >
-
-                {/* Summary Info Card */}
-                <View style={[styles.summaryCard, { paddingVertical: spacing.lg }]}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 }}>
-                            <Ionicons name="podium" size={20} color={colors.primary[500]} />
-                            <Text style={[styles.summaryText, { flex: 1 }]} numberOfLines={2}>
-                                Nivel {tournament.level?.toUpperCase().replace('-', ' ')} | {tournament.surface?.toUpperCase()}
-                            </Text>
-                        </View>
-                    </View>
-                    {tournament.status !== 'finished' && tournament.status !== 'completed' && (
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm }}>
-                            <TouchableOpacity
-                                style={{
-                                    alignSelf: 'flex-start',
-                                    backgroundColor: colors.primary[500],
-                                    paddingHorizontal: spacing.md,
-                                    paddingVertical: spacing.xs,
-                                    borderRadius: borderRadius.sm,
-                                    opacity: isSeeding ? 0.7 : 1
-                                }}
-                                onPress={handleSeedTournament}
-                                disabled={isSeeding}
-                            >
-                                {isSeeding ? (
-                                    <TennisSpinner size={14} color="#fff" />
-                                ) : (
-                                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Sembrar</Text>
-                                )}
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={{ alignSelf: 'flex-start', backgroundColor: colors.primary[500], paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.sm }}
-                                onPress={finalizeTournament}
-                            >
-                                <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Finalizar Torneo</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={{
-                                    alignSelf: 'flex-start',
-                                    backgroundColor: tournament.players_can_submit_scores ? colors.primary[500] : colors.surfaceSecondary,
-                                    paddingHorizontal: spacing.md,
-                                    paddingVertical: spacing.xs,
-                                    borderRadius: borderRadius.sm,
-                                    borderWidth: 1,
-                                    borderColor: tournament.players_can_submit_scores ? colors.primary[500] : colors.border,
-                                    flexDirection: 'row',
-                                    alignItems: 'center',
-                                    gap: spacing.xs
-                                }}
-                                onPress={handleTogglePlayerScoreSubmission}
-                            >
-                                <Ionicons
-                                    name={tournament.players_can_submit_scores ? 'checkmark-circle' : 'create-outline'}
-                                    size={14}
-                                    color={tournament.players_can_submit_scores ? '#fff' : colors.textSecondary}
-                                />
-                                <Text style={{
-                                    color: tournament.players_can_submit_scores ? '#fff' : colors.textSecondary,
-                                    fontSize: 12,
-                                    fontWeight: '700'
-                                }}>
-                                    {tournament.players_can_submit_scores ? 'Autocarga Habilitada' : 'Habilitar Autocarga'}
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-                    )}
-                    {(tournament.status === 'finished' || tournament.status === 'completed') && (
-                        <View style={{ alignSelf: 'flex-start', backgroundColor: colors.success + '20', paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.sm, flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.sm }}>
-                            <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-                            <Text style={{ color: colors.success, fontSize: 11, fontWeight: '800' }}>FINALIZADO</Text>
-                        </View>
-                    )}
-                    <Text style={[styles.summaryTextSecondary, { marginTop: spacing.xs }]}>
-                        {IS_DOUBLES
-                            ? `${manualDoublesTeamRows.length + listedRegisteredPlayers.length} Participantes visibles`
-                            : `${listedRegisteredPlayers.length + manualParticipantRows.length} Jugadores`}
-                        {' | '}{tournament.format} | {tournament.modality === 'dobles' ? 'Dobles' : 'Singles'} | Máx: {tournament.max_players}
-                    </Text>
-                </View>
+                        {renderSummaryCard()}
 
                 {activeTab === 'participantes' ? (
                     <View style={{ gap: spacing.md }}>

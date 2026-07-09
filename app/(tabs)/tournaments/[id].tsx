@@ -1091,6 +1091,13 @@ export default function TournamentDetailScreen() {
         }
     };
 
+    const uniquePlayersCount = useMemo(() => {
+        const ids = matches
+            .flatMap((m: any) => [m.player_a_id, m.player_a2_id, m.player_b_id, m.player_b2_id])
+            .filter(Boolean);
+        return new Set(ids).size;
+    }, [matches]);
+
     const tournamentFormat = tournament?.format;
     const tournamentMaxPlayers = tournament?.max_players || 2;
     const isRoundRobin = isRoundRobinFormat(tournamentFormat);
@@ -1434,88 +1441,88 @@ export default function TournamentDetailScreen() {
             </View>
 
             {(() => {
-                const isBracketTab = ['principal', 'consolacion', 'finales'].includes(activeTab);
+                const isSingleEliminationBracketTab = ['principal', 'consolacion'].includes(activeTab);
+
+                const renderTournamentDetails = () => (
+                    <>
+                        <View style={styles.statusSection}>
+                            <View style={[styles.statusBadge, { 
+                                backgroundColor: tournament.status === 'open' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255, 255, 255, 0.05)' 
+                            }]}>
+                                <Text style={[styles.statusText, { 
+                                    color: tournament.status === 'open' ? colors.success : colors.textSecondary 
+                                }]}>
+                                    {tournament.status === 'open' ? 'INSCRIPCIÓN ABIERTA' : tournament.status?.toUpperCase()}
+                                </Text>
+                            </View>
+                        </View>
+
+                        <View style={styles.infoCard}>
+                            <View style={styles.infoRow}>
+                                <Ionicons name="hammer-outline" size={20} color={colors.primary[500]} />
+                                <Text style={styles.infoTitle}>Información del Torneo</Text>
+                            </View>
+                            <Text style={styles.infoSubtitle}>
+                                Formato: {tournament.format} | {tournament.level} | {tournament.set_type}
+                            </Text>
+                            <Text style={styles.infoSubtitle}>
+                                Modalidad: {tournament.modality === 'dobles' ? 'Dobles' : 'Singles'}
+                            </Text>
+                            <Text style={styles.infoSubtitle}>
+                                Jugadores: {uniquePlayersCount}
+                            </Text>
+                        </View>
+
+                        {latestRequest && (
+                            <View style={styles.requestCard}>
+                                <Text style={styles.requestCardTitle}>
+                                    Estado de solicitud: {getRequestStatusLabel(latestRequest.status)}
+                                </Text>
+                                {latestRequest.status === 'rejected' && latestRequest.rejection_reason && (
+                                    <Text style={styles.requestCardReason}>Motivo: {latestRequest.rejection_reason}</Text>
+                                )}
+                            </View>
+                        )}
+                    </>
+                );
+
+                if (isSingleEliminationBracketTab) {
+                    return (
+                        <View style={{ flex: 1 }}>
+                            {canViewBracket ? (
+                                <View style={[styles.bracketContainer, { flex: 1 }]}>
+                                    <SingleEliminationBracket 
+                                        rounds={rounds} 
+                                        onPlayerPress={handlePlayerPress} 
+                                        matchHeight={IS_DOUBLES ? 140 : 100}
+                                        roundGap={24}
+                                    >
+                                        {renderTournamentDetails()}
+                                    </SingleEliminationBracket>
+                                </View>
+                            ) : (
+                                <View style={{ flex: 1, paddingHorizontal: spacing.lg, paddingVertical: spacing.xl }}>
+                                    {renderTournamentDetails()}
+                                    <View style={styles.lockedBracketCard}>
+                                        <Ionicons name="lock-closed-outline" size={24} color={colors.textTertiary} />
+                                        <Text style={styles.lockedBracketTitle}>Cuadro bloqueado</Text>
+                                        <Text style={styles.lockedBracketText}>
+                                            Debes tener la inscripcion aprobada para acceder a "Ver cuadro".
+                                        </Text>
+                                    </View>
+                                </View>
+                            )}
+                        </View>
+                    );
+                }
+
                 return (
                     <ScrollView 
                         style={{ flex: 1 }}
-                        contentContainerStyle={[
-                            styles.scrollContent, 
-                            isBracketTab && { flexGrow: 1, paddingBottom: 0, paddingVertical: 0 }
-                        ]} 
-                        scrollEnabled={!isBracketTab}
+                        contentContainerStyle={styles.scrollContent} 
                         showsVerticalScrollIndicator={false}
                     >
-                <View style={styles.statusSection}>
-                    <View style={[styles.statusBadge, { 
-                        backgroundColor: tournament.status === 'open' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255, 255, 255, 0.05)' 
-                    }]}>
-                        <Text style={[styles.statusText, { 
-                            color: tournament.status === 'open' ? colors.success : colors.textSecondary 
-                        }]}>
-                            {tournament.status === 'open' ? 'INSCRIPCIÓN ABIERTA' : tournament.status?.toUpperCase()}
-                        </Text>
-                    </View>
-                </View>
-
-                <View style={styles.infoCard}>
-                    <View style={styles.infoRow}>
-                        <Ionicons name="hammer-outline" size={20} color={colors.primary[500]} />
-                        <Text style={styles.infoTitle}>Información del Torneo</Text>
-                    </View>
-                    <Text style={styles.infoSubtitle}>
-                        Formato: {tournament.format} | {tournament.level} | {tournament.set_type}
-                    </Text>
-                    <Text style={styles.infoSubtitle}>
-                        Modalidad: {tournament.modality === 'dobles' ? 'Dobles' : 'Singles'}
-                    </Text>
-                    <Text style={styles.infoSubtitle}>
-                        Superficie: {tournament.surface} | Inicio: {new Date(tournament.start_date).toLocaleDateString()}
-                    </Text>
-                    {tournament.end_date && (
-                        <Text style={styles.infoSubtitle}>
-                            Término: {new Date(tournament.end_date).toLocaleDateString()}
-                        </Text>
-                    )}
-                    {(tournament.address || tournament.comuna) && (
-                        <View style={[styles.infoRow, { marginTop: 4 }]}>
-                            <Ionicons name="location-outline" size={16} color={colors.textSecondary} />
-                            <Text style={styles.infoSubtitle}>
-                                {tournament.address}{tournament.address && tournament.comuna ? ', ' : ''}{tournament.comuna}
-                            </Text>
-                        </View>
-                    )}
-                    <View style={[styles.infoRow, { marginTop: 4 }]}>
-                        <Ionicons name="cash-outline" size={16} color={colors.primary[500]} />
-                        <Text style={[styles.infoSubtitle, { color: colors.primary[500], fontWeight: '800' }]}>
-                            Inscripción: ${tournament.registration_fee || 0}
-                        </Text>
-                    </View>
-                    {formatRegistrationDeadline(
-                        tournament.effective_registration_close_at || tournament.registration_close_at,
-                        tournament.effective_registration_close_time || tournament.registration_close_time
-                    ) && (
-                        <View style={[styles.infoRow, { marginTop: 4 }]}>
-                            <Ionicons name="hourglass-outline" size={16} color={colors.textSecondary} />
-                            <Text style={styles.infoSubtitle}>
-                                Cierre inscripciones: {formatRegistrationDeadline(
-                                    tournament.effective_registration_close_at || tournament.registration_close_at,
-                                    tournament.effective_registration_close_time || tournament.registration_close_time
-                                )}
-                            </Text>
-                        </View>
-                    )}
-                </View>
-
-                {latestRequest && (
-                    <View style={styles.requestCard}>
-                        <Text style={styles.requestCardTitle}>
-                            Estado de solicitud: {getRequestStatusLabel(latestRequest.status)}
-                        </Text>
-                        {latestRequest.status === 'rejected' && latestRequest.rejection_reason && (
-                            <Text style={styles.requestCardReason}>Motivo: {latestRequest.rejection_reason}</Text>
-                        )}
-                    </View>
-                )}
+                        {renderTournamentDetails()}
 
                 {canViewBracket ? (
                     isRoundRobin ? (

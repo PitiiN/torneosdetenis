@@ -2096,7 +2096,8 @@ const getStyles = (colors: any) => StyleSheet.create({
     textAlign: 'center',
   },
   emptyCourtCell: {
-    height: 100,
+    height: '100%',
+    minHeight: 90,
     borderRadius: borderRadius.md,
     borderWidth: 2,
     borderStyle: 'dashed',
