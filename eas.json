@@ -25,11 +25,17 @@
       "environment": "production",
       "channel": "production",
       "distribution": "store",
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "NODE_OPTIONS": "--max-old-space-size=4096"
+      }
     },
     "apk": {
       "environment": "development",
       "distribution": "internal",
+      "env": {
+        "NODE_OPTIONS": "--max-old-space-size=4096"
+      },
       "android": {
         "buildType": "apk"
       }
@@ -38,6 +44,9 @@
       "environment": "production",
       "channel": "production",
       "distribution": "internal",
+      "env": {
+        "NODE_OPTIONS": "--max-old-space-size=4096"
+      },
       "android": {
         "buildType": "apk"
       }
