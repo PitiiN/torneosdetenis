@@ -930,11 +930,11 @@ export default function TournamentMasterDetailScreen() {
                                           </Text>
                                           
                                           <View style={styles.matchSchedulePlayersContainer}>
-                                            <Text style={[styles.matchSchedulePlayerText, { fontSize: 9 }]} numberOfLines={2}>
+                                            <Text style={[styles.matchSchedulePlayerText, { fontSize: 9 }]}>
                                               {isDoubles ? `${p1Name}\n/\n${p2Name}` : p1Name}
                                             </Text>
                                             <Text style={[styles.matchScheduleVs, { marginVertical: 1, fontSize: 8 }]}>VS</Text>
-                                            <Text style={[styles.matchSchedulePlayerText, { fontSize: 9 }]} numberOfLines={2}>
+                                            <Text style={[styles.matchSchedulePlayerText, { fontSize: 9 }]}>
                                               {isDoubles ? `${p3Name}\n/\n${p4Name}` : p3Name}
                                             </Text>
                                           </View>

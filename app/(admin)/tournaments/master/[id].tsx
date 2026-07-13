@@ -716,7 +716,7 @@ export default function MasterTournamentAdminScreen() {
         rankingPoints[placeKey] = parsedPoints;
       }
 
-      const normalizedGroupCount = Math.max(2, Math.min(8, Number(groupCount) || 2));
+      const normalizedGroupCount = Math.max(1, Math.min(8, Number(groupCount) || 2));
       const uiTournamentFormat = buildTournamentFormatLabel(format, { groupCount: normalizedGroupCount });
       const tournamentFormat = toDbFormatLabel(uiTournamentFormat);
       const descriptionWithGroup = buildTournamentDescription(
@@ -1195,11 +1195,11 @@ export default function MasterTournamentAdminScreen() {
                                           </Text>
                                           
                                           <View style={styles.matchSchedulePlayersContainer}>
-                                            <Text style={[styles.matchSchedulePlayerText, { fontSize: 9 }]} numberOfLines={2}>
+                                            <Text style={[styles.matchSchedulePlayerText, { fontSize: 9 }]}>
                                               {isDoubles ? `${p1Name}\n/\n${p2Name}` : p1Name}
                                             </Text>
                                             <Text style={[styles.matchScheduleVs, { marginVertical: 1, fontSize: 8 }]}>VS</Text>
-                                            <Text style={[styles.matchSchedulePlayerText, { fontSize: 9 }]} numberOfLines={2}>
+                                            <Text style={[styles.matchSchedulePlayerText, { fontSize: 9 }]}>
                                               {isDoubles ? `${p3Name}\n/\n${p4Name}` : p3Name}
                                             </Text>
                                           </View>

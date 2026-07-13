@@ -36,11 +36,11 @@ export const hasConsolationBracket = (format?: string | null) =>
 
 export const getRoundRobinGroupCount = (format?: string | null, description?: string | null) => {
   const metadataMatch = (description || '').match(/\[RR_GROUPS:(\d+)\]/i);
-  if (metadataMatch) return Math.max(2, Math.min(Number(metadataMatch[1]), 8));
+  if (metadataMatch) return Math.max(1, Math.min(Number(metadataMatch[1]), 8));
   const normalized = normalizeText(format);
   const match = normalized.match(/(\d+)\s+grupos?/);
   const parsed = match ? Number(match[1]) : 2;
-  return Math.max(2, Math.min(parsed, 8));
+  return Math.max(1, Math.min(parsed, 8));
 };
 
 export const buildTournamentFormatLabel = (
@@ -52,7 +52,7 @@ export const buildTournamentFormatLabel = (
 
 export const buildTournamentDescription = (groupCount?: number, description?: string | null) => {
   const cleanDescription = (description || '').replace(/\[RR_GROUPS:\d+\]/g, '').trim();
-  if (!groupCount || groupCount <= 2) return cleanDescription || null;
+  if (!groupCount || groupCount === 2) return cleanDescription || null;
   return [cleanDescription, `[RR_GROUPS:${groupCount}]`].filter(Boolean).join(' ').trim();
 };
 
@@ -66,7 +66,7 @@ export const getSetsToShow = (setType?: string | null) => {
 
 export const getRoundRobinGroupSizes = (maxPlayers: number, groupCount = 2) => {
   const totalSlots = Math.max(2, maxPlayers || 2);
-  const safeGroupCount = Math.max(2, groupCount);
+  const safeGroupCount = Math.max(1, groupCount);
   const baseSize = Math.floor(totalSlots / safeGroupCount);
   const remainder = totalSlots % safeGroupCount;
 
