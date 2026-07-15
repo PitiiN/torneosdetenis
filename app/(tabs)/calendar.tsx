@@ -57,6 +57,7 @@ export default function PlayerCalendarScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [matches, setMatches] = useState<CalendarMatch[]>([]);
+  const [registeredTournaments, setRegisteredTournaments] = useState<any[]>([]);
 
   const nextMatch = matches[0] || null;
   const upcomingMatches = useMemo(() => matches.slice(1), [matches]);
@@ -67,6 +68,7 @@ export default function PlayerCalendarScreen() {
       const playerId = session?.user?.id;
       if (!playerId) {
         setMatches([]);
+        setRegisteredTournaments([]);
         return;
       }
 
@@ -135,6 +137,52 @@ export default function PlayerCalendarScreen() {
 
       setMatches(hydrated);
       await notificationService.scheduleMatchReminders(hydrated);
+
+      // Fetch active registered tournaments
+      const { data: regRows, error: regError } = await supabase
+        .from('registrations')
+        .select(`
+          tournament_id,
+          tournaments!inner (
+            id,
+            name,
+            level,
+            modality,
+            status,
+            start_date,
+            end_date
+          )
+        `)
+        .eq('player_id', playerId)
+        .eq('status', 'confirmed');
+
+      let activeTournaments: any[] = [];
+      if (!regError && regRows) {
+        const currentDateObj = new Date();
+        activeTournaments = regRows
+          .map((reg: any) => reg.tournaments)
+          .filter((tour: any) => {
+            if (!tour) return false;
+            const statusLower = String(tour.status || '').toLowerCase();
+            if (
+              statusLower === 'finished' ||
+              statusLower === 'completed' ||
+              statusLower === 'finalized' ||
+              statusLower === 'cancelled' ||
+              statusLower === 'draft' ||
+              statusLower === 'pending'
+            ) {
+              return false;
+            }
+
+            if (tour.end_date) {
+              const endDateObj = new Date(`${tour.end_date}T23:59:59`);
+              if (currentDateObj >= endDateObj) return false;
+            }
+            return true;
+          });
+      }
+      setRegisteredTournaments(activeTournaments);
     } catch (error) {
       console.error('Error loading player calendar:', error);
       Alert.alert('Error', 'No se pudo cargar tu calendario.');
@@ -245,6 +293,37 @@ export default function PlayerCalendarScreen() {
               <Ionicons name="calendar-outline" size={48} color={colors.textTertiary} />
               <Text style={styles.emptyTitle}>Sin partidos programados</Text>
               <Text style={styles.emptyText}>Cuando tengas partidos con horario definido aparecerán aquí.</Text>
+            </View>
+          )}
+
+          {registeredTournaments.length > 0 && (
+            <View style={styles.tournamentsSection}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Mis Torneos Activos</Text>
+              </View>
+              <View style={styles.tournamentsList}>
+                {registeredTournaments.map((tournament) => (
+                  <TouchableOpacity
+                    key={tournament.id}
+                    style={styles.tournamentCard}
+                    activeOpacity={0.78}
+                    onPress={() => openTournament(tournament.id)}
+                  >
+                    <View style={styles.tournamentCardTop}>
+                      <View style={styles.trophyBadge}>
+                        <Ionicons name="trophy" size={20} color={colors.primary[500]} />
+                      </View>
+                      <View style={styles.tournamentMain}>
+                        <Text style={styles.tournamentName} numberOfLines={1}>{tournament.name}</Text>
+                        <Text style={styles.tournamentDetail} numberOfLines={1}>
+                          {tournament.level || 'Categoría'} · {String(tournament.modality || '').toLowerCase() === 'dobles' ? 'Dobles' : 'Singles'}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
           )}
         </ScrollView>
@@ -386,5 +465,46 @@ const getStyles = (colors: any) => StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     textAlign: 'center',
+  },
+  tournamentsSection: {
+    marginTop: spacing.lg,
+    gap: spacing.md,
+  },
+  tournamentsList: {
+    gap: spacing.sm,
+  },
+  tournamentCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  tournamentCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  trophyBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary[500] + '18',
+  },
+  tournamentMain: {
+    flex: 1,
+  },
+  tournamentName: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  tournamentDetail: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
   },
 });

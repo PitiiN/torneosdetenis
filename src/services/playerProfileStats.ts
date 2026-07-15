@@ -44,6 +44,8 @@ export type PlayerAchievement = {
   tone: 'gold' | 'silver' | 'bronze' | 'green' | 'blue' | 'purple';
   imageSource?: any;
   dateEarned?: string;
+  tournamentName?: string;
+  matchDetail?: string;
 };
 
 export const DEFAULT_PROFILE_STATS: PlayerProfileStats = {
@@ -247,6 +249,8 @@ export const loadPlayerAchievements = async (playerId: string): Promise<PlayerAc
         tone: ach.tone as any,
         imageSource: getMedalSource(ach.imageName),
         dateEarned: ach.dateEarned ? String(ach.dateEarned) : undefined,
+        tournamentName: ach.tournamentName ? String(ach.tournamentName) : undefined,
+        matchDetail: ach.matchDetail ? String(ach.matchDetail) : undefined,
       }));
     },
   });

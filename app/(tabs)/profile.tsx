@@ -1768,6 +1768,16 @@ export default function ProfileScreen() {
                                 </View>
                                 <Text style={styles.achievementModalTitle}>{selectedAchievement.title}</Text>
                                 <Text style={styles.achievementModalDesc}>{selectedAchievement.detail}</Text>
+                                {selectedAchievement.tournamentName && (
+                                    <Text style={styles.achievementModalMeta}>
+                                        Torneo: {selectedAchievement.tournamentName}
+                                    </Text>
+                                )}
+                                {selectedAchievement.matchDetail && (
+                                    <Text style={styles.achievementModalMeta}>
+                                        Detalle: {selectedAchievement.matchDetail}
+                                    </Text>
+                                )}
                                 <Text style={styles.achievementModalDate}>
                                     Obtenido: {formatDate(selectedAchievement.dateEarned)}
                                 </Text>
@@ -3156,6 +3166,13 @@ const getStyles = (colors: any) => StyleSheet.create({
         textAlign: 'center',
         marginBottom: spacing.xl,
         lineHeight: 22,
+    },
+    achievementModalMeta: {
+        fontSize: 13,
+        color: colors.textSecondary,
+        textAlign: 'center',
+        marginBottom: spacing.md,
+        fontWeight: '500',
     },
     achievementModalDate: {
         fontSize: 12,

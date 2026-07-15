@@ -70,6 +70,99 @@ export default function InicioScreen() {
     const [showRegionModal, setShowRegionModal] = useState(false);
     const [showComunaModal, setShowComunaModal] = useState(false);
 
+    useEffect(() => {
+        let isMounted = true;
+
+        const checkRedirectToCalendar = async () => {
+            if ((global as any).hasAutoRedirectedToCalendar === true) return;
+
+            const { data: { session } } = await supabase.auth.getSession();
+            const currentUserId = session?.user?.id;
+            if (!currentUserId) return;
+
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('admin_org_ids')
+                .eq('id', currentUserId)
+                .maybeSingle();
+
+            if (!isMounted) return;
+
+            if (profile && Array.isArray(profile.admin_org_ids) && profile.admin_org_ids.length > 0) {
+                return;
+            }
+
+            const { count: pendingMatchesCount, error: matchesError } = await supabase
+                .from('matches')
+                .select('id', { head: true, count: 'exact' })
+                .or(`player_a_id.eq.${currentUserId},player_a2_id.eq.${currentUserId},player_b_id.eq.${currentUserId},player_b2_id.eq.${currentUserId}`)
+                .neq('status', 'finished');
+
+            if (matchesError) return;
+
+            if (pendingMatchesCount && pendingMatchesCount > 0) {
+                (global as any).hasAutoRedirectedToCalendar = true;
+                if (isMounted) {
+                    router.replace('/(tabs)/calendar');
+                }
+                return;
+            }
+
+            const { data: registrations, error: regError } = await supabase
+                .from('registrations')
+                .select(`
+                    id,
+                    tournament_id,
+                    tournaments!inner (
+                        status,
+                        start_date,
+                        end_date
+                    )
+                `)
+                .eq('player_id', currentUserId)
+                .eq('status', 'confirmed');
+
+            if (regError || !registrations) return;
+
+            const now = new Date();
+            const hasActiveTournament = registrations.some((reg: any) => {
+                const tour = reg.tournaments;
+                if (!tour) return false;
+
+                const statusLower = String(tour.status || '').toLowerCase();
+                if (
+                    statusLower === 'finished' ||
+                    statusLower === 'completed' ||
+                    statusLower === 'finalized' ||
+                    statusLower === 'cancelled' ||
+                    statusLower === 'draft' ||
+                    statusLower === 'pending'
+                ) {
+                    return false;
+                }
+
+                if (tour.end_date) {
+                    const endDateObj = new Date(`${tour.end_date}T23:59:59`);
+                    if (now >= endDateObj) return false;
+                }
+                return true;
+            });
+
+            if (hasActiveTournament) {
+                (global as any).hasAutoRedirectedToCalendar = true;
+                if (isMounted) {
+                    router.replace('/(tabs)/calendar');
+                }
+            }
+        };
+
+        checkRedirectToCalendar();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [router]);
+
     const getRegionOfComuna = (comunaName: string): string | null => {
         if (!comunaName || comunaName === 'Libre') return null;
         const region = CHILEAN_REGIONS_WITH_COMUNAS.find(r =>
