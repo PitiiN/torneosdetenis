@@ -67,6 +67,7 @@ export default function RootLayout() {
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [pendingNotificationDestination, setPendingNotificationDestination] = useState<any | null>(null);
   const [initialRoute, setInitialRoute] = useState<string>('/(tabs)');
+  const [bootRedirectDone, setBootRedirectDone] = useState(false);
   const router = useRouter();
   const segments = useSegments() as string[];
   const lastHandledNotificationIdRef = useRef<string | null>(null);
@@ -165,6 +166,7 @@ export default function RootLayout() {
       setSession(session);
       if (!session) {
         clearSessionArtifacts();
+        setBootRedirectDone(false);
       }
     });
 
@@ -179,15 +181,17 @@ export default function RootLayout() {
 
     const inAuthGroup = segments[0] === '(auth)';
     const inResetPassword = segments[1] === 'reset-password';
+    const isAtLandingTab = segments.length === 0 || (segments[0] === '(tabs)' && (segments.length === 1 || segments[1] === 'index' || segments[1] === ''));
 
     if (!session && !inAuthGroup) {
       // Redirect to login if not authenticated and not in auth group
       router.replace('/(auth)/login');
-    } else if (session && inAuthGroup && !inResetPassword) {
-      // Redirect to tabs or calendar immediately if authenticated and in auth group
+    } else if (session && !bootRedirectDone && (inAuthGroup || isAtLandingTab) && !inResetPassword) {
+      // Redirect to tabs or calendar immediately if authenticated and in auth or landing tab
+      setBootRedirectDone(true);
       router.replace(initialRoute as any);
     }
-  }, [session, initialized, segments, initialRoute]);
+  }, [session, initialized, segments, initialRoute, bootRedirectDone]);
 
   useEffect(() => {
     if (!initialized || !pendingNotificationDestination) return;
