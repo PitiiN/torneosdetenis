@@ -138,49 +138,46 @@ export default function PlayerCalendarScreen() {
       setMatches(hydrated);
       await notificationService.scheduleMatchReminders(hydrated);
 
-      // Fetch active registered tournaments
+      // Fetch active registered tournaments in two steps
       const { data: regRows, error: regError } = await supabase
         .from('registrations')
-        .select(`
-          tournament_id,
-          tournaments!inner (
-            id,
-            name,
-            level,
-            modality,
-            status,
-            start_date,
-            end_date
-          )
-        `)
+        .select('tournament_id')
         .eq('player_id', playerId)
         .eq('status', 'confirmed');
 
       let activeTournaments: any[] = [];
-      if (!regError && regRows) {
-        const currentDateObj = new Date();
-        activeTournaments = regRows
-          .map((reg: any) => reg.tournaments)
-          .filter((tour: any) => {
-            if (!tour) return false;
-            const statusLower = String(tour.status || '').toLowerCase();
-            if (
-              statusLower === 'finished' ||
-              statusLower === 'completed' ||
-              statusLower === 'finalized' ||
-              statusLower === 'cancelled' ||
-              statusLower === 'draft' ||
-              statusLower === 'pending'
-            ) {
-              return false;
-            }
+      if (!regError && regRows && regRows.length > 0) {
+        const tournamentIds = [...new Set(regRows.map((r: any) => r.tournament_id).filter(Boolean))];
+        if (tournamentIds.length > 0) {
+          const { data: tournamentsRows, error: tournamentsError } = await supabase
+            .from('tournaments')
+            .select('id, name, level, modality, status, start_date, end_date')
+            .in('id', tournamentIds);
 
-            if (tour.end_date) {
-              const endDateObj = new Date(`${tour.end_date}T23:59:59`);
-              if (currentDateObj >= endDateObj) return false;
-            }
-            return true;
-          });
+          if (!tournamentsError && tournamentsRows) {
+            const currentDateObj = new Date();
+            activeTournaments = tournamentsRows.filter((tour: any) => {
+              if (!tour) return false;
+              const statusLower = String(tour.status || '').toLowerCase();
+              if (
+                statusLower === 'finished' ||
+                statusLower === 'completed' ||
+                statusLower === 'finalized' ||
+                statusLower === 'cancelled' ||
+                statusLower === 'draft' ||
+                statusLower === 'pending'
+              ) {
+                return false;
+              }
+
+              if (tour.end_date) {
+                const endDateObj = new Date(`${tour.end_date}T23:59:59`);
+                if (currentDateObj >= endDateObj) return false;
+              }
+              return true;
+            });
+          }
+        }
       }
       setRegisteredTournaments(activeTournaments);
     } catch (error) {

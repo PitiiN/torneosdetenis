@@ -108,27 +108,26 @@ export default function InicioScreen() {
                 return;
             }
 
-            const { data: registrations, error: regError } = await supabase
+            const { data: regRows, error: regError } = await supabase
                 .from('registrations')
-                .select(`
-                    id,
-                    tournament_id,
-                    tournaments!inner (
-                        status,
-                        start_date,
-                        end_date
-                    )
-                `)
+                .select('tournament_id')
                 .eq('player_id', currentUserId)
                 .eq('status', 'confirmed');
 
-            if (regError || !registrations) return;
+            if (regError || !regRows || regRows.length === 0) return;
+
+            const tournamentIds = [...new Set(regRows.map((r: any) => r.tournament_id).filter(Boolean))];
+            if (tournamentIds.length === 0) return;
+
+            const { data: tournamentsRows, error: tourError } = await supabase
+                .from('tournaments')
+                .select('id, status, end_date')
+                .in('id', tournamentIds);
+
+            if (tourError || !tournamentsRows || tournamentsRows.length === 0) return;
 
             const now = new Date();
-            const hasActiveTournament = registrations.some((reg: any) => {
-                const tour = reg.tournaments;
-                if (!tour) return false;
-
+            const hasActiveTournament = tournamentsRows.some((tour: any) => {
                 const statusLower = String(tour.status || '').toLowerCase();
                 if (
                     statusLower === 'finished' ||

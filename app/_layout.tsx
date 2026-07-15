@@ -66,6 +66,7 @@ export default function RootLayout() {
   const [initialized, setInitialized] = useState(false);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [pendingNotificationDestination, setPendingNotificationDestination] = useState<any | null>(null);
+  const [initialRoute, setInitialRoute] = useState<string>('/(tabs)');
   const router = useRouter();
   const segments = useSegments() as string[];
   const lastHandledNotificationIdRef = useRef<string | null>(null);
@@ -88,6 +89,72 @@ export default function RootLayout() {
 
       if (!isMounted) return;
       setSession(session);
+
+      let targetRoute = '/(tabs)';
+      if (session?.user?.id) {
+        try {
+          const currentUserId = session.user.id;
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('admin_org_ids')
+            .eq('id', currentUserId)
+            .maybeSingle();
+
+          const isAdmin = profile && Array.isArray(profile.admin_org_ids) && profile.admin_org_ids.length > 0;
+          if (!isAdmin) {
+            const { count: pendingMatchesCount } = await supabase
+              .from('matches')
+              .select('id', { head: true, count: 'exact' })
+              .or(`player_a_id.eq.${currentUserId},player_a2_id.eq.${currentUserId},player_b_id.eq.${currentUserId},player_b2_id.eq.${currentUserId}`)
+              .neq('status', 'finished');
+
+            if (pendingMatchesCount && pendingMatchesCount > 0) {
+              targetRoute = '/(tabs)/calendar';
+              (global as any).hasAutoRedirectedToCalendar = true;
+            } else {
+              const { data: regRows } = await supabase
+                .from('registrations')
+                .select('tournament_id')
+                .eq('player_id', currentUserId)
+                .eq('status', 'confirmed');
+
+              if (regRows && regRows.length > 0) {
+                const tournamentIds = [...new Set(regRows.map((r: any) => r.tournament_id).filter(Boolean))];
+                if (tournamentIds.length > 0) {
+                  const { data: tournamentsRows } = await supabase
+                    .from('tournaments')
+                    .select('id, status, end_date')
+                    .in('id', tournamentIds);
+
+                  if (tournamentsRows && tournamentsRows.length > 0) {
+                    const now = new Date();
+                    const hasActiveTournament = tournamentsRows.some((tour: any) => {
+                      const statusLower = String(tour.status || '').toLowerCase();
+                      if (['finished', 'completed', 'finalized', 'cancelled', 'draft', 'pending'].includes(statusLower)) {
+                        return false;
+                      }
+                      if (tour.end_date) {
+                        const endDateObj = new Date(`${tour.end_date}T23:59:59`);
+                        if (now >= endDateObj) return false;
+                      }
+                      return true;
+                    });
+
+                    if (hasActiveTournament) {
+                      targetRoute = '/(tabs)/calendar';
+                      (global as any).hasAutoRedirectedToCalendar = true;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Error determining initial route:', e);
+        }
+      }
+
+      setInitialRoute(targetRoute);
       setInitialized(true);
     };
 
@@ -117,10 +184,10 @@ export default function RootLayout() {
       // Redirect to login if not authenticated and not in auth group
       router.replace('/(auth)/login');
     } else if (session && inAuthGroup && !inResetPassword) {
-      // Redirect to tabs if authenticated and in auth group
-      router.replace('/(tabs)');
+      // Redirect to tabs or calendar immediately if authenticated and in auth group
+      router.replace(initialRoute as any);
     }
-  }, [session, initialized, segments]);
+  }, [session, initialized, segments, initialRoute]);
 
   useEffect(() => {
     if (!initialized || !pendingNotificationDestination) return;
