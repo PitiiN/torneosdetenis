@@ -102,7 +102,7 @@ export const createInitialMatches = ({
   format?: string | null;
   description?: string | null;
   maxPlayers: number;
-  participants?: Array<{ id: string }>;
+  participants?: Array<any>;
   modality?: string | null;
 }) => {
   const normalizedFormat = normalizeTournamentFormat(format);
@@ -129,6 +129,7 @@ export const createInitialMatches = ({
             round_number: 1,
             match_order: matchOrder++,
             status: 'pending',
+            is_bye: false,
           });
         }
       }
@@ -152,6 +153,7 @@ export const createInitialMatches = ({
         round_number: 2 + index,
         match_order: matchOrder++,
         status: 'pending',
+        is_bye: false,
       });
     });
 
@@ -168,20 +170,35 @@ export const createInitialMatches = ({
     const roundName = getEliminationRoundName(roundIndex, roundsCount);
     for (let matchIndex = 0; matchIndex < matchesInRound; matchIndex++) {
       const firstRoundOffset = matchIndex * 2;
+      const playerA = roundIndex === 1
+        ? (isDobles ? participants[firstRoundOffset * 2] : participants[firstRoundOffset])
+        : null;
+      const playerB = roundIndex === 1
+        ? (isDobles ? participants[(firstRoundOffset + 1) * 2] : participants[firstRoundOffset + 1])
+        : null;
+
+      const isBye = (
+        roundIndex === 1 && (
+          playerA?.kind === 'bye' || 
+          playerB?.kind === 'bye' ||
+          (isDobles && (
+            participants[firstRoundOffset * 2 + 1]?.kind === 'bye' || 
+            participants[(firstRoundOffset + 1) * 2 + 1]?.kind === 'bye'
+          ))
+        )
+      ) ? true : false;
+
       matches.push({
         tournament_id: tournamentId,
-        player_a_id: roundIndex === 1
-          ? (isDobles ? participants[firstRoundOffset * 2]?.id || null : participants[firstRoundOffset]?.id || null)
-          : null,
+        player_a_id: playerA?.id || null,
         player_a2_id: (roundIndex === 1 && isDobles) ? participants[firstRoundOffset * 2 + 1]?.id || null : null,
-        player_b_id: roundIndex === 1
-          ? (isDobles ? participants[(firstRoundOffset + 1) * 2]?.id || null : participants[firstRoundOffset + 1]?.id || null)
-          : null,
+        player_b_id: playerB?.id || null,
         player_b2_id: (roundIndex === 1 && isDobles) ? participants[(firstRoundOffset + 1) * 2 + 1]?.id || null : null,
         round: roundName,
         round_number: roundIndex,
         match_order: matchOrder++,
         status: 'pending',
+        is_bye: isBye,
       });
     }
     matchesInRound /= 2;
@@ -206,6 +223,7 @@ export const createInitialMatches = ({
           round_number: roundIndex,
           match_order: 1000 + matchOrder++,
           status: 'pending',
+          is_bye: false,
         });
       }
 

@@ -442,6 +442,8 @@ const getRoundRobinPairings = (numPlayers: number): [number, number][] => {
 };
 
 export const isByeMatch = (match: any, tournament: any) => {
+  if (match?.is_bye === true) return true;
+
   const hasByeId = [
     match?.player_a_id,
     match?.player_a2_id,

@@ -1321,7 +1321,7 @@ export default function AdminTournamentDetailScreen() {
                     const nextLink = getNextMatchLink(updatedCurrentMatch, workingMatches);
                     if (nextLink) {
                         const { nextMatch, nextSlotField, nextSlotField2 } = nextLink;
-                        const byeUpdateData: any = { [nextSlotField]: 'BYE' };
+                        const byeUpdateData: any = { [nextSlotField]: 'BYE', is_bye: true };
                         if (IS_DOUBLES) {
                             byeUpdateData[nextSlotField2] = 'BYE';
                         }
@@ -3169,26 +3169,46 @@ export default function AdminTournamentDetailScreen() {
         try {
             await removeMatchPlayer(false, false);
 
-            if (assignPairBye && selectedSlot) {
+            if (selectedSlot) {
                 const { matchId, slot } = selectedSlot;
-                const pairField =
-                    slot === 1
-                        ? 'player_a2_id'
-                        : slot === 2
-                            ? 'player_a_id'
-                            : slot === 3
-                                ? 'player_b2_id'
-                                : 'player_b_id';
-                const clearPairPayload: any = { [pairField]: null };
-                const { error: clearPairError } = await supabase
+                const pairSlot = slot === 1 ? 2 : slot === 2 ? 1 : slot === 3 ? 4 : 3;
+                const isBye = trimmedName.toUpperCase() === 'BYE';
+                
+                const manual = tournament?.description ? parseManualAssignments(tournament.description) : { matchSlots: {} };
+                const slots = manual.matchSlots?.[matchId] || {};
+                
+                const getSlotName = (sIdx: number) => {
+                    if (sIdx === slot) return trimmedName;
+                    if (assignPairBye && sIdx === pairSlot) return 'BYE';
+                    return slots[`p${sIdx}`]?.name || '';
+                };
+
+                const playerAIsBye = getSlotName(1).toUpperCase() === 'BYE' || (IS_DOUBLES && getSlotName(2).toUpperCase() === 'BYE');
+                const playerBIsBye = getSlotName(3).toUpperCase() === 'BYE' || (IS_DOUBLES && getSlotName(4).toUpperCase() === 'BYE');
+                const finalIsBye = playerAIsBye || playerBIsBye;
+
+                const updatePayload: any = { is_bye: finalIsBye };
+                if (assignPairBye) {
+                    const pairField =
+                        slot === 1
+                            ? 'player_a2_id'
+                            : slot === 2
+                                ? 'player_a_id'
+                                : slot === 3
+                                    ? 'player_b2_id'
+                                    : 'player_b_id';
+                    updatePayload[pairField] = null;
+                }
+
+                const { error: matchError } = await supabase
                     .from('matches')
-                    .update(clearPairPayload)
+                    .update(updatePayload)
                     .eq('id', matchId);
-                if (clearPairError) throw clearPairError;
-                applyMatchPatchLocally(matchId, clearPairPayload);
+                if (matchError) throw matchError;
+                applyMatchPatchLocally(matchId, updatePayload);
             }
 
-            if (assignPairBye && selectedGroupSlot) {
+            if (selectedGroupSlot) {
                 const { groupName, slotIndex, member } = selectedGroupSlot;
                 const pairMember = member === 2 ? 1 : 2;
                 const groupMatches = [...(roundRobinMatchesByGroup[groupName] || [])].sort(
@@ -3203,13 +3223,30 @@ export default function AdminTournamentDetailScreen() {
                     if (!pairing) continue;
 
                     const updateData: any = {};
-                    if (pairing[0] === slotIndex) {
-                        updateData[pairMember === 2 ? 'player_a2_id' : 'player_a_id'] = null;
+                    if (assignPairBye) {
+                        if (pairing[0] === slotIndex) {
+                            updateData[pairMember === 2 ? 'player_a2_id' : 'player_a_id'] = null;
+                        }
+                        if (pairing[1] === slotIndex) {
+                            updateData[pairMember === 2 ? 'player_b2_id' : 'player_b_id'] = null;
+                        }
                     }
-                    if (pairing[1] === slotIndex) {
-                        updateData[pairMember === 2 ? 'player_b2_id' : 'player_b_id'] = null;
-                    }
-                    if (Object.keys(updateData).length === 0) continue;
+
+                    const sideAIndex = pairing[0];
+                    const sideBIndex = pairing[1];
+                    const grp = tournament?.description ? parseManualAssignments(tournament.description).rrSlots?.[groupName] || {} : {};
+
+                    const getSlotName = (sIdx: number, memb: 1 | 2) => {
+                        if (sIdx === slotIndex && memb === member) return trimmedName;
+                        if (assignPairBye && sIdx === slotIndex && memb === pairMember) return 'BYE';
+                        return grp[getGroupManualKey(sIdx, memb)]?.name || '';
+                    };
+
+                    const sideAIsBye = getSlotName(sideAIndex, 1).toUpperCase() === 'BYE' || (IS_DOUBLES && getSlotName(sideAIndex, 2).toUpperCase() === 'BYE');
+                    const sideBIsBye = getSlotName(sideBIndex, 1).toUpperCase() === 'BYE' || (IS_DOUBLES && getSlotName(sideBIndex, 2).toUpperCase() === 'BYE');
+                    const finalIsBye = sideAIsBye || sideBIsBye;
+
+                    updateData.is_bye = finalIsBye;
 
                     const { error } = await supabase
                         .from('matches')
