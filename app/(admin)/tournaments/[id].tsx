@@ -3993,7 +3993,34 @@ export default function AdminTournamentDetailScreen() {
             }
 
             let bracketSlots: any[] = Array.from({ length: bracketSize }, () => null);
-            if (activeGroupedStandings.length === 2) {
+            const numActiveGroups = activeGroupedStandings.length;
+
+            if (numActiveGroups >= 2 && parsedPerGroup === 2 && numActiveGroups % 2 === 0) {
+                // Official ITF Cross-Group Format (Option A) for 2, 4, 8, 16 groups (2 qualifiers per group)
+                // Top half matches: 1st of Group 2i vs 2nd of Group (2i + 1)
+                // Bottom half matches: 1st of Group (2i + 1) vs 2nd of Group 2i (placed from bottom)
+                const numPairs = numActiveGroups / 2;
+                for (let i = 0; i < numPairs; i++) {
+                    const groupEven = activeGroupedStandings[2 * i];
+                    const groupOdd = activeGroupedStandings[2 * i + 1];
+
+                    const even1st = groupEven?.rows?.[0] || null;
+                    const even2nd = groupEven?.rows?.[1] || null;
+                    const odd1st = groupOdd?.rows?.[0] || null;
+                    const odd2nd = groupOdd?.rows?.[1] || null;
+
+                    // Top half match i (slots 2i and 2i + 1)
+                    const topSlotIdx = i * 2;
+                    if (topSlotIdx < bracketSize) bracketSlots[topSlotIdx] = even1st;
+                    if (topSlotIdx + 1 < bracketSize) bracketSlots[topSlotIdx + 1] = odd2nd;
+
+                    // Bottom half match (numActiveGroups - 1 - i) (slots 2*(numActiveGroups - 1 - i) and 2*(numActiveGroups - 1 - i) + 1)
+                    const bottomMatchIdx = numActiveGroups - 1 - i;
+                    const bottomSlotIdx = bottomMatchIdx * 2;
+                    if (bottomSlotIdx < bracketSize) bracketSlots[bottomSlotIdx] = odd1st;
+                    if (bottomSlotIdx + 1 < bracketSize) bracketSlots[bottomSlotIdx + 1] = even2nd;
+                }
+            } else if (numActiveGroups === 2) {
                 const groupAQualifiers = activeGroupedStandings[0]?.rows.slice(0, parsedPerGroup) || [];
                 const groupBQualifiers = activeGroupedStandings[1]?.rows.slice(0, parsedPerGroup) || [];
                 const effectivePerGroup = Math.min(parsedPerGroup, groupAQualifiers.length, groupBQualifiers.length);
@@ -4011,7 +4038,7 @@ export default function AdminTournamentDetailScreen() {
                         }
                     });
                 }
-            } else if (activeGroupedStandings.length === 1 && parsedPerGroup === 4 && sortedGlobalStandings.length >= 4 && bracketSize === 4) {
+            } else if (numActiveGroups === 1 && parsedPerGroup === 4 && sortedGlobalStandings.length >= 4 && bracketSize === 4) {
                 bracketSlots = [
                     sortedGlobalStandings[0],
                     sortedGlobalStandings[3],
@@ -4027,6 +4054,33 @@ export default function AdminTournamentDetailScreen() {
                         bracketSlots[line - 1] = entry;
                     }
                 });
+            }
+
+            // Fail-safe safeguard: Ensure no first-round match pits two players from the same group
+            for (let matchIdx = 0; matchIdx < bracketSize / 2; matchIdx++) {
+                const slotA = matchIdx * 2;
+                const slotB = matchIdx * 2 + 1;
+                const playerA = bracketSlots[slotA];
+                const playerB = bracketSlots[slotB];
+
+                if (playerA && playerB && playerA.groupName && playerB.groupName && playerA.groupName === playerB.groupName) {
+                    for (let otherIdx = 0; otherIdx < bracketSize / 2; otherIdx++) {
+                        if (otherIdx === matchIdx) continue;
+                        const otherA = bracketSlots[otherIdx * 2];
+                        const otherB = bracketSlots[otherIdx * 2 + 1];
+
+                        if (
+                            otherB &&
+                            otherB.groupName &&
+                            otherB.groupName !== playerA.groupName &&
+                            (!otherA || (otherA.groupName && otherA.groupName !== playerB.groupName))
+                        ) {
+                            bracketSlots[slotB] = otherB;
+                            bracketSlots[otherIdx * 2 + 1] = playerB;
+                            break;
+                        }
+                    }
+                }
             }
 
             const byeEntries = buildByeEntries(
