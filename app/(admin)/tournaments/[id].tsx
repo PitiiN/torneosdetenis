@@ -2097,17 +2097,12 @@ export default function AdminTournamentDetailScreen() {
     }, [manualAssignments]);
 
     const selectableRegisteredPlayers = useMemo(() => {
+        if (!IS_DOUBLES) return players;
         if (assignmentTargets.length === 0) {
-            if (!IS_DOUBLES) return players;
             return players.filter((registration) => !definedDoublesPlayerIds.has(String(registration.player_id || '')));
         }
-        return players.filter((registration) => {
-            const playerId = String(registration.player_id || '');
-            if (assignedRegisteredPlayerIds.has(playerId)) return false;
-            if (IS_DOUBLES && definedDoublesPlayerIds.has(playerId)) return false;
-            return true;
-        });
-    }, [players, assignmentTargets.length, assignedRegisteredPlayerIds, IS_DOUBLES, definedDoublesPlayerIds]);
+        return players;
+    }, [players, assignmentTargets.length, IS_DOUBLES, definedDoublesPlayerIds]);
 
     const selectableManualParticipants = useMemo<ManualParticipantRow[]>(() => {
         if (assignmentTargets.length === 0) return manualParticipantRows;
@@ -3435,12 +3430,26 @@ export default function AdminTournamentDetailScreen() {
 
             if (selectedSlot) {
                 const currentMatch = matches.find((match) => match.id === selectedSlot.matchId);
+                const isTargetFinalBracket = currentMatch && !String(currentMatch.round || '').startsWith('Grupo ');
                 const currentTargetId =
                     selectedSlot.slot === 1 ? currentMatch?.player_a_id :
                     selectedSlot.slot === 2 ? currentMatch?.player_a2_id :
                     selectedSlot.slot === 3 ? currentMatch?.player_b_id :
                     currentMatch?.player_b2_id;
                 if (currentTargetId === profileId) return false;
+
+                const otherAssignedMatchesInRound = matches.filter((match) => {
+                    if (match.id === selectedSlot.matchId) return false;
+                    if (isTargetFinalBracket && String(match.round || '').startsWith('Grupo ')) return false;
+                    if (isTargetFinalBracket && match.round_number !== currentMatch?.round_number) return false;
+
+                    return [match.player_a_id, match.player_a2_id, match.player_b_id, match.player_b2_id]
+                        .map((value) => String(value || '').trim())
+                        .includes(profileId);
+                });
+
+                if (otherAssignedMatchesInRound.length > 0) return true;
+                return false;
             }
 
             if (selectedGroupSlot) {
@@ -3470,11 +3479,19 @@ export default function AdminTournamentDetailScreen() {
                 });
 
                 if (currentTargetIds.has(profileId)) return false;
+
+                const otherGroupMatches = matches.filter((match) => {
+                    if (!String(match.round || '').startsWith('Grupo ')) return false;
+                    if (String(match.round || '') === `Grupo ${groupName}`) return false;
+                    return [match.player_a_id, match.player_a2_id, match.player_b_id, match.player_b2_id]
+                        .map((val) => String(val || '').trim())
+                        .includes(profileId);
+                });
+
+                if (otherGroupMatches.length > 0) return true;
+                return false;
             }
 
-            if (assignedRegisteredPlayerIds.has(profileId)) {
-                return !canReuseAssignedPlayerForSelectedTarget(profileId);
-            }
             return false;
         })();
 
@@ -4132,7 +4149,10 @@ export default function AdminTournamentDetailScreen() {
                 }));
             }
 
-            Alert.alert('Éxito', 'Las llaves finales fueron generadas automáticamente.');
+            Alert.alert(
+                'Éxito (Reglamento Oficial ITF)',
+                'Las llaves finales fueron generadas automáticamente bajo el Reglamento Oficial ITF (Cruces Cruzados entre grupos opuestos).'
+            );
         } catch (error) {
             Alert.alert('Error', 'No se pudieron generar las llaves finales.');
         }
